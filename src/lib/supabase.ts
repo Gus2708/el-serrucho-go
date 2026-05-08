@@ -131,8 +131,16 @@ export type ProfitDailyRow = {
   dia:          string;
   num_ventas:   number;
   ingreso_bruto:number;
-  costo_total:  number;
+  num_items:    number;
   ganancia:     number;
+};
+
+export type ProfitHourlyRow = {
+  hora:          string;
+  num_ventas:    number;
+  ingreso_bruto: number;
+  num_items:     number;
+  ganancia:      number;
 };
 
 export type AlertaStockRow = {

@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,15 +14,18 @@ import {
   PanResponder,
   Dimensions,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../../src/theme/ThemeContext';
-import { useVentasPeriod, VentaHoy, VentasPeriod } from '../../src/hooks/useVentasHoy';
+import { useVentasInfinite, VentaHoy, VentasPeriod } from '../../src/hooks/useVentasHoy';
+import { useProfitSummary } from '../../src/hooks/useProfitSummary';
 import { useVentaDetalle } from '../../src/hooks/useVentaDetalle';
 import { VentaDetalleUSD } from '../../src/lib/supabase';
+import { useUserRole } from '../../src/hooks/useUserRole';
 
 const PERIODS: { key: VentasPeriod; label: string }[] = [
   { key: 'hoy',    label: 'Hoy'    },
@@ -45,6 +49,8 @@ const KPI_LABELS: Record<VentasPeriod, string> = {
 };
 
 export default function VentasScreen() {
+  const { data: userAuth } = useUserRole();
+  const isAdmin = userAuth?.role === 'admin';
   const { colors, formatUSD } = useTheme();
   const queryClient = useQueryClient();
   const [refreshing,    setRefreshing]    = useState(false);
@@ -52,7 +58,54 @@ export default function VentasScreen() {
   const [period,        setPeriod]        = useState<VentasPeriod>('hoy');
   const [hasDefaulted,  setHasDefaulted]  = useState(false);
 
-  const { data: ventas = [], isLoading: loadingVentas } = useVentasPeriod(period);
+  const dateRangeLabel = useMemo(() => {
+    const today = new Date();
+    const formatDate = (d: Date) => {
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yyyy = d.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    };
+
+    if (period === 'hoy') return formatDate(today);
+    if (period === 'ayer') {
+      const ayer = new Date();
+      ayer.setDate(ayer.getDate() - 1);
+      return `ayer ${formatDate(ayer)}`;
+    }
+    if (period === 'semana') {
+      const hace7 = new Date();
+      hace7.setDate(hace7.getDate() - 7);
+      return `${formatDate(hace7)} a hoy`;
+    }
+    if (period === 'mes') {
+      const hace30 = new Date();
+      hace30.setDate(hace30.getDate() - 30);
+      return `${formatDate(hace30)} a hoy`;
+    }
+    return '';
+  }, [period]);
+
+  const { 
+    data, 
+    isLoading: loadingVentas, 
+    fetchNextPage, 
+    hasNextPage, 
+    isFetchingNextPage 
+  } = useVentasInfinite(period);
+
+  const { data: summary, isLoading: loadingStats } = useProfitSummary();
+
+  const ventas = useMemo(() => {
+    const allItems = data?.pages.flat() ?? [];
+    // Deduplicate items by venta_id to prevent key errors
+    const seen = new Set();
+    return allItems.filter(v => {
+      if (seen.has(v.venta_id)) return false;
+      seen.add(v.venta_id);
+      return true;
+    });
+  }, [data]);
 
   // Default logic: If today has no sales, switch to yesterday on first load.
   useEffect(() => {
@@ -66,95 +119,145 @@ export default function VentasScreen() {
 
   async function handleRefresh() {
     setRefreshing(true);
-    await queryClient.invalidateQueries({ queryKey: ['ventas-period', period] });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['ventas-infinite', period] }),
+      queryClient.invalidateQueries({ queryKey: ['profit-summary'] }),
+    ]);
     setRefreshing(false);
   }
 
-  const montoTotal    = ventas.reduce((acc, v) => acc + v.total_usd, 0);
-  const totalFacturas = ventas.length;
+  const periodStats = useMemo(() => {
+    if (!summary) return { ingreso: 0, ventas: 0 };
+    switch (period) {
+      case 'hoy':    return { ingreso: summary.ingreso_hoy,     ventas: summary.ventas_hoy };
+      case 'ayer':   return { ingreso: summary.ingreso_ayer,    ventas: summary.ventas_ayer };
+      case 'semana': return { ingreso: summary.ingreso_semana,  ventas: summary.ventas_semana };
+      case 'mes':    return { ingreso: summary.ingreso_mes,     ventas: summary.ventas_mes };
+      default:       return { ingreso: 0,                       ventas: 0 };
+    }
+  }, [period, summary]);
+
+  const montoTotal    = periodStats.ingreso;
+  const totalFacturas = periodStats.ventas;
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
       <StatusBar style="light" />
 
-      <ScrollView
+      <FlashList
+        data={ventas}
+        keyExtractor={(item) => item.venta_id.toString()}
+        estimatedItemSize={114}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
         }
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={[styles.title, { color: colors.text }]}>{PERIOD_LABELS[period]}</Text>
-          <Text style={[styles.subtitle, { color: colors.textMuted }]}>Listado detallado de facturación</Text>
-        </View>
-
-        {/* Period badges */}
-        <View style={styles.periodRow}>
-          {PERIODS.map(p => {
-            const active = period === p.key;
-            return (
-              <Pressable
-                key={p.key}
-                style={({ pressed }) => [
-                  styles.periodBtn,
-                  {
-                    backgroundColor: active ? colors.primary  : colors.surface,
-                    borderColor:     active ? colors.primary  : colors.border,
-                  },
-                  pressed && { opacity: 0.75 },
-                ]}
-                onPress={() => setPeriod(p.key)}
-              >
-                <Text style={[styles.periodText, { color: active ? colors.onPrimary : colors.textMuted }]}>
-                  {p.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {/* KPIs */}
-        <View style={styles.kpiRow}>
-          <View style={[styles.kpiCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.kpiLabel, { color: colors.textDim }]}>{KPI_LABELS[period]}</Text>
-            <Text style={[styles.kpiValue, { color: colors.primary }]}>{formatUSD(montoTotal)}</Text>
-          </View>
-          <View style={[styles.kpiCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.kpiLabel, { color: colors.textDim }]}>Facturas</Text>
-            <Text style={[styles.kpiValue, { color: colors.text }]}>{totalFacturas}</Text>
-          </View>
-        </View>
-
-        {loadingVentas && !refreshing ? (
-          <View style={styles.center}>
-            <ActivityIndicator color={colors.primary} />
-          </View>
-        ) : ventas.length === 0 ? (
-          <View style={styles.center}>
-            <View style={[styles.emptyIcon, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Feather name="shopping-bag" size={32} color={colors.textDim} />
+        onEndReached={() => {
+          if (hasNextPage && !isFetchingNextPage) {
+            fetchNextPage();
+          }
+        }}
+        onEndReachedThreshold={0.5}
+        ListHeaderComponent={
+          <>
+            {/* Header */}
+            <View style={styles.header}>
+              <Text style={[styles.title, { color: colors.text }]}>{PERIOD_LABELS[period]}</Text>
+              <View style={styles.headerSub}>
+                <Text style={[styles.subtitle, { color: colors.textMuted }]}>Listado detallado de facturación</Text>
+                <Text style={[styles.dateContext, { color: colors.textDim }]}>{dateRangeLabel}</Text>
+              </View>
             </View>
-            <Text style={[styles.emptyTitle, { color: colors.textMuted }]}>Sin ventas registradas</Text>
-            <Text style={[styles.emptySub, { color: colors.textDim }]}>
-              No hay facturas para este período.
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.list}>
-            {ventas.map((venta) => (
-              <VentaCard
-                key={venta.venta_id}
-                venta={venta}
-                onPress={() => setSelectedVenta(venta)}
-              />
-            ))}
+
+            {/* Period badges */}
+            <View style={styles.periodRow}>
+              {PERIODS.map(p => {
+                const active = period === p.key;
+                return (
+                  <Pressable
+                    key={p.key}
+                    style={({ pressed }) => [
+                      styles.periodBtn,
+                      {
+                        backgroundColor: active ? colors.primary  : colors.surface,
+                        borderColor:     active ? colors.primary  : colors.border,
+                      },
+                      pressed && { opacity: 0.75 },
+                    ]}
+                    onPress={() => setPeriod(p.key)}
+                  >
+                    <Text style={[styles.periodText, { color: active ? colors.onPrimary : colors.textMuted }]}>
+                      {p.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {/* KPIs */}
+            <View style={styles.kpiRow}>
+              <View style={[styles.kpiCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Text style={[styles.kpiLabel, { color: colors.textDim }]}>
+                  {isAdmin ? KPI_LABELS[period] : 'Ticket promedio'}
+                </Text>
+                {loadingStats ? (
+                  <ActivityIndicator size="small" color={colors.primary} style={{ alignSelf: 'flex-start' }} />
+                ) : (
+                  <Text style={[styles.kpiValue, { color: colors.primary }]}>
+                    {isAdmin ? formatUSD(montoTotal) : formatUSD(totalFacturas > 0 ? montoTotal / totalFacturas : 0)}
+                  </Text>
+                )}
+              </View>
+              <View style={[styles.kpiCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Text style={[styles.kpiLabel, { color: colors.textDim }]}>Facturas</Text>
+                {loadingStats ? (
+                  <ActivityIndicator size="small" color={colors.primary} style={{ alignSelf: 'flex-start' }} />
+                ) : (
+                  <Text style={[styles.kpiValue, { color: colors.text }]}>{totalFacturas}</Text>
+                )}
+              </View>
+            </View>
+          </>
+        }
+        renderItem={({ item: venta }) => (
+          <View style={{ paddingHorizontal: 16, marginBottom: 10 }}>
+            <VentaCard
+              venta={venta}
+              onPress={() => setSelectedVenta(venta)}
+            />
           </View>
         )}
-
-        <View style={styles.bottomPad} />
-      </ScrollView>
+        ListEmptyComponent={
+          loadingVentas && !refreshing ? (
+            <View style={styles.center}>
+              <ActivityIndicator color={colors.primary} />
+            </View>
+          ) : (
+            <View style={styles.center}>
+              <View style={[styles.emptyIcon, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Feather name="shopping-bag" size={32} color={colors.textDim} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: colors.textMuted }]}>Sin ventas registradas</Text>
+              <Text style={[styles.emptySub, { color: colors.textDim }]}>
+                No hay facturas para este período.
+              </Text>
+            </View>
+          )
+        }
+        ListFooterComponent={
+          isFetchingNextPage ? (
+            <View style={{ paddingVertical: 32, alignItems: 'center', gap: 10 }}>
+              <ActivityIndicator color={colors.primary} />
+              <Text style={{ color: colors.textDim, fontSize: 11, fontFamily: 'JetBrainsMono_400Regular' }}>
+                Cargando más facturas...
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.bottomPad} />
+          )
+        }
+      />
 
       {/* Modal de Detalle */}
       <VentaDetailModal 
@@ -286,14 +389,14 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
           style={[
             styles.modalSheet, 
             { 
-              backgroundColor: colors.bg, 
+              backgroundColor: colors.surface, 
               transform: [{ translateY: panY }] 
             }
           ]}
         >
           <View 
             {...panResponder.panHandlers} 
-            style={[styles.modalHandleArea, { backgroundColor: colors.surface }]}
+            style={styles.modalHandleArea}
           >
             <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
             
@@ -322,7 +425,7 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
               keyExtractor={(item) => item.id.toString()}
               contentContainerStyle={styles.modalList}
               renderItem={({ item }) => (
-                <View style={[styles.detailRow, { backgroundColor: colors.surface }]}>
+                <View style={[styles.detailRow, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
                   <View style={styles.detailIconContainer}>
                     <View style={[styles.itemIcon, { backgroundColor: colors.surfaceAlt }]}>
                       <Feather name="package" size={16} color={colors.primaryDim} />
@@ -349,7 +452,7 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
                 </View>
               )}
               ListFooterComponent={() => (
-                <View style={[styles.modalFooter, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={[styles.modalFooter, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
                   <View style={styles.footerRow}>
                     <Text style={[styles.footerLabel, { color: colors.textMuted }]}>Subtotal Base</Text>
                     <Text style={[styles.footerValue, { color: colors.text }]}>{formatUSD(baseUSD)}</Text>
@@ -380,8 +483,10 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   scroll: { paddingBottom: 20 },
   header: { paddingHorizontal: 16, paddingTop: 12, marginBottom: 16 },
-  title: { fontSize: 26, fontWeight: '700' },
-  subtitle: { fontSize: 13, marginTop: 2 },
+  headerSub: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },
+  title: { fontSize: 26, fontFamily: 'JetBrainsMono_700Bold' },
+  dateContext: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium' },
+  subtitle: { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular' },
 
   periodRow: {
     flexDirection:     'row',
@@ -396,7 +501,7 @@ const styles = StyleSheet.create({
     borderRadius:      12,
     borderWidth:       0.5,
   },
-  periodText: { fontSize: 12, fontWeight: '600' },
+  periodText: { fontSize: 12, fontFamily: 'JetBrainsMono_500Medium' },
 
   kpiRow: {
     flexDirection: 'row',
@@ -411,8 +516,8 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     gap: 4,
   },
-  kpiLabel: { fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-  kpiValue: { fontSize: 20, fontWeight: '800' },
+  kpiLabel: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.5 },
+  kpiValue: { fontSize: 20, fontFamily: 'JetBrainsMono_700Bold' },
 
   list: { paddingHorizontal: 16, gap: 10 },
   card: {
@@ -427,10 +532,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   docInfo: { gap: 4 },
-  docNum: { fontSize: 16, fontWeight: '700' },
+  docNum: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold' },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  docTime: { fontSize: 11, fontWeight: '500' },
-  docAmount: { fontSize: 18, fontWeight: '800' },
+  docTime: { fontSize: 11, fontFamily: 'JetBrainsMono_400Regular' },
+  docAmount: { fontSize: 18, fontFamily: 'JetBrainsMono_700Bold' },
   
   cardBottom: {
     flexDirection: 'row',
@@ -440,15 +545,15 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   clientRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
-  clientName: { fontSize: 12, fontWeight: '500' },
+  clientName: { fontSize: 12, fontFamily: 'JetBrainsMono_500Medium' },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 80, gap: 16 },
   emptyIcon: {
     width: 64, height: 64, borderRadius: 22, borderWidth: 0.5,
     alignItems: 'center', justifyContent: 'center',
   },
-  emptyTitle: { fontSize: 17, fontWeight: '700' },
-  emptySub: { fontSize: 13, textAlign: 'center', lineHeight: 20 },
+  emptyTitle: { fontSize: 17, fontFamily: 'JetBrainsMono_700Bold' },
+  emptySub: { fontSize: 13, textAlign: 'center', lineHeight: 20, fontFamily: 'JetBrainsMono_400Regular' },
   bottomPad: { height: 120 },
 
   modalOverlay: {
@@ -457,24 +562,22 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalSheet: {
-    backgroundColor: 'transparent',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '90%',
     width: '100%',
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 20,
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 24,
   },
   modalHandleArea: {
     paddingTop: 12,
-    paddingBottom: 20,
+    paddingBottom: 4,
     alignItems: 'center',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    width: '100%',
   },
   modalHandle: {
     width: 40,
@@ -486,30 +589,31 @@ const styles = StyleSheet.create({
   modalHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingBottom: 20,
     width: '100%',
-    paddingHorizontal: 20,
   },
   modalHeaderRight: {
     alignItems: 'flex-end',
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: '700',
+    fontFamily: 'JetBrainsMono_700Bold',
     letterSpacing: -0.5,
   },
   modalSubtitle: {
     fontSize: 13,
-    fontWeight: '500',
+    fontFamily: 'JetBrainsMono_500Medium',
     marginTop: 2,
   },
   modalDate: {
     fontSize: 12,
-    fontWeight: '600',
+    fontFamily: 'JetBrainsMono_700Bold',
     textTransform: 'uppercase',
   },
-  modalLoading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  modalList: { padding: 16, gap: 12 },
+  modalLoading: { height: 200, alignItems: 'center', justifyContent: 'center' },
+  modalList: { paddingHorizontal: 20, paddingBottom: 40, gap: 12 },
   
   detailRow: {
     flexDirection: 'row',
@@ -517,6 +621,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     gap: 16,
     alignItems: 'center',
+    borderWidth: 1,
   },
   detailIconContainer: {
     width: 44,
@@ -539,15 +644,15 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 8,
   },
-  detailDesc: { fontSize: 14, fontWeight: '700', flex: 1, lineHeight: 20 },
-  detailSubtotal: { fontSize: 16, fontWeight: '800' },
+  detailDesc: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold', flex: 1, lineHeight: 20 },
+  detailSubtotal: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold' },
   detailMeta: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  detailCode: { fontSize: 11, fontWeight: '600' },
-  detailUnit: { fontSize: 12, fontWeight: '500' },
+  detailCode: { fontSize: 11, fontFamily: 'JetBrainsMono_500Medium' },
+  detailUnit: { fontSize: 12, fontFamily: 'JetBrainsMono_500Medium' },
 
   modalFooter: {
     marginTop: 12,
@@ -562,15 +667,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  footerLabel: { fontSize: 14, fontWeight: '600' },
-  footerValue: { fontSize: 16, fontWeight: '700' },
+  footerLabel: { fontSize: 14, fontFamily: 'JetBrainsMono_500Medium' },
+  footerValue: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold' },
   divider: { height: 1, marginVertical: 8, opacity: 0.5 },
   totalRow: {
     marginTop: 4,
     paddingTop: 8,
   },
-  totalLabel: { fontSize: 18, fontWeight: '900' },
+  totalLabel: { fontSize: 18, fontFamily: 'JetBrainsMono_700Bold' },
   totalValueContainer: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
-  totalCurrency: { fontSize: 14, fontWeight: '800' },
-  totalValue: { fontSize: 32, fontWeight: '900' },
+  totalCurrency: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold' },
+  totalValue: { fontSize: 32, fontFamily: 'JetBrainsMono_700Bold' },
 });

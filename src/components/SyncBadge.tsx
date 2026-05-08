@@ -147,10 +147,11 @@ const styles = StyleSheet.create({
   },
   t1: {
     fontSize:   11,
-    fontWeight: '600',
+    fontFamily: 'JetBrainsMono_500Medium',
   },
   t2: {
     fontSize: 10,
+    fontFamily: 'JetBrainsMono_400Regular',
   },
   tag: {
     borderRadius:     20,
@@ -161,7 +162,7 @@ const styles = StyleSheet.create({
   },
   tagText: {
     fontSize:   10,
-    fontWeight: '600',
+    fontFamily: 'JetBrainsMono_700Bold',
   },
   syncButton: {
     width:          32,

@@ -2,10 +2,10 @@ import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
 import { useTheme } from '../theme/ThemeContext';
 import type { ProfitMonthlyRow } from '../hooks/useProfitSummary';
-import type { ProfitDailyRow } from '../lib/supabase';
+import type { ProfitDailyRow, ProfitHourlyRow } from '../lib/supabase';
 
 interface Props {
-  data:    ProfitMonthlyRow[] | ProfitDailyRow[];
+  data:    ProfitMonthlyRow[] | ProfitDailyRow[] | ProfitHourlyRow[];
   width?:  number;
   height?: number;
 }

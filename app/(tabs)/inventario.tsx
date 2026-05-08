@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Pressable,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,7 +16,6 @@ import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { useProductos, StockFilter } from '../../src/hooks/useProductos';
 import { ProductRow } from '../../src/components/ProductRow';
-import { SyncBadge } from '../../src/components/SyncBadge';
 import type { Producto } from '../../src/lib/supabase';
 
 const FILTERS: { key: StockFilter; label: string }[] = [
@@ -84,31 +84,37 @@ export default function InventarioScreen() {
       </View>
 
       {/* Filter chips */}
-      <View style={styles.chips}>
-        {FILTERS.map(f => {
-          const active = filter === f.key;
-          return (
-            <Pressable
-              key={f.key}
-              style={({ pressed }) => [
-                styles.chip,
-                {
-                  backgroundColor: active ? colors.primary : colors.surfaceAlt,
-                  borderColor:     active ? colors.primary : colors.border,
-                },
-                pressed && { opacity: 0.75 },
-              ]}
-              onPress={() => setFilter(f.key)}
-            >
-              <Text style={[
-                styles.chipText,
-                { color: active ? colors.onPrimary : colors.textMuted },
-              ]}>
-                {f.label}
-              </Text>
-            </Pressable>
-          );
-        })}
+      <View style={styles.chipsContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipsContent}
+        >
+          {FILTERS.map(f => {
+            const active = filter === f.key;
+            return (
+              <Pressable
+                key={f.key}
+                style={({ pressed }) => [
+                  styles.chip,
+                  {
+                    backgroundColor: active ? colors.primary : colors.surfaceAlt,
+                    borderColor:     active ? colors.primary : colors.border,
+                  },
+                  pressed && { opacity: 0.75 },
+                ]}
+                onPress={() => setFilter(f.key)}
+              >
+                <Text style={[
+                  styles.chipText,
+                  { color: active ? colors.onPrimary : colors.textMuted },
+                ]}>
+                  {f.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       </View>
 
       {/* List */}
@@ -149,8 +155,6 @@ export default function InventarioScreen() {
         />
       )}
 
-      {/* Sync badge pinned above tab bar */}
-      <SyncBadge />
     </SafeAreaView>
   );
 }
@@ -166,8 +170,8 @@ const styles = StyleSheet.create({
     paddingTop:     12,
     paddingBottom:  10,
   },
-  title: { fontSize: 26, fontWeight: '700' },
-  count: { fontSize: 13 },
+  title: { fontSize: 26, fontFamily: 'JetBrainsMono_700Bold' },
+  count: { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular' },
 
   searchWrap: {
     flexDirection:     'row',
@@ -183,14 +187,16 @@ const styles = StyleSheet.create({
   searchInput: {
     flex:     1,
     fontSize: 14,
+    fontFamily: 'JetBrainsMono_400Regular',
   },
 
-  chips: {
-    flexDirection:  'row',
-    gap:            6,
+  chipsContainer: {
+    marginBottom: 12,
+  },
+  chipsContent: {
     paddingHorizontal: 16,
-    marginBottom:   12,
-    flexWrap:       'wrap',
+    flexDirection: 'row',
+    gap: 8,
   },
   chip: {
     borderRadius:     999,
@@ -198,7 +204,7 @@ const styles = StyleSheet.create({
     paddingVertical:  6,
     paddingHorizontal: 14,
   },
-  chipText: { fontSize: 12, fontWeight: '500' },
+  chipText: { fontSize: 12, fontFamily: 'JetBrainsMono_500Medium' },
 
   list: {
     paddingTop:    4,
@@ -214,5 +220,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 14,
+    fontFamily: 'JetBrainsMono_400Regular',
   },
 });

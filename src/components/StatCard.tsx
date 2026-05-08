@@ -58,17 +58,18 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize:   11,
-    fontWeight: '500',
+    fontFamily: 'JetBrainsMono_500Medium',
     letterSpacing: 0.3,
     textTransform: 'uppercase',
   },
   value: {
     fontSize:   22,
-    fontWeight: '700',
+    fontFamily: 'JetBrainsMono_700Bold',
     letterSpacing: -0.5,
   },
   sub: {
     fontSize: 11,
     marginTop: 1,
+    fontFamily: 'JetBrainsMono_400Regular',
   },
 });

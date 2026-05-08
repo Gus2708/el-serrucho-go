@@ -6,7 +6,7 @@ export const elSerrucho: BrandConfig = {
   // logo: require('../../../assets/brands/el-serrucho/logo.png'),
 
   colors: {
-    bg:           '#0C0C0C',   // near-black background
+    bg:           '#010100',   // new branding background
     surface:      '#161616',   // card background
     surfaceAlt:   '#1E1E1E',   // elevated surface / inputs
     border:       '#2C2C2C',   // subtle dividers
@@ -19,7 +19,7 @@ export const elSerrucho: BrandConfig = {
     danger:       '#FF5252',
     warning:      '#FF9800',
     success:      '#4CAF50',
-    onPrimary:    '#0C0C0C',   // text/icons on gold backgrounds → black
+    onPrimary:    '#010100',   // text/icons on gold backgrounds → black
   },
 
   // USD ONLY — no Bolívares anywhere in the UI

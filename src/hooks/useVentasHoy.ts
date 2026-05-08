@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { supabase, getLocalDateStr, getDateDaysAgo } from '../lib/supabase';
 
 export type VentasPeriod = 'hoy' | 'ayer' | 'semana' | 'mes';
@@ -24,16 +24,30 @@ export interface VentaHoy {
   original_total_impuesto_ves: number;
 }
 
+const PAGE_SIZE = 25;
+
 export function useVentasPeriod(period: VentasPeriod) {
   return useQuery({
     queryKey:        ['ventas-period', period],
-    queryFn:         () => fetchVentas(period),
+    queryFn:         () => fetchVentas(period, 0, 1000), // Legacy fallback
     staleTime:       30_000,
     refetchInterval: 60_000,
   });
 }
 
-async function fetchVentas(period: VentasPeriod): Promise<VentaHoy[]> {
+export function useVentasInfinite(period: VentasPeriod) {
+  return useInfiniteQuery({
+    queryKey: ['ventas-infinite', period],
+    queryFn: ({ pageParam }) => fetchVentas(period, pageParam as number, (pageParam as number) + PAGE_SIZE - 1),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      return lastPage.length === PAGE_SIZE ? allPages.length * PAGE_SIZE : undefined;
+    },
+    staleTime: 30_000,
+  });
+}
+
+async function fetchVentas(period: VentasPeriod, from: number, to: number): Promise<VentaHoy[]> {
   const today     = getLocalDateStr();
   const yesterday = getDateDaysAgo(1);
 
@@ -41,7 +55,8 @@ async function fetchVentas(period: VentasPeriod): Promise<VentaHoy[]> {
     .from('vw_ventas_usd')
     .select('*')
     .eq('status', 1)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .range(from, to);
 
   switch (period) {
     case 'hoy':

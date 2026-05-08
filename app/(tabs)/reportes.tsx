@@ -215,7 +215,7 @@ const styles = StyleSheet.create({
     paddingTop:        12,
     paddingBottom:     4,
   },
-  title: { fontSize: 26, fontWeight: '700' },
+  title: { fontSize: 26, fontFamily: 'JetBrainsMono_700Bold' },
 
   row:     { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   padH:    { paddingHorizontal: 16 },
@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
     paddingVertical:   6,
     paddingHorizontal: 14,
   },
-  periodText: { fontSize: 12, fontWeight: '600' },
+  periodText: { fontSize: 12, fontFamily: 'JetBrainsMono_500Medium' },
 
   summaryRow: {
     flexDirection: 'row',
@@ -241,12 +241,12 @@ const styles = StyleSheet.create({
     alignItems:    'center',
     gap:           3,
   },
-  pillLabel: { fontSize: 10, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.3 },
-  pillValue: { fontSize: 13, fontWeight: '700' },
+  pillLabel: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.3 },
+  pillValue: { fontSize: 13, fontFamily: 'JetBrainsMono_700Bold' },
 
   sectionLabel: {
     fontSize:          11,
-    fontWeight:        '600',
+    fontFamily:        'JetBrainsMono_500Medium',
     textTransform:     'uppercase',
     letterSpacing:     0.5,
     paddingHorizontal: 16,
@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
     padding:          16,
     alignItems:       'center',
   },
-  emptyText: { fontSize: 13 },
+  emptyText: { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular' },
 
   productRow: {
     flexDirection:     'row',
@@ -270,13 +270,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
     gap:               10,
   },
-  rank:         { fontSize: 12, width: 20, textAlign: 'right', fontVariant: ['tabular-nums'] },
+  rank:         { fontSize: 12, width: 20, textAlign: 'right', fontFamily: 'JetBrainsMono_400Regular' },
   productInfo:  { flex: 1, gap: 2 },
-  productName:  { fontSize: 13, fontWeight: '500' },
-  productMeta:  { fontSize: 11 },
+  productName:  { fontSize: 13, fontFamily: 'JetBrainsMono_500Medium' },
+  productMeta:  { fontSize: 11, fontFamily: 'JetBrainsMono_400Regular' },
   productAmounts: { alignItems: 'flex-end', gap: 2 },
-  amountText:   { fontSize: 13, fontWeight: '600' },
-  gananciaText: { fontSize: 11 },
+  amountText:   { fontSize: 13, fontFamily: 'JetBrainsMono_700Bold' },
+  gananciaText: { fontSize: 11, fontFamily: 'JetBrainsMono_400Regular' },
 
   loadingRow: { paddingVertical: 24, alignItems: 'center' },
   bottomPad:  { height: 110 },

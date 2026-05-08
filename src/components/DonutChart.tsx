@@ -87,10 +87,11 @@ const styles = StyleSheet.create({
   },
   centerNum: {
     fontSize:   20,
-    fontWeight: '700',
+    fontFamily: 'JetBrainsMono_700Bold',
   },
   centerLabel: {
     fontSize: 10,
+    fontFamily: 'JetBrainsMono_400Regular',
   },
   legend: {
     gap: 10,
@@ -109,11 +110,11 @@ const styles = StyleSheet.create({
   legendLabel: {
     fontSize: 13,
     flex:      1,
+    fontFamily: 'JetBrainsMono_400Regular',
   },
   legendPct: {
     fontSize:   13,
-    fontWeight: '600',
-    fontVariant: ['tabular-nums'],
+    fontFamily: 'JetBrainsMono_700Bold',
   },
   empty: {
     borderWidth:  0.5,
@@ -123,5 +124,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 13,
+    fontFamily: 'JetBrainsMono_400Regular',
   },
 });

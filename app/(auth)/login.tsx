@@ -130,6 +130,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize:    13,
     marginBottom: 16,
+    fontFamily:  'JetBrainsMono_400Regular',
   },
   inputWrap: {
     width:        '100%',
@@ -141,6 +142,7 @@ const styles = StyleSheet.create({
   },
   input: {
     fontSize: 15,
+    fontFamily: 'JetBrainsMono_400Regular',
   },
   btn: {
     width:        '100%',
@@ -152,6 +154,6 @@ const styles = StyleSheet.create({
   },
   btnText: {
     fontSize:   15,
-    fontWeight: '600',
+    fontFamily: 'JetBrainsMono_700Bold',
   },
 });

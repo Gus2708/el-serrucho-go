@@ -37,4 +37,11 @@ export const tokens = {
     normal: 1.5,
     loose:  1.7,
   },
+  typography: {
+    family: {
+      mono: 'JetBrainsMono_400Regular',
+      monoMedium: 'JetBrainsMono_500Medium',
+      monoBold: 'JetBrainsMono_700Bold',
+    },
+  },
 };

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -231,7 +232,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerTitle: { fontSize: 14, fontWeight: '900', letterSpacing: 2 },
+  headerTitle: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 2 },
   content: { paddingHorizontal: 16, gap: 24 },
   
   // Card Principal Única
@@ -253,7 +254,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarLetter: { fontSize: 24, fontWeight: '900' },
+  avatarLetter: { fontSize: 24, fontFamily: 'JetBrainsMono_700Bold' },
   mainInfo: { flex: 1, gap: 6 },
   nameRow: { 
     flexDirection: 'row', 
@@ -264,13 +265,13 @@ const styles = StyleSheet.create({
   mainName: { 
     flex: 1,
     fontSize: 20, 
-    fontWeight: '900', 
+    fontFamily: 'JetBrainsMono_700Bold', 
     letterSpacing: -0.5 
   },
   nameInput: {
     flex: 1,
     fontSize: 20,
-    fontWeight: '900',
+    fontFamily: 'JetBrainsMono_700Bold',
     paddingVertical: 0,
     borderBottomWidth: 1,
   },
@@ -287,7 +288,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 6,
   },
-  badgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  badgeText: { fontSize: 9, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 0.5 },
 
   divider: { height: 1, opacity: 0.3 },
 
@@ -301,7 +302,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontFamily: 'JetBrainsMono_500Medium',
   },
 
   // Botón Salida
@@ -315,6 +316,6 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     marginTop: 10,
   },
-  logoutText: { fontSize: 14, fontWeight: '900', letterSpacing: 1 },
+  logoutText: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1 },
 });
 

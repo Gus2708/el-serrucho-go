@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Modal, TextInput, Animated, PanResponder, Dimensions } from 'react-native';
 
 const screenHeight = Dimensions.get('window').height;
@@ -198,14 +199,14 @@ export default function ProductoDetailScreen() {
               style={[
                 styles.sheet, 
                 { 
-                  backgroundColor: colors.bg, 
+                  backgroundColor: colors.surface, 
                   transform: [{ translateY: panY }] 
                 }
               ]}
             >
               <View 
                 {...panResponder.panHandlers}
-                style={[styles.modalHandleArea, { backgroundColor: colors.surface }]}
+                style={styles.modalHandleArea}
               >
                 <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
               </View>
@@ -348,7 +349,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
   },
   backBtn:        { padding: 4, marginRight: 4 },
-  navTitle:       { flex: 1, fontSize: 16, fontWeight: '600', textAlign: 'center' },
+  navTitle:       { flex: 1, fontSize: 16, fontFamily: 'JetBrainsMono_700Bold', textAlign: 'center' },
   navPlaceholder: { width: 30 },
 
   center: {
@@ -357,7 +358,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap:            12,
   },
-  errorText: { fontSize: 15 },
+  errorText: { fontSize: 15, fontFamily: 'JetBrainsMono_400Regular' },
 
   scroll: {
     paddingTop:    16,
@@ -374,7 +375,7 @@ const styles = StyleSheet.create({
 
   productName: {
     fontSize:     20,
-    fontWeight:   '700',
+    fontFamily:   'JetBrainsMono_700Bold',
     lineHeight:   27,
     marginBottom: 10,
   },
@@ -384,9 +385,9 @@ const styles = StyleSheet.create({
     alignItems:     'center',
     paddingVertical: 6,
   },
-  label: { fontSize: 13 },
-  code:  { fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  value: { fontSize: 13, fontWeight: '500' },
+  label: { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular' },
+  code:  { fontSize: 13, fontFamily: 'JetBrainsMono_700Bold' },
+  value: { fontSize: 13, fontFamily: 'JetBrainsMono_500Medium' },
 
   row2: {
     flexDirection:  'row',
@@ -401,10 +402,10 @@ const styles = StyleSheet.create({
     alignItems:   'center',
     gap:          6,
   },
-  statLabel: { fontSize: 12 },
-  statValue: { fontSize: 22, fontWeight: '700' },
+  statLabel: { fontSize: 12, fontFamily: 'JetBrainsMono_400Regular' },
+  statValue: { fontSize: 22, fontFamily: 'JetBrainsMono_700Bold' },
 
-  sectionLabel: { fontSize: 12, marginBottom: 10 },
+  sectionLabel: { fontSize: 12, marginBottom: 10, fontFamily: 'JetBrainsMono_400Regular' },
 
   marginHeader: {
     flexDirection:  'row',
@@ -412,7 +413,7 @@ const styles = StyleSheet.create({
     alignItems:     'center',
     marginBottom:   8,
   },
-  marginPct: { fontSize: 18, fontWeight: '700' },
+  marginPct: { fontSize: 18, fontFamily: 'JetBrainsMono_700Bold' },
   barBg:     { height: 6, borderRadius: 3, overflow: 'hidden' },
   barFill:   { height: 6, borderRadius: 3 },
 
@@ -421,11 +422,11 @@ const styles = StyleSheet.create({
     alignItems:    'center',
     gap:           12,
   },
-  stockQty:       { fontSize: 36, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  stockQty:       { fontSize: 36, fontFamily: 'JetBrainsMono_700Bold' },
   stockBadge:     { borderRadius: 999, borderWidth: 0.5, paddingVertical: 4, paddingHorizontal: 12 },
-  stockBadgeText: { fontSize: 13, fontWeight: '500' },
+  stockBadgeText: { fontSize: 13, fontFamily: 'JetBrainsMono_500Medium' },
 
-  syncNote: { fontSize: 11, textAlign: 'center', marginTop: 4 },
+  syncNote: { fontSize: 11, textAlign: 'center', marginTop: 4, fontFamily: 'JetBrainsMono_400Regular' },
 
   addBtn: {
     flexDirection:     'row',
@@ -438,7 +439,7 @@ const styles = StyleSheet.create({
     borderRadius:      14,
     borderWidth:       1,
   },
-  addBtnText: { fontSize: 15, fontWeight: '600' },
+  addBtnText: { fontSize: 15, fontFamily: 'JetBrainsMono_700Bold' },
 
   sheetOverlay: {
     flex:            1,
@@ -450,6 +451,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     width: '100%',
     overflow: 'hidden',
+    paddingHorizontal: 24,
     paddingBottom: 40,
     gap: 12,
     shadowColor: "#000",
@@ -460,11 +462,9 @@ const styles = StyleSheet.create({
   },
   modalHandleArea: {
     paddingTop: 12,
-    paddingBottom: 20,
+    paddingBottom: 16,
     alignItems: 'center',
     width: '100%',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
   },
   modalHandle: {
     width: 40,
@@ -472,9 +472,9 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     opacity: 0.5,
   },
-  sheetTitle:   { fontSize: 18, fontWeight: '700' },
-  sheetSub:     { fontSize: 13 },
-  sheetLabel:   { fontSize: 13 },
+  sheetTitle:   { fontSize: 18, fontFamily: 'JetBrainsMono_700Bold' },
+  sheetSub:     { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular' },
+  sheetLabel:   { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular' },
   qtyWrap: {
     borderRadius: 12,
     borderWidth:  0.5,
@@ -482,7 +482,7 @@ const styles = StyleSheet.create({
     height:       56,
     justifyContent: 'center',
   },
-  qtyInput: { fontSize: 28, fontWeight: '700', textAlign: 'center' },
+  qtyInput: { fontSize: 28, fontFamily: 'JetBrainsMono_700Bold', textAlign: 'center' },
   sheetBtn: {
     height:         52,
     borderRadius:   12,
@@ -490,5 +490,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop:      4,
   },
-  sheetBtnText: { fontSize: 15, fontWeight: '600' },
+  sheetBtnText: { fontSize: 15, fontFamily: 'JetBrainsMono_700Bold' },
 });

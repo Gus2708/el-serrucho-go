@@ -54,8 +54,8 @@ export function GananciaChart({ data, mode = 'ganancia' }: Props) {
         xAxisThickness={1}
         xAxisColor={colors.border}
         yAxisColor="transparent"
-        yAxisTextStyle={{ color: colors.textDim, fontSize: 8 }}
-        xAxisLabelTextStyle={{ color: colors.textDim, fontSize: 8 }}
+        yAxisTextStyle={{ color: colors.textDim, fontSize: 8, fontFamily: 'JetBrainsMono_400Regular' }}
+        xAxisLabelTextStyle={{ color: colors.textDim, fontSize: 8, fontFamily: 'JetBrainsMono_400Regular' }}
         isAnimated
         animationDuration={500}
         roundedTop
@@ -88,5 +88,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 13,
+    fontFamily: 'JetBrainsMono_400Regular',
   },
 });

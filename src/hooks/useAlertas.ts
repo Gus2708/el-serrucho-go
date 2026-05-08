@@ -1,3 +1,5 @@
+import * as React from 'react';
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase, AlertaStockRow, Anomalia } from '../lib/supabase';
 
@@ -18,12 +20,12 @@ export function useAlertas() {
     (stockAlertas.data?.length ?? 0) +
     (anomalias.data?.length ?? 0);
 
-  return {
+  return React.useMemo(() => ({
     stockAlertas: stockAlertas.data ?? [],
     anomalias:    anomalias.data ?? [],
     totalCount,
     isLoading:    stockAlertas.isLoading || anomalias.isLoading,
-  };
+  }), [stockAlertas.data, anomalias.data, stockAlertas.isLoading, anomalias.isLoading, totalCount]);
 }
 
 async function fetchAlertasStock(): Promise<AlertaStockRow[]> {

@@ -1,4 +1,5 @@
-import React, { createContext, useContext } from 'react';
+import * as React from 'react';
+import { createContext, useContext } from 'react';
 import { tokens } from './tokens';
 import { elSerrucho } from './brands/el-serrucho';
 import { BrandConfig } from './brands/types';

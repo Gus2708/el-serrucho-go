@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { supabase, ProfitSummaryRow, ProfitDailyRow, getDateDaysAgo } from '../lib/supabase';
+import { supabase, ProfitSummaryRow, ProfitDailyRow, ProfitHourlyRow, getDateDaysAgo } from '../lib/supabase';
 
 export interface ProfitMonthlyRow {
   mes:          string;   // 'YYYY-MM'
@@ -72,7 +72,7 @@ async function fetchProfitDaily(days: number): Promise<ProfitDailyRow[]> {
     ...d,
     num_ventas:    Number(d.num_ventas || 0),
     ingreso_bruto: Number(d.ingreso_bruto || 0),
-    costo_total:   Number(d.costo_total || 0),
+    num_items:     Number(d.num_items || 0),
     ganancia:      Number(d.ganancia || 0),
   })) as ProfitDailyRow[];
 }
@@ -100,4 +100,54 @@ async function fetchProfitMonthly(): Promise<ProfitMonthlyRow[]> {
     costo_total:   Number(d.costo_total || 0),
     ganancia:      Number(d.ganancia || 0),
   })) as ProfitMonthlyRow[];
+}
+
+// ── Hourly trend for Sparkline (Hoy / Ayer) ───────────────────────────────────
+export function useProfitHourly(dateStr: string) {
+  return useQuery({
+    queryKey: ['profit-hourly', dateStr],
+    queryFn:  () => fetchProfitHourly(dateStr),
+    staleTime: 5 * 60_000,
+  });
+}
+
+async function fetchProfitHourly(dateStr: string): Promise<ProfitHourlyRow[]> {
+  const { data, error } = await supabase
+    .from('vw_profit_hourly')
+    .select('*')
+    .gte('hora', `${dateStr}T00:00:00`)
+    .lte('hora', `${dateStr}T23:59:59`)
+    .order('hora');
+
+  if (error) throw error;
+
+  // Rellenamos las 24 horas del día para que el sparkline no se vea como una línea recta simple
+  const fullDay: ProfitHourlyRow[] = [];
+  for (let h = 0; h < 24; h++) {
+    // Buscamos si hay data para esta hora específica
+    const hourData = (data ?? []).find(d => {
+      const dDate = new Date(d.hora);
+      return dDate.getHours() === h;
+    });
+
+    if (hourData) {
+      fullDay.push({
+        ...hourData,
+        num_ventas:    Number(hourData.num_ventas || 0),
+        ingreso_bruto: Number(hourData.ingreso_bruto || 0),
+        num_items:     Number(hourData.num_items || 0),
+        ganancia:      Number(hourData.ganancia || 0),
+      });
+    } else {
+      fullDay.push({
+        hora:          `${dateStr}T${String(h).padStart(2, '0')}:00:00`,
+        num_ventas:    0,
+        ingreso_bruto: 0,
+        num_items:     0,
+        ganancia:      0,
+      });
+    }
+  }
+
+  return fullDay;
 }

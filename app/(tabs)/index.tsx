@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   View,
@@ -18,12 +18,12 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../../src/theme/ThemeContext';
-import { useProfitSummary, useProfitMonthly, useProfitDaily } from '../../src/hooks/useProfitSummary';
+import { useProfitSummary, useProfitMonthly, useProfitDaily, useProfitHourly } from '../../src/hooks/useProfitSummary';
 import { useUserRole } from '../../src/hooks/useUserRole';
 import { SyncBadge } from '../../src/components/SyncBadge';
 import { SparklineChart } from '../../src/components/SparklineChart';
 import { GananciaChart } from '../../src/components/GananciaChart';
-import { supabase, getLocalDateStr } from '../../src/lib/supabase';
+import { supabase, getLocalDateStr, getDateDaysAgo } from '../../src/lib/supabase';
 
 type Period = 'dia' | 'ayer' | 'semana' | 'mes';
 
@@ -58,9 +58,15 @@ export default function DashboardScreen() {
   const [userName,   setUserName]   = useState('');
   const [period,     setPeriod]     = useState<Period>('mes');
 
+  const todayStr     = useMemo(() => getLocalDateStr(), []);
+  const yesterdayStr = useMemo(() => getDateDaysAgo(1), []);
+
   const { data: summary,      isLoading: loadingSum     } = useProfitSummary();
   const { data: monthly = [], isLoading: loadingMonthly } = useProfitMonthly();
   const { data: daily7  = [], isLoading: loadingDaily7  } = useProfitDaily(7);
+  const { data: daily30 = [], isLoading: loadingDaily30 } = useProfitDaily(30);
+  const { data: hourlyHoy   = [], isLoading: loadingHourlyHoy   } = useProfitHourly(todayStr);
+  const { data: hourlyAyer  = [], isLoading: loadingHourlyAyer  } = useProfitHourly(yesterdayStr);
   const { data: userAuth, isLoading: loadingRole } = useUserRole();
   const role = userAuth?.role ?? 'empleado';
   const profile = userAuth?.profile;
@@ -122,11 +128,22 @@ export default function DashboardScreen() {
   }, [period, summary]);
 
   // ── Datos del sparkline por período ─────────────────────────────────────────
-  // Semana: agrupa los 7 días del daily en una sola serie
-  // Mes:    usa los datos mensuales (12 meses)
-  // Día:    usa los últimos 7 días como contexto visual
-  const chartData = period === 'mes' ? monthly : daily7;
-  const loadingChart = period === 'mes' ? loadingMonthly : loadingDaily7;
+  // Día/Ayer: usa la tendencia por hora del día específico
+  // Semana:   usa exactamente los últimos 7 días
+  // Mes:      usa los últimos 30 días
+  const chartData = useMemo(() => {
+    if (period === 'mes')    return daily30;
+    if (period === 'semana') return daily7;
+    if (period === 'ayer')   return hourlyAyer;
+    return hourlyHoy;
+  }, [period, daily7, daily30, hourlyHoy, hourlyAyer]);
+
+  const loadingChart = useMemo(() => {
+    if (period === 'mes')    return loadingDaily30;
+    if (period === 'semana') return loadingDaily7;
+    if (period === 'ayer')   return loadingHourlyAyer;
+    return loadingHourlyHoy;
+  }, [period, loadingDaily30, loadingDaily7, loadingHourlyAyer, loadingHourlyHoy]);
 
   // KPIs del grid según período
   const kpiVentas = stats.ventas;
@@ -234,7 +251,7 @@ export default function DashboardScreen() {
             )}
             {!loadingSum && (
               <Text style={[styles.bigSub, { color: colors.textDim }]}>
-                Ingreso {formatUSD(stats.ingreso)}
+                {isAdmin ? `Ingreso ${formatUSD(stats.ingreso)}` : `Ticket promedio: ${formatUSD(summary?.ticket_promedio ?? 0)}`}
                 {kpiVentas > 0 ? `  ·  ${kpiVentas} facturas` : ''}
               </Text>
             )}
@@ -265,11 +282,18 @@ export default function DashboardScreen() {
             label={`Unidades ${period === 'dia' ? 'hoy' : period === 'ayer' ? 'ayer' : period === 'semana' ? 'semana' : 'del mes'}`}
             loading={loadingSum}
           />
-          {isAdmin && (
+          {isAdmin ? (
             <KpiCard
               icon="trending-up"
               value={formatUSD(stats.ingreso)}
               label={`Ingreso ${period === 'dia' ? 'hoy' : period === 'ayer' ? 'ayer' : period === 'semana' ? 'semana' : 'mes'}`}
+              loading={loadingSum}
+            />
+          ) : (
+            <KpiCard
+              icon="layers"
+              value={stats.ventas > 0 ? (stats.items / stats.ventas).toFixed(1) : '0'}
+              label="Artículos / ticket"
               loading={loadingSum}
             />
           )}
@@ -291,7 +315,7 @@ export default function DashboardScreen() {
           <Text style={[styles.sectionLabel, { color: colors.textDim }]}>
             {isAdmin ? 'Resumen hoy' : 'Actividad Reciente'}
           </Text>
-          <TopToday />
+          <TopToday isAdmin={isAdmin} />
           
           {!isAdmin && (
             <Pressable
@@ -312,7 +336,7 @@ export default function DashboardScreen() {
 
 // ── Top today ─────────────────────────────────────────────────────────────────
 
-function TopToday() {
+function TopToday({ isAdmin }: { isAdmin: boolean }) {
   const { colors, formatUSD } = useTheme();
   const { data: daily = [] } = useProfitDaily(7);
 
@@ -330,10 +354,13 @@ function TopToday() {
           })}
         </Text>
         <Text style={[styles.topVal, { color: colors.primary }]}>
-          {formatUSD(today.ganancia)}
+          {isAdmin ? formatUSD(today.ganancia) : today.num_ventas}
         </Text>
         <Text style={[styles.topSub, { color: colors.textDim }]}>
-          {today.num_ventas} facturas · ingreso {formatUSD(today.ingreso_bruto)}
+          {isAdmin 
+            ? `${today.num_ventas} facturas · ingreso ${formatUSD(today.ingreso_bruto)}`
+            : `Ventas registradas · Ticket promedio: ${formatUSD(today.num_ventas > 0 ? today.ingreso_bruto / today.num_ventas : 0)}`
+          }
         </Text>
       </View>
       <View style={[styles.topBadge, { backgroundColor: colors.primaryFaded, borderColor: colors.primary + '40' }]}>
@@ -389,8 +416,8 @@ const styles = StyleSheet.create({
   },
   logoImg: { width: 72, height: 72 },
   logoWords:   { flex: 1 },
-  logoSub:     { fontSize: 11, fontWeight: '600', letterSpacing: 1.5, textTransform: 'uppercase' },
-  logoName:    { fontSize: 20, fontWeight: '900', letterSpacing: -0.5 },
+  logoSub:     { fontSize: 11, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.5, textTransform: 'uppercase' },
+  logoName:    { fontSize: 20, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -0.5 },
   iconBtn: {
     width: 38, height: 38, borderRadius: 13, borderWidth: 0.5,
     alignItems: 'center', justifyContent: 'center',
@@ -401,8 +428,8 @@ const styles = StyleSheet.create({
   },
 
   greeting: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10 },
-  greetSub:   { fontSize: 11, marginBottom: 2 },
-  greetTitle: { fontSize: 22, fontWeight: '700' },
+  greetSub:   { fontSize: 11, marginBottom: 2, fontFamily: 'JetBrainsMono_400Regular' },
+  greetTitle: { fontSize: 22, fontFamily: 'JetBrainsMono_700Bold' },
 
   periodRow: {
     flexDirection:     'row',
@@ -417,7 +444,7 @@ const styles = StyleSheet.create({
     borderRadius:      12,
     borderWidth:       0.5,
   },
-  periodText: { fontSize: 12, fontWeight: '600' },
+  periodText: { fontSize: 12, fontFamily: 'JetBrainsMono_500Medium' },
 
   bigCard: {
     marginHorizontal: 16,
@@ -427,9 +454,9 @@ const styles = StyleSheet.create({
     padding:          20,
     overflow:         'hidden',
   },
-  bigLabel:         { fontSize: 11, marginBottom: 4 },
-  bigValue:         { fontSize: 32, fontWeight: '800', lineHeight: 36, marginBottom: 2 },
-  bigSub:           { fontSize: 11 },
+  bigLabel:         { fontSize: 11, marginBottom: 4, fontFamily: 'JetBrainsMono_400Regular' },
+  bigValue:         { fontSize: 32, fontFamily: 'JetBrainsMono_700Bold', lineHeight: 36, marginBottom: 2 },
+  bigSub:           { fontSize: 11, fontFamily: 'JetBrainsMono_400Regular' },
   chartPlaceholder: { height: 68, marginTop: 14 },
 
   kpiGrid: {
@@ -445,11 +472,11 @@ const styles = StyleSheet.create({
     width: '47.5%', borderRadius: 16, borderWidth: 0.5, padding: 14,
   },
   kpiIcon:  { marginBottom: 8 },
-  kpiVal:   { fontSize: 17, fontWeight: '700', marginBottom: 2 },
-  kpiLabel: { fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.5 },
+  kpiVal:   { fontSize: 17, fontFamily: 'JetBrainsMono_700Bold', marginBottom: 2 },
+  kpiLabel: { fontSize: 9, fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.5 },
 
   sectionLabel: {
-    fontSize: 10, fontWeight: '600', textTransform: 'uppercase',
+    fontSize: 10, fontFamily: 'JetBrainsMono_700Bold', textTransform: 'uppercase',
     letterSpacing: 0.7, paddingHorizontal: 16, marginBottom: 8,
   },
 
@@ -459,14 +486,14 @@ const styles = StyleSheet.create({
     padding: 14, marginBottom: 8,
   },
   topLeft:      { gap: 2 },
-  topDate:      { fontSize: 10 },
-  topVal:       { fontSize: 20, fontWeight: '800' },
-  topSub:       { fontSize: 10 },
+  topDate:      { fontSize: 10, fontFamily: 'JetBrainsMono_400Regular' },
+  topVal:       { fontSize: 20, fontFamily: 'JetBrainsMono_700Bold' },
+  topSub:       { fontSize: 10, fontFamily: 'JetBrainsMono_400Regular' },
   topBadge: {
     borderRadius: 999, borderWidth: 0.5,
     paddingVertical: 4, paddingHorizontal: 12,
   },
-  topBadgeText: { fontSize: 11, fontWeight: '700' },
+  topBadgeText: { fontSize: 11, fontFamily: 'JetBrainsMono_700Bold' },
 
   bottomPad: { height: 110 },
   seeMoreBtn: {
@@ -482,6 +509,6 @@ const styles = StyleSheet.create({
   },
   seeMoreText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontFamily: 'JetBrainsMono_700Bold',
   },
 });

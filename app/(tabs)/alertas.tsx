@@ -1,22 +1,24 @@
-import { useState } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
   Pressable,
   ActivityIndicator,
   RefreshControl,
+  InteractionManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
+import { FlashList } from '@shopify/flash-list';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { useAlertas, resolverAnomalia } from '../../src/hooks/useAlertas';
 import { StockAlertCard, AnomaliaCard } from '../../src/components/AlertCard';
 import { supabase } from '../../src/lib/supabase';
-import type { AlertaStockRow } from '../../src/lib/supabase';
+import type { AlertaStockRow, Anomalia } from '../../src/lib/supabase';
 
 type StockFilter = 'todos' | 'sin_stock' | 'stock_negativo' | 'margen_negativo' | 'stock_muerto';
 
@@ -28,6 +30,15 @@ const STOCK_FILTERS: { key: StockFilter; label: string }[] = [
   { key: 'stock_muerto',    label: 'Muerto'     },
 ];
 
+type ListItem = 
+  | { type: 'header', title: string, count: number }
+  | { type: 'anomalia', data: Anomalia }
+  | { type: 'empty-anomalias' }
+  | { type: 'filters' }
+  | { type: 'stock-alert', data: AlertaStockRow }
+  | { type: 'empty-stock' }
+  | { type: 'spacer', height: number };
+
 export default function AlertasScreen() {
   const { colors } = useTheme();
   const queryClient = useQueryClient();
@@ -36,17 +47,60 @@ export default function AlertasScreen() {
   const [refreshing,    setRefreshing]    = useState(false);
   const [analyzing,     setAnalyzing]     = useState(false);
   const [analyzeResult, setAnalyzeResult] = useState<string | null>(null);
+  const [isReady,       setIsReady]       = useState(false);
+
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      setIsReady(true);
+    });
+    return () => task.cancel();
+  }, []);
 
   const { stockAlertas, anomalias, isLoading } = useAlertas();
 
-  const filteredStock: AlertaStockRow[] = stockFilter === 'todos'
-    ? stockAlertas
-    : stockAlertas.filter(a => a.tipo_alerta === stockFilter);
+  const listData = useMemo(() => {
+    if (!isReady) return [];
+
+    const items: ListItem[] = [];
+    
+    // ── AI Anomalies ──
+    items.push({ type: 'header', title: 'Anomalías IA', count: anomalias.length });
+    
+    if (isLoading) {
+      // Show loading placeholder if initial load
+    } else if (anomalias.length === 0) {
+      items.push({ type: 'empty-anomalias' });
+    } else {
+      anomalias.forEach(a => items.push({ type: 'anomalia', data: a }));
+    }
+
+    // ── Stock Alerts ──
+    items.push({ type: 'header', title: 'Alertas de stock', count: stockAlertas.length });
+    items.push({ type: 'filters' });
+
+    const filtered = stockFilter === 'todos'
+      ? stockAlertas
+      : stockAlertas.filter(a => a.tipo_alerta === stockFilter);
+
+    if (isLoading) {
+      // Spinner handled by FlashList footer or similar if needed, 
+      // but here we use the isLoading flag globally for simplicity
+    } else if (filtered.length === 0) {
+      items.push({ type: 'empty-stock' });
+    } else {
+      filtered.forEach(a => items.push({ type: 'stock-alert', data: a }));
+    }
+
+    items.push({ type: 'spacer', height: 110 });
+    return items;
+  }, [isReady, anomalias, stockAlertas, isLoading, stockFilter]);
 
   async function handleRefresh() {
     setRefreshing(true);
-    await queryClient.invalidateQueries({ queryKey: ['alertas-stock'] });
-    await queryClient.invalidateQueries({ queryKey: ['anomalias'] });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['alertas-stock'] }),
+      queryClient.invalidateQueries({ queryKey: ['anomalias'] }),
+    ]);
     setRefreshing(false);
   }
 
@@ -112,13 +166,83 @@ export default function AlertasScreen() {
         </View>
       )}
 
-      {isLoading ? (
-        <View style={styles.center}>
+      {isLoading && isReady && listData.length === 0 && (
+        <View style={styles.fullLoading}>
           <ActivityIndicator color={colors.primary} />
         </View>
+      )}
+
+      {!isReady ? (
+        <View style={styles.fullLoading}>
+          <ActivityIndicator color={colors.primary} size="large" />
+        </View>
       ) : (
-        <ScrollView
-          contentContainerStyle={styles.scroll}
+        <FlashList
+          data={listData}
+          keyExtractor={(item, index) => {
+             if (item.type === 'anomalia') return `anom-${item.data.id}`;
+             if (item.type === 'stock-alert') return `stock-${item.data.codigo_interno}`;
+             return `item-${item.type}-${index}`;
+          }}
+          estimatedItemSize={80}
+          renderItem={({ item }) => {
+            switch (item.type) {
+              case 'header':
+                return <SectionHeader title={item.title} count={item.count} />;
+              case 'anomalia':
+                return <AnomaliaCard anomalia={item.data} onResolve={handleResolve} />;
+              case 'empty-anomalias':
+                return (
+                  <View style={styles.emptyRow}>
+                    <Feather name="check-circle" size={16} color={colors.success} />
+                    <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+                      Sin anomalías activas
+                    </Text>
+                  </View>
+                );
+              case 'filters':
+                return (
+                  <View style={styles.chips}>
+                    {STOCK_FILTERS.map(f => {
+                      const active = stockFilter === f.key;
+                      return (
+                        <Pressable
+                          key={f.key}
+                          style={({ pressed }) => [
+                            styles.chip,
+                            {
+                              backgroundColor: active ? colors.primary : colors.surfaceAlt,
+                              borderColor:     active ? colors.primary : colors.border,
+                            },
+                            pressed && { opacity: 0.75 },
+                          ]}
+                          onPress={() => setStockFilter(f.key)}
+                        >
+                          <Text style={[styles.chipText, { color: active ? colors.onPrimary : colors.textMuted }]}>
+                            {f.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                );
+              case 'stock-alert':
+                return <StockAlertCard alerta={item.data} />;
+              case 'empty-stock':
+                return (
+                  <View style={styles.emptyRow}>
+                    <Feather name="check-circle" size={16} color={colors.success} />
+                    <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+                      Sin alertas de stock
+                    </Text>
+                  </View>
+                );
+              case 'spacer':
+                return <View style={{ height: item.height }} />;
+              default:
+                return null;
+            }
+          }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -126,67 +250,7 @@ export default function AlertasScreen() {
               tintColor={colors.primary}
             />
           }
-          showsVerticalScrollIndicator={false}
-        >
-          {/* ── AI Anomalies ── */}
-          <SectionHeader title="Anomalías IA" count={anomalias.length} />
-
-          {anomalias.length === 0 ? (
-            <View style={styles.emptyRow}>
-              <Feather name="check-circle" size={16} color={colors.success} />
-              <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-                Sin anomalías activas · Gemini no detectó nada sospechoso
-              </Text>
-            </View>
-          ) : (
-            anomalias.map(a => (
-              <AnomaliaCard key={a.id} anomalia={a} onResolve={handleResolve} />
-            ))
-          )}
-
-          {/* ── Stock Alerts ── */}
-          <SectionHeader title="Alertas de stock" count={stockAlertas.length} />
-
-          {/* Filter chips */}
-          <View style={styles.chips}>
-            {STOCK_FILTERS.map(f => {
-              const active = stockFilter === f.key;
-              return (
-                <Pressable
-                  key={f.key}
-                  style={({ pressed }) => [
-                    styles.chip,
-                    {
-                      backgroundColor: active ? colors.primary : colors.surfaceAlt,
-                      borderColor:     active ? colors.primary : colors.border,
-                    },
-                    pressed && { opacity: 0.75 },
-                  ]}
-                  onPress={() => setStockFilter(f.key)}
-                >
-                  <Text style={[styles.chipText, { color: active ? colors.onPrimary : colors.textMuted }]}>
-                    {f.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          {filteredStock.length === 0 ? (
-            <View style={styles.emptyRow}>
-              <Feather name="check-circle" size={16} color={colors.success} />
-              <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-                Sin alertas para este filtro
-              </Text>
-            </View>
-          ) : (
-            filteredStock.map(a => (
-              <StockAlertCard key={a.codigo_interno} alerta={a} />
-            ))
-          )}
-
-          <View style={styles.bottomPad} />
-        </ScrollView>
+        />
       )}
     </SafeAreaView>
   );
@@ -207,6 +271,8 @@ function SectionHeader({ title, count }: { title: string; count: number }) {
 const styles = StyleSheet.create({
   root:  { flex: 1 },
 
+  fullLoading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
   header: {
     flexDirection:  'row',
     alignItems:     'center',
@@ -215,9 +281,9 @@ const styles = StyleSheet.create({
     paddingTop:     12,
     paddingBottom:  10,
   },
-  title:    { fontSize: 26, fontWeight: '700' },
+  title:    { fontSize: 26, fontFamily: 'JetBrainsMono_700Bold' },
   badge:    { borderRadius: 999, borderWidth: 0.5, paddingVertical: 3, paddingHorizontal: 9 },
-  badgeText:{ fontSize: 13, fontWeight: '700' },
+  badgeText:{ fontSize: 13, fontFamily: 'JetBrainsMono_700Bold' },
 
   analyzeBtn: {
     flexDirection:    'row',
@@ -228,7 +294,7 @@ const styles = StyleSheet.create({
     paddingVertical:  6,
     paddingHorizontal: 12,
   },
-  analyzeBtnText: { fontSize: 11, fontWeight: '600' },
+  analyzeBtnText: { fontSize: 11, fontFamily: 'JetBrainsMono_500Medium' },
 
   resultBanner: {
     flexDirection:     'row',
@@ -241,11 +307,7 @@ const styles = StyleSheet.create({
     paddingVertical:   8,
     paddingHorizontal: 12,
   },
-  resultText: { fontSize: 11, flex: 1 },
-
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-
-  scroll: { paddingBottom: 0 },
+  resultText: { fontSize: 11, fontFamily: 'JetBrainsMono_400Regular', flex: 1 },
 
   sectionHeader: {
     flexDirection:     'row',
@@ -256,8 +318,7 @@ const styles = StyleSheet.create({
     marginTop:         8,
   },
   sectionTitle: {
-    fontSize:      11,
-    fontWeight:    '600',
+    fontFamily:    'JetBrainsMono_500Medium',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -267,7 +328,7 @@ const styles = StyleSheet.create({
     paddingVertical:  2,
     paddingHorizontal: 8,
   },
-  countText: { fontSize: 11, fontWeight: '600' },
+  countText: { fontSize: 11, fontFamily: 'JetBrainsMono_500Medium' },
 
   chips: {
     flexDirection:     'row',
@@ -277,7 +338,7 @@ const styles = StyleSheet.create({
     flexWrap:          'wrap',
   },
   chip:     { borderRadius: 999, borderWidth: 0.5, paddingVertical: 5, paddingHorizontal: 12 },
-  chipText: { fontSize: 11, fontWeight: '500' },
+  chipText: { fontSize: 11, fontFamily: 'JetBrainsMono_500Medium' },
 
   emptyRow: {
     flexDirection:     'row',
@@ -287,7 +348,5 @@ const styles = StyleSheet.create({
     marginBottom:      8,
     padding:           14,
   },
-  emptyText: { fontSize: 13, flex: 1 },
-
-  bottomPad: { height: 110 },
+  emptyText: { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular', flex: 1 },
 });

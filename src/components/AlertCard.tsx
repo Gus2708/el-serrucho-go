@@ -1,4 +1,4 @@
-import React from 'react';
+import * as React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
@@ -179,14 +179,16 @@ const styles = StyleSheet.create({
   },
   titulo: {
     fontSize:   13,
-    fontWeight: '600',
+    fontFamily: 'JetBrainsMono_700Bold',
     lineHeight: 17,
   },
   codigo: {
     fontSize: 11,
+    fontFamily: 'JetBrainsMono_400Regular',
   },
   explicacion: {
     fontSize:   12,
+    fontFamily: 'JetBrainsMono_400Regular',
     lineHeight: 16,
   },
   metaRow: {
@@ -203,10 +205,11 @@ const styles = StyleSheet.create({
   },
   chipText: {
     fontSize:   10,
-    fontWeight: '600',
+    fontFamily: 'JetBrainsMono_700Bold',
   },
   detalle: {
     fontSize: 11,
+    fontFamily: 'JetBrainsMono_400Regular',
   },
   prices: {
     alignItems:  'flex-end',
@@ -215,10 +218,11 @@ const styles = StyleSheet.create({
   },
   price: {
     fontSize:   13,
-    fontWeight: '600',
+    fontFamily: 'JetBrainsMono_700Bold',
   },
   stock: {
     fontSize: 11,
+    fontFamily: 'JetBrainsMono_400Regular',
   },
   resolveBtn: {
     width:        32,

@@ -1,4 +1,4 @@
-import React from 'react';
+import * as React from 'react';
 import { View, Pressable, StyleSheet, Platform } from 'react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Feather } from '@expo/vector-icons';
