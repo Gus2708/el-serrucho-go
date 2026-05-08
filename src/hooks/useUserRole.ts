@@ -1,0 +1,39 @@
+import { useQuery } from '@tanstack/react-query';
+import { supabase, Profile } from '../lib/supabase';
+
+export function useUserRole() {
+  // First, get the current user session
+  const { data: user } = useQuery({
+    queryKey: ['auth-session'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      return user;
+    },
+    staleTime: 1000 * 60 * 60, // Session is stable
+  });
+
+  return useQuery({
+    queryKey: ['user-role', user?.id],
+    queryFn: async () => {
+      if (!user) return { role: 'empleado', profile: null };
+      
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (error || !data) {
+        return { role: 'empleado', profile: null };
+      }
+
+      return { 
+        role: data.role as 'admin' | 'empleado', 
+        profile: data as Profile 
+      };
+    },
+    enabled: !!user,
+    staleTime: 5 * 60_000,
+    gcTime: 0,
+  });
+}

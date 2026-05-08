@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "El Serrucho GO",
+    "slug": "el-serrucho-go",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "el-serrucho-go",
+    "backgroundColor": "#0C0C0C",
+    "splash": {
+      "backgroundColor": "#0C0C0C"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.ferreteria.elserrucho.go"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0C0C0C"
+      },
+      "package": "com.ferreteria.elserrucho.go"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "ndkVersion": "27.1.12297006",
+            "packagingOptions": {
+              "jniLibs": {
+                "useLegacyPackaging": false
+              }
+            }
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
