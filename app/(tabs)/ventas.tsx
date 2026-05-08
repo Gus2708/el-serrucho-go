@@ -277,6 +277,8 @@ function VentaCard({ venta, onPress }: { venta: VentaHoy; onPress: () => void })
     hour12: true,
   });
 
+  const pago = getPagoMeta(venta.metodo_pago, colors);
+
   return (
     <Pressable
       onPress={onPress}
@@ -296,7 +298,7 @@ function VentaCard({ venta, onPress }: { venta: VentaHoy; onPress: () => void })
           {formatUSD(Number(venta.total_usd) ?? 0)}
         </Text>
       </View>
-      
+
       <View style={[styles.cardBottom, { borderTopColor: colors.border + '40' }]}>
         <View style={styles.clientRow}>
           <Feather name="user" size={11} color={colors.primary} />
@@ -304,10 +306,49 @@ function VentaCard({ venta, onPress }: { venta: VentaHoy; onPress: () => void })
             {venta.nombre_cliente}
           </Text>
         </View>
+        {pago && (
+          <View style={[styles.pagoChip, { backgroundColor: pago.color + '18', borderColor: pago.color + '40' }]}>
+            <Feather name={pago.icon} size={10} color={pago.color} />
+            <Text style={[styles.pagoChipText, { color: pago.color }]} numberOfLines={1}>
+              {pago.label}
+            </Text>
+          </View>
+        )}
         <Feather name="chevron-right" size={14} color={colors.textDim} />
       </View>
     </Pressable>
   );
+}
+
+// ── Payment method helper ─────────────────────────────────────────────────────
+// Variantes reales del POS: "EFECTIVO USD", "EFECTIVO", "T. DEBITO", "ZELLE USD",
+// "TRANSFERENCIA Y/O PAGO MOVIL", "CESTA TICKET".
+function getPagoMeta(
+  metodo: string | null,
+  colors: { success: string; primary: string; warning: string; textMuted: string; textDim: string }
+): { icon: keyof typeof Feather.glyphMap; color: string; label: string } | null {
+  if (!metodo) return null;
+  const m = metodo.trim().toUpperCase();
+  if (m.includes('EFECTIVO') || m.includes('CASH')) {
+    return {
+      icon:  'dollar-sign',
+      color: colors.success,
+      label: m.includes('USD') ? 'EFECTIVO $' : 'EFECTIVO',
+    };
+  }
+  if (m.includes('ZELLE')) {
+    return { icon: 'send', color: colors.primary, label: 'ZELLE' };
+  }
+  if (m.includes('DEBITO') || m.includes('DÉBITO') || m.includes('TARJETA') || m.includes('PUNTO')) {
+    return { icon: 'credit-card', color: colors.warning, label: 'DÉBITO' };
+  }
+  if (m.includes('TRANSFER') || m.includes('PAGO MOVIL') || m.includes('PAGO MÓVIL')) {
+    return { icon: 'smartphone', color: colors.textMuted, label: 'TRANSF/PM' };
+  }
+  if (m.includes('CESTA') || m.includes('TICKET')) {
+    return { icon: 'gift', color: colors.textMuted, label: 'CESTA TICKET' };
+  }
+  return { icon: 'tag', color: colors.textMuted, label: m };
 }
 
 function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose: () => void }) {
@@ -451,8 +492,24 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
                   </View>
                 </View>
               )}
-              ListFooterComponent={() => (
+              ListFooterComponent={() => {
+                const pagoModal = getPagoMeta(venta.metodo_pago, colors);
+                return (
                 <View style={[styles.modalFooter, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+                  {pagoModal && (
+                    <>
+                      <View style={styles.footerRow}>
+                        <Text style={[styles.footerLabel, { color: colors.textMuted }]}>Método de pago</Text>
+                        <View style={[styles.pagoChip, { backgroundColor: pagoModal.color + '18', borderColor: pagoModal.color + '40' }]}>
+                          <Feather name={pagoModal.icon} size={11} color={pagoModal.color} />
+                          <Text style={[styles.pagoChipText, { color: pagoModal.color, fontSize: 11 }]}>
+                            {pagoModal.label}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                    </>
+                  )}
                   <View style={styles.footerRow}>
                     <Text style={[styles.footerLabel, { color: colors.textMuted }]}>Subtotal Base</Text>
                     <Text style={[styles.footerValue, { color: colors.text }]}>{formatUSD(baseUSD)}</Text>
@@ -470,7 +527,8 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
                     </View>
                   </View>
                 </View>
-              )}
+                );
+              }}
             />
           )}
         </Animated.View>
@@ -546,6 +604,23 @@ const styles = StyleSheet.create({
   },
   clientRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
   clientName: { fontSize: 12, fontFamily: 'JetBrainsMono_500Medium' },
+
+  pagoChip: {
+    flexDirection:    'row',
+    alignItems:       'center',
+    gap:              4,
+    borderRadius:     999,
+    borderWidth:      0.5,
+    paddingVertical:  3,
+    paddingHorizontal: 8,
+    marginRight:      6,
+    maxWidth:         120,
+  },
+  pagoChipText: {
+    fontSize:      10,
+    fontWeight:    '700',
+    letterSpacing: 0.2,
+  },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 80, gap: 16 },
   emptyIcon: {

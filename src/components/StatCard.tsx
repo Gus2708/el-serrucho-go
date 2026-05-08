@@ -12,7 +12,7 @@ interface Props {
 }
 
 export function StatCard({ label, value, sub, accent, danger, halfWidth }: Props) {
-  const { colors, tokens } = useTheme();
+  const { colors } = useTheme();
 
   const borderColor = accent
     ? colors.primary

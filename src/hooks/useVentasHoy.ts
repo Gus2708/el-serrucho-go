@@ -6,12 +6,14 @@ export type VentasPeriod = 'hoy' | 'ayer' | 'semana' | 'mes';
 export interface VentaHoy {
   venta_id:                    number;
   id:                          number;
+  id_unico:                    number | null;   // V2
   documento:                   string | null;
-  created_at:                  string;
+  created_at:                  string;           // V2: hora REAL de la transacción
   fecha_emision:               string;
   status:                      number;
   rif_cliente:                 string | null;
   nombre_cliente:              string;
+  metodo_pago:                 string | null;   // V2: "EFECTIVO USD", "ZELLE", "T. DEBITO"…
   total_usd:                   number;
   ganancia_total_usd:          number;
   items_count:                 number;
@@ -91,6 +93,8 @@ function parseRows(rows: any[]): VentaHoy[] {
     original_total_neto_ves:     Number(v.original_total_neto_ves     ?? 0),
     original_total_impuesto_ves: Number(v.original_total_impuesto_ves ?? 0),
     nombre_cliente:              v.nombre_cliente ?? 'Cliente Genérico',
+    metodo_pago:                 v.metodo_pago ?? null,
+    id_unico:                    v.id_unico ?? null,
   }));
 }
 

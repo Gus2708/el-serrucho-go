@@ -19,7 +19,7 @@ import { supabase } from '../../src/lib/supabase';
 import { useTheme } from '../../src/theme/ThemeContext';
 
 export default function LoginScreen() {
-  const { colors, tokens } = useTheme();
+  const { colors } = useTheme();
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [loading,  setLoading]  = useState(false);
