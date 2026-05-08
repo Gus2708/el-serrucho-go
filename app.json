@@ -9,11 +9,6 @@
     "newArchEnabled": true,
     "scheme": "el-serrucho-go",
     "backgroundColor": "#010100",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#010100"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.ferreteria.elserrucho.go",
@@ -34,6 +29,15 @@
     "plugins": [
       "expo-router",
       [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 240,
+          "resizeMode": "contain",
+          "backgroundColor": "#010100"
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {
@@ -46,7 +50,16 @@
           }
         }
       ],
-      "expo-font"
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./node_modules/@expo-google-fonts/jetbrains-mono/400Regular/JetBrainsMono_400Regular.ttf",
+            "./node_modules/@expo-google-fonts/jetbrains-mono/500Medium/JetBrainsMono_500Medium.ttf",
+            "./node_modules/@expo-google-fonts/jetbrains-mono/700Bold/JetBrainsMono_700Bold.ttf"
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

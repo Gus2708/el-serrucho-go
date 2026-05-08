@@ -7,12 +7,9 @@ import { supabase } from '../src/lib/supabase';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
 import * as SplashScreen from 'expo-splash-screen';
 import { ActivityIndicator, View } from 'react-native';
-import { 
-  useFonts,
-  JetBrainsMono_400Regular,
-  JetBrainsMono_500Medium,
-  JetBrainsMono_700Bold 
-} from '@expo-google-fonts/jetbrains-mono';
+// Las fuentes JetBrainsMono se bundlean como recurso nativo via el plugin
+// `expo-font` en app.json — el sistema operativo las tiene listas antes de
+// que JS arranque, así que NO necesitamos useFonts() ni esperar nada async.
 
 // Mantener el splash screen visible hasta que la app esté lista
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -62,13 +59,12 @@ export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
 
-  const [fontsLoaded] = useFonts({
-    JetBrainsMono_400Regular,
-    JetBrainsMono_500Medium,
-    JetBrainsMono_700Bold,
-  });
-
   useEffect(() => {
+    // Failsafe: si Supabase tarda demasiado en responder a getSession()
+    // (red lenta, DNS, etc.) abrir igual a los 5 s y dejar que la app
+    // muestre el login. Sin esto el splash quedaba colgado indefinidamente.
+    const failsafe = setTimeout(() => setAuthReady(true), 5000);
+
     supabase.auth.getSession()
       .then(({ data }) => {
         setSession(data.session);
@@ -77,6 +73,7 @@ export default function RootLayout() {
         console.error('Supabase initialization error:', err);
       })
       .finally(() => {
+        clearTimeout(failsafe);
         setAuthReady(true);
       });
 
@@ -87,10 +84,13 @@ export default function RootLayout() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(failsafe);
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const isAppReady = authReady && fontsLoaded;
+  const isAppReady = authReady;
 
   useEffect(() => {
     if (isAppReady) {
