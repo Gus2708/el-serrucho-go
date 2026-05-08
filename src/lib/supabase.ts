@@ -30,15 +30,17 @@ export type Producto = {
 
 export type Venta = {
   id:             number;
+  id_unico:       number | null;   // V2: identificador único de HybridLite (upsert key)
   documento:      string;
   fecha_emision:  string;
   rif_cliente:    string | null;
   total_neto:     number | null;   // total CON IVA en USD (post-fix backend)
-  total_bruto:    number | null;   // subtotal SIN IVA en USD (nuevo)
+  total_bruto:    number | null;   // subtotal SIN IVA en USD
   total_impuesto: number | null;   // IVA en USD
+  metodo_pago:    string | null;   // V2: "EFECTIVO USD", "ZELLE", "T. DEBITO", etc.
   status:         number;
   numero_control: string | null;
-  created_at:     string;
+  created_at:     string;          // V2: hora REAL de la transacción (no de inserción en nube)
   total_usd?:     number | string;
   total_items?:   number | string;
   original_total_neto_ves?:     number | string;

@@ -26,7 +26,7 @@ const FILTERS: { key: StockFilter; label: string }[] = [
 ];
 
 export default function InventarioScreen() {
-  const { colors, tokens } = useTheme();
+  const { colors } = useTheme();
   const router = useRouter();
 
   const [search, setSearch]   = useState('');

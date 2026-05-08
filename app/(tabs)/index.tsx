@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   View,
   Text,
@@ -10,20 +10,19 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';
-
-const logo = require('../../src/assets/img/EL SERRUCHO go.png');
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../../src/theme/ThemeContext';
-import { useProfitSummary, useProfitMonthly, useProfitDaily, useProfitHourly } from '../../src/hooks/useProfitSummary';
+import { useProfitSummary, useProfitDaily, useProfitHourly } from '../../src/hooks/useProfitSummary';
 import { useUserRole } from '../../src/hooks/useUserRole';
 import { SyncBadge } from '../../src/components/SyncBadge';
 import { SparklineChart } from '../../src/components/SparklineChart';
 import { GananciaChart } from '../../src/components/GananciaChart';
-import { supabase, getLocalDateStr, getDateDaysAgo } from '../../src/lib/supabase';
+import { getLocalDateStr, getDateDaysAgo } from '../../src/lib/supabase';
+
+const logo = require('../../src/assets/img/EL SERRUCHO go.png');
 
 type Period = 'dia' | 'ayer' | 'semana' | 'mes';
 
@@ -61,12 +60,13 @@ export default function DashboardScreen() {
   const todayStr     = useMemo(() => getLocalDateStr(), []);
   const yesterdayStr = useMemo(() => getDateDaysAgo(1), []);
 
-  const { data: summary,      isLoading: loadingSum     } = useProfitSummary();
-  const { data: monthly = [], isLoading: loadingMonthly } = useProfitMonthly();
-  const { data: daily7  = [], isLoading: loadingDaily7  } = useProfitDaily(7);
-  const { data: daily30 = [], isLoading: loadingDaily30 } = useProfitDaily(30);
-  const { data: hourlyHoy   = [], isLoading: loadingHourlyHoy   } = useProfitHourly(todayStr);
-  const { data: hourlyAyer  = [], isLoading: loadingHourlyAyer  } = useProfitHourly(yesterdayStr);
+  const { data: summary,      isLoading: loadingSum    } = useProfitSummary();
+  const { data: daily7  = [], isLoading: loadingDaily7 } = useProfitDaily(7);
+  // daily30 only needed when period === 'mes'; gate it.
+  const { data: daily30 = [], isLoading: loadingDaily30 } = useProfitDaily(30, period === 'mes');
+  // Hourly queries are expensive (24-bucket fill) — only run them when actually displayed.
+  const { data: hourlyHoy   = [], isLoading: loadingHourlyHoy  } = useProfitHourly(todayStr,    period === 'dia');
+  const { data: hourlyAyer  = [], isLoading: loadingHourlyAyer } = useProfitHourly(yesterdayStr, period === 'ayer');
   const { data: userAuth, isLoading: loadingRole } = useUserRole();
   const role = userAuth?.role ?? 'empleado';
   const profile = userAuth?.profile;

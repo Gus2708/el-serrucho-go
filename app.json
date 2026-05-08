@@ -26,8 +26,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#010100"
       },
-      "package": "com.ferreteria.elserrucho.go",
-      "edgeToEdgeEnabled": true
+      "package": "com.ferreteria.elserrucho.go"
     },
     "web": {
       "favicon": "./assets/favicon.png"

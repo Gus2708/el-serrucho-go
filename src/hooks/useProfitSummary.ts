@@ -52,11 +52,12 @@ async function fetchProfitSummary(): Promise<ProfitSummaryRow> {
 }
 
 // ── Reportes bar chart ────────────────────────────────────────────────────────
-export function useProfitDaily(days: 7 | 30 | 90 = 30) {
+export function useProfitDaily(days: 7 | 30 | 90 = 30, enabled: boolean = true) {
   return useQuery({
     queryKey: ['profit-daily', days],
     queryFn:  () => fetchProfitDaily(days),
     staleTime: 5 * 60_000,
+    enabled,
   });
 }
 
@@ -103,11 +104,12 @@ async function fetchProfitMonthly(): Promise<ProfitMonthlyRow[]> {
 }
 
 // ── Hourly trend for Sparkline (Hoy / Ayer) ───────────────────────────────────
-export function useProfitHourly(dateStr: string) {
+export function useProfitHourly(dateStr: string, enabled: boolean = true) {
   return useQuery({
     queryKey: ['profit-hourly', dateStr],
     queryFn:  () => fetchProfitHourly(dateStr),
     staleTime: 5 * 60_000,
+    enabled,
   });
 }
 

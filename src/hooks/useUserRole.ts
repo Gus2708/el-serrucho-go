@@ -34,6 +34,6 @@ export function useUserRole() {
     },
     enabled: !!user,
     staleTime: 5 * 60_000,
-    gcTime: 0,
+    gcTime:    30 * 60_000,   // keep in cache 30 min so navigation doesn't re-trigger fetch
   });
 }

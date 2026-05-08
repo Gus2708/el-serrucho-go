@@ -12,7 +12,7 @@ interface StockAlertProps {
 }
 
 export function StockAlertCard({ alerta }: StockAlertProps) {
-  const { colors, tokens } = useTheme();
+  const { colors } = useTheme();
 
   const { icon, accentColor, titulo, detalle } = getStockAlertMeta(alerta, colors);
 

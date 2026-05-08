@@ -40,10 +40,13 @@ export function useSyncStatus() {
         }
         throw new Error(`Local API error: ${response.status}`);
       } catch (localErr) {
-        // Path 2: Cloud (comandos_remotos) — funciona desde cualquier red
+        // Path 2: Cloud (comandos_remotos) — funciona desde cualquier red.
+        // El listener remoto (remote_listener.py) hace polling cada 10s y procesa
+        // los registros con status='pendiente'. Insert restringido a usuarios
+        // autenticados via RLS.
         const { error } = await supabase
           .from('comandos_remotos')
-          .insert({ comando: mode });
+          .insert({ comando: mode, status: 'pendiente' });
 
         if (error) throw new Error('No se pudo encolar el comando remoto: ' + error.message);
         return { via: 'cloud' as const, body: { queued: true, mode } };
