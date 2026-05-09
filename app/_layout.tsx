@@ -7,11 +7,11 @@ import { supabase } from '../src/lib/supabase';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
 import * as Font from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import { ActivityIndicator, View } from 'react-native';
-// Mantener el splash screen visible hasta que la app esté lista
-SplashScreen.preventAutoHideAsync().catch(() => {
-  /* ignorar errores de re-prevent */
-});
+import { ActivityIndicator, Platform, View } from 'react-native';
+// SplashScreen is a no-op on web
+if (Platform.OS !== 'web') {
+  SplashScreen.preventAutoHideAsync().catch(() => {});
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -172,15 +172,15 @@ export default function RootLayout() {
     if (isAppReady) {
       // Pequeño delay para asegurar que el frame se renderice antes de ocultar
       const h = setTimeout(() => {
-        SplashScreen.hideAsync().catch(() => {
-          /* ignorar errores */
-        });
+        if (Platform.OS !== 'web') {
+          SplashScreen.hideAsync().catch(() => {});
+        }
       }, 50);
       return () => clearTimeout(h);
     }
   }, [isAppReady]);
 
-  return (
+  const inner = (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>
         <RealtimeInitializer>
@@ -191,5 +191,17 @@ export default function RootLayout() {
       </QueryClientProvider>
     </GestureHandlerRootView>
   );
+
+  if (Platform.OS === 'web') {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#0C0C0C', alignItems: 'center' }}>
+        <View style={{ flex: 1, width: '100%', maxWidth: 480 }}>
+          {inner}
+        </View>
+      </View>
+    );
+  }
+
+  return inner;
 }
 

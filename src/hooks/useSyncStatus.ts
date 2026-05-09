@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { Platform } from 'react-native';
 
 const WIDGET_URL = process.env.EXPO_PUBLIC_WIDGET_API_URL || 'http://192.168.1.143:5000';
 
@@ -22,28 +23,31 @@ export function useSyncStatus() {
 
   const { mutate: triggerSync, isPending: isMutationPending } = useMutation({
     mutationFn: async (mode: SyncMode = 'sync_all') => {
-      // Intentar primero Opción B (Local) por rapidez
-      try {
-        const endpoint = mode === 'sync_all'
-          ? '/api/v1/sync/run'
-          : mode === 'sync_sales'
-            ? '/api/v1/sync/sales'
-            : '/api/v1/sync/inventory';
+      // On web, skip the local widget (mixed-content blocked over HTTPS)
+      // and go straight to the cloud queue
+      if (Platform.OS !== 'web') {
+        try {
+          const endpoint = mode === 'sync_all'
+            ? '/api/v1/sync/run'
+            : mode === 'sync_sales'
+              ? '/api/v1/sync/sales'
+              : '/api/v1/sync/inventory';
 
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 2000);
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 2000);
 
-        const response = await fetch(`${WIDGET_URL}${endpoint}`, {
-          method: 'POST',
-          signal: controller.signal,
-        });
-        clearTimeout(timer);
+          const response = await fetch(`${WIDGET_URL}${endpoint}`, {
+            method: 'POST',
+            signal: controller.signal,
+          });
+          clearTimeout(timer);
 
-        if (response.ok) {
-          return { via: 'local' as const, body: await response.json() };
+          if (response.ok) {
+            return { via: 'local' as const, body: await response.json() };
+          }
+        } catch (e) {
+          // Ignorar error local y pasar a Opción A
         }
-      } catch (e) {
-        // Ignorar error local y pasar a Opción A
       }
 
       // Opción A: Sincronización Remota (Estándar V2.1)

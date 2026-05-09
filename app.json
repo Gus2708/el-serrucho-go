@@ -24,6 +24,8 @@
       "package": "com.ferreteria.elserrucho.go"
     },
     "web": {
+      "bundler": "metro",
+      "output": "single",
       "favicon": "./assets/favicon.png"
     },
     "plugins": [

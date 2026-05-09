@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { Platform } from 'react-native';
 import { SERRUCHO_LOGO } from '../constants/pdfAssets';
 
 export interface DraftItem {
@@ -81,31 +82,40 @@ export const useOrdenCambio = create<OrdenStore>((set, get) => ({
       if (itemsError) throw itemsError;
 
       // 3. Generate and share PDF
-      const html     = buildPdfHtml(items, nota, orden.id);
-      const { uri }  = await Print.printToFileAsync({ html });
+      const html = buildPdfHtml(items, nota, orden.id);
 
-      // 4. Upload to Supabase Storage
-      const fileName = `orden-${orden.id}-${Date.now()}.pdf`;
-      const fileData = await fetch(uri).then(r => r.blob());
-      const { error: uploadError } = await supabase.storage
-        .from('change-orders')
-        .upload(fileName, fileData, { contentType: 'application/pdf' });
+      if (Platform.OS === 'web') {
+        // Web: open the HTML in a new tab so the user can print/save as PDF
+        const blob = new Blob([html], { type: 'text/html' });
+        const url  = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        // Revoke after a short delay to allow the tab to load
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      } else {
+        // Native: generate a real PDF file and share it
+        const { uri } = await Print.printToFileAsync({ html });
 
-      if (!uploadError) {
-        // Private bucket → create a long-lived signed URL (1 year)
-        const { data: signedData } = await supabase.storage
+        // 4. Upload to Supabase Storage
+        const fileName = `orden-${orden.id}-${Date.now()}.pdf`;
+        const fileData = await fetch(uri).then(r => r.blob());
+        const { error: uploadError } = await supabase.storage
           .from('change-orders')
-          .createSignedUrl(fileName, 60 * 60 * 24 * 365);
+          .upload(fileName, fileData, { contentType: 'application/pdf' });
 
-        await supabase
-          .from('ordenes_cambio')
-          .update({ status: 'emitido', pdf_url: signedData?.signedUrl ?? null })
-          .eq('id', orden.id);
+        if (!uploadError) {
+          const { data: signedData } = await supabase.storage
+            .from('change-orders')
+            .createSignedUrl(fileName, 60 * 60 * 24 * 365);
+
+          await supabase
+            .from('ordenes_cambio')
+            .update({ status: 'emitido', pdf_url: signedData?.signedUrl ?? null })
+            .eq('id', orden.id);
+        }
+
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) await Sharing.shareAsync(uri, { mimeType: 'application/pdf' });
       }
-
-      // 5. Share via system sheet
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) await Sharing.shareAsync(uri, { mimeType: 'application/pdf' });
 
       set({ isLoading: false });
       return { orderId: orden.id };

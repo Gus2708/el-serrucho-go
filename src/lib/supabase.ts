@@ -1,16 +1,19 @@
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
 
 const supabaseUrl  = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const supabaseAnon = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
 export const supabase = createClient(supabaseUrl, supabaseAnon, {
   auth: {
-    storage:          AsyncStorage,
-    autoRefreshToken: true,
-    persistSession:   true,
-    detectSessionInUrl: false,
+    // Web uses localStorage by default; native needs AsyncStorage
+    storage:            Platform.OS === 'web' ? undefined : AsyncStorage,
+    autoRefreshToken:   true,
+    persistSession:     true,
+    // Enable URL session detection on web for magic link / OAuth callbacks
+    detectSessionInUrl: Platform.OS === 'web',
   },
 });
 

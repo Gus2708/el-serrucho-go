@@ -82,7 +82,6 @@ const styles = StyleSheet.create({
     alignItems:     'center',
     justifyContent: 'space-around',
     paddingHorizontal: 8,
-    // Shadow for depth on iOS
     ...Platform.select({
       ios: {
         shadowColor:   '#000',
@@ -90,9 +89,8 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.3,
         shadowRadius:  8,
       },
-      android: {
-        elevation: 8,
-      },
+      android: { elevation: 8 },
+      web:     { boxShadow: '0 4px 20px rgba(0,0,0,0.5)' } as object,
     }),
   },
   btn: {
