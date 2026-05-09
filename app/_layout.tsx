@@ -59,6 +59,13 @@ function AuthGuard({ session, ready }: { session: Session | null; ready: boolean
   return <Slot />;
 }
 
+import { useRealtimeSync } from '../src/hooks/useRealtimeSync';
+
+function RealtimeInitializer({ children }: { children: React.ReactNode }) {
+  useRealtimeSync();
+  return <>{children}</>;
+}
+
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -134,10 +141,13 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-          <AuthGuard session={session} ready={isAppReady} />
-        </ThemeProvider>
+        <RealtimeInitializer>
+          <ThemeProvider>
+            <AuthGuard session={session} ready={isAppReady} />
+          </ThemeProvider>
+        </RealtimeInitializer>
       </QueryClientProvider>
     </GestureHandlerRootView>
   );
 }
+

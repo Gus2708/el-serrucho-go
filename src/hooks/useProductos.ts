@@ -15,24 +15,8 @@ export function useProductos(search: string = '', filter: StockFilter = 'todos')
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) =>
       lastPage.length === PAGE_SIZE ? allPages.length * PAGE_SIZE : undefined,
-    staleTime: 30_000,
+    staleTime: 60_000,
   });
-
-  useEffect(() => {
-    const channel = supabase
-      .channel('productos-changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'productos' },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ['productos'] });
-          queryClient.invalidateQueries({ queryKey: ['sync-status'] });
-        }
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [queryClient]);
 
   // Productos ordenados, con placeholders al final.
   // Memo: solo recalcula cuando query.data cambia, no en cada render del padre.

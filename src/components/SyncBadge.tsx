@@ -6,7 +6,7 @@ import { Feather } from '@expo/vector-icons';
 
 export function SyncBadge() {
   const { colors } = useTheme();
-  const { minutesAgo, isLoading, triggerSync, isSyncing } = useSyncStatus();
+  const { minutesAgo, isLoading, triggerSync, isSyncing, activeCommand } = useSyncStatus();
   const pulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -18,10 +18,14 @@ export function SyncBadge() {
     ).start();
   }, []);
 
-  const { dotColor, line1, line2, tag, tagColor } = getState(minutesAgo, isLoading, colors);
+  const { dotColor, line1, line2, tag, tagColor, isClosed } = getState(minutesAgo, isLoading, colors, activeCommand);
 
   const handleSync = () => {
-    triggerSync('sync_inventory', {
+    if (isClosed) {
+      Alert.alert('Tienda Cerrada', 'El Serrucho está fuera de su horario laboral (8am - 6pm). Los datos se actualizarán automáticamente al abrir.');
+      return;
+    }
+    triggerSync('sync_all', {
       onError: (error) => {
         Alert.alert('Error de Sincronización', error.message || 'No se pudo conectar con el widget.');
       }
@@ -29,11 +33,11 @@ export function SyncBadge() {
   };
 
   return (
-    <View style={[styles.pill, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <Animated.View style={[styles.dot, { backgroundColor: dotColor, opacity: pulse }]} />
+    <View style={[styles.pill, { backgroundColor: colors.surface, borderColor: colors.border, opacity: isClosed ? 0.8 : 1 }]}>
+      <Animated.View style={[styles.dot, { backgroundColor: dotColor, opacity: isClosed ? 1 : pulse }]} />
 
       <View style={styles.texts}>
-        <Text style={[styles.t1, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{line1}</Text>
+        <Text style={[styles.t1, { color: isClosed ? colors.textMuted : colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{line1}</Text>
         <Text style={[styles.t2, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>{line2}</Text>
       </View>
 
@@ -44,8 +48,8 @@ export function SyncBadge() {
       <Pressable
         style={({ pressed }) => [
           styles.syncButton,
-          { backgroundColor: colors.primary + '15' },
-          pressed && { opacity: 0.7 },
+          { backgroundColor: isClosed ? colors.border : colors.primary + '15' },
+          pressed && !isClosed && { opacity: 0.7 },
         ]}
         onPress={handleSync}
         disabled={isSyncing}
@@ -53,7 +57,7 @@ export function SyncBadge() {
         {isSyncing ? (
           <ActivityIndicator size="small" color={colors.primary} />
         ) : (
-          <Feather name="refresh-cw" size={14} color={colors.primary} />
+          <Feather name={isClosed ? 'moon' : 'refresh-cw'} size={14} color={isClosed ? colors.textDim : colors.primary} />
         )}
       </Pressable>
     </View>
@@ -63,8 +67,37 @@ export function SyncBadge() {
 function getState(
   minutesAgo: number | null,
   isLoading: boolean,
-  colors: { success: string; warning: string; danger: string; textMuted: string; primary: string }
+  colors: { success: string; warning: string; danger: string; textMuted: string; primary: string },
+  activeCommand: { status: string; comando: string } | null
 ) {
+  // 0. Verificar Horario de Atención (6 PM - 8 AM = Cerrado)
+  const now = new Date();
+  const hour = now.getHours();
+  const isClosed = hour >= 18 || hour < 8;
+
+  if (activeCommand) {
+    const isProcessing = activeCommand.status === 'ejecutando' || activeCommand.status === 'procesando';
+    return {
+      dotColor: isProcessing ? colors.primary : colors.warning,
+      line1:    isProcessing ? 'Sincronización en curso…' : 'Comando en cola (remoto)',
+      line2:    isProcessing ? 'Backend local procesando data' : 'Esperando respuesta del listener',
+      tag:      isProcessing ? 'Syncing' : 'Pendiente',
+      tagColor: isProcessing ? colors.primary : colors.warning,
+      isClosed: false,
+    };
+  }
+
+  if (isClosed) {
+    return {
+      dotColor: colors.textMuted,
+      line1:    'El Serrucho está cerrado',
+      line2:    'No hay cambios pendientes por ahora',
+      tag:      'Cerrado',
+      tagColor: colors.textMuted,
+      isClosed: true,
+    };
+  }
+
   if (isLoading) {
     return {
       dotColor: colors.textMuted,

@@ -32,8 +32,7 @@ export function useVentasPeriod(period: VentasPeriod) {
   return useQuery({
     queryKey:        ['ventas-period', period],
     queryFn:         () => fetchVentas(period, 0, 1000), // Legacy fallback
-    staleTime:       30_000,
-    refetchInterval: 60_000,
+    staleTime:       60_000,
   });
 }
 

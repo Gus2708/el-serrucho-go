@@ -29,6 +29,7 @@ import { SyncBadge } from '../../src/components/SyncBadge';
 import { SparklineChart } from '../../src/components/SparklineChart';
 import { GananciaChart } from '../../src/components/GananciaChart';
 import { getLocalDateStr, getDateDaysAgo } from '../../src/lib/supabase';
+import { TasaCard } from '../../src/components/TasaCard';
 
 const logo = require('../../src/assets/img/EL SERRUCHO go.png');
 
@@ -229,6 +230,9 @@ export default function Index() {
 
         {/* ── SyncBadge ── */}
         <SyncBadge />
+
+        {/* ── TasaCard ── */}
+        <TasaCard />
 
         {/* ── Period toggle ── */}
         <View style={styles.periodRow}>

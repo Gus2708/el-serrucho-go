@@ -123,10 +123,9 @@ async function fetchProfitHourly(dateStr: string): Promise<ProfitHourlyRow[]> {
 
   if (error) throw error;
 
-  // Rellenamos las 24 horas del día para que el sparkline no se vea como una línea recta simple
+  // Rellenamos las 24 horas del día para tener buckets continuos
   const fullDay: ProfitHourlyRow[] = [];
   for (let h = 0; h < 24; h++) {
-    // Buscamos si hay data para esta hora específica
     const hourData = (data ?? []).find(d => {
       const dDate = new Date(d.hora);
       return dDate.getHours() === h;
@@ -151,5 +150,25 @@ async function fetchProfitHourly(dateStr: string): Promise<ProfitHourlyRow[]> {
     }
   }
 
-  return fullDay;
+  // Recortar horas en cero del inicio y del final para que el chart solo
+  // muestre el rango ACTIVO del día (ej. 8 AM a 6 PM si la tienda abre/cierra
+  // a esas horas). Mantenemos los huecos centrales (almuerzo, etc.) intactos.
+  // Si todo el día es cero (sin ventas) devolvemos un array vacío.
+  return trimEdgeZeros(fullDay);
+}
+
+function trimEdgeZeros(rows: ProfitHourlyRow[]): ProfitHourlyRow[] {
+  let firstActive = rows.findIndex(r => r.num_ventas > 0 || r.ingreso_bruto > 0);
+  if (firstActive === -1) return [];                           // ninguna venta hoy
+
+  let lastActive = rows.length - 1;
+  while (lastActive > firstActive && rows[lastActive].num_ventas === 0 && rows[lastActive].ingreso_bruto === 0) {
+    lastActive--;
+  }
+
+  // Padding suave: 1 hora antes/después para que la curva no empiece pegada al borde
+  firstActive = Math.max(0, firstActive - 1);
+  lastActive  = Math.min(rows.length - 1, lastActive + 1);
+
+  return rows.slice(firstActive, lastActive + 1);
 }
