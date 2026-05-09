@@ -118,18 +118,34 @@ export function SparklineChart({ data, width, height = 70 }: Props) {
   const lunchWidth  = hasLunch ? lunchEndX - lunchStartX : 0;
   const lunchCenter = hasLunch ? lunchStartX + lunchWidth / 2 : 0;
 
-  // ── Time ticks ── (hora para datos horarios, día para datos diarios)
-  // Cap a ~5-7 labels. Distribuye uniformemente y siempre incluye el último.
+  // ── Time ticks ── (hora para datos horarios, día para diario)
   const isDaily = !isHourly && 'dia' in (data[0] as any);
   const ticks: { idx: number; label: string; x: number }[] = [];
+  
+  // Width de cada label (en 10pt): horas son cortas ("8a"), días más largos ("Lun 4").
+  const tickWidth = isDaily ? 38 : 22; // Un poco más estrechos para que quepan más
+
   if ((isHourly || isDaily) && data.length > 1) {
-    // Para semana (≤8 días) muestra TODOS; para más, máximo 5 distribuidos.
-    const target = isDaily && data.length <= 8 ? data.length : 5;
-    const step   = Math.max(1, Math.ceil(data.length / target));
-    const seen   = new Set<number>();
-    for (let i = 0; i < data.length; i += step) seen.add(i);
-    seen.add(data.length - 1);
-    Array.from(seen).sort((a, b) => a - b).forEach(idx => {
+    // Para semana (≤8 días) muestra TODOS; para más, maximizamos espacio.
+    const target = isDaily && data.length <= 8 ? data.length : Math.max(6, Math.floor(w / (tickWidth * 0.9)));
+    const minGap = Math.ceil((tickWidth * 0.8) / spacing); // Reducimos margen para que quepan más
+    const indices: number[] = [0];
+    let lastAdded = 0;
+
+    const step = Math.max(1, Math.floor(data.length / (target - 1)));
+
+    for (let i = step; i < data.length - 1; i += step) {
+      if (i - lastAdded >= minGap && (data.length - 1 - i) >= minGap) {
+        indices.push(i);
+        lastAdded = i;
+      }
+    }
+
+    if (data.length > 1 && !indices.includes(data.length - 1)) {
+      indices.push(data.length - 1);
+    }
+
+    indices.sort((a, b) => a - b).forEach(idx => {
       const item = data[idx] as any;
       const label = isHourly
         ? formatHour(new Date(item.hora).getHours())
@@ -137,8 +153,6 @@ export function SparklineChart({ data, width, height = 70 }: Props) {
       ticks.push({ idx, label, x: idx * spacing });
     });
   }
-  // Width de cada label (en 10pt): horas son cortas ("8a"), días más largos ("Lun 4").
-  const tickWidth = isDaily ? 40 : 26;
 
   return (
     <View style={[styles.wrap, { width: w, height }]}>

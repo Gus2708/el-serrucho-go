@@ -66,7 +66,7 @@ export default function PendingActivation() {
           ]}
           onPress={handleLogout}
         >
-          <Text style={[styles.logoutText, { color: colors.error }]}>Cerrar sesión</Text>
+          <Text style={[styles.logoutText, { color: colors.danger }]}>Cerrar sesión</Text>
         </Pressable>
       </View>
     </View>

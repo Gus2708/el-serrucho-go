@@ -5,11 +5,9 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../src/lib/supabase';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
-import * as SplashScreen from 'expo-splash-screen';
-import { ActivityIndicator, View } from 'react-native';
 import * as Font from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-
+import { ActivityIndicator, View } from 'react-native';
 // Mantener el splash screen visible hasta que la app esté lista
 SplashScreen.preventAutoHideAsync().catch(() => {
   /* ignorar errores de re-prevent */
@@ -137,21 +135,38 @@ export default function RootLayout() {
   }, []);
 
   // Sincronización de sesión para evitar cuentas compartidas
+  const [lastSyncedSid, setLastSyncedSid] = useState<string | null>(null);
+
   useEffect(() => {
-    if (session?.user) {
-      supabase.rpc('sync_session')
-        .then(({ error }) => {
+    const currentSid = session?.access_token;
+    if (session?.user && currentSid && currentSid !== lastSyncedSid) {
+      (async () => {
+        try {
+          const { error } = await supabase.rpc('sync_session');
           if (error) {
-            console.error('Error sincronizando sesión:', error.message);
+            if (!error.message.includes('No session found in JWT')) {
+              console.error('Error sincronizando sesión:', error.message);
+            }
+          } else {
+            setLastSyncedSid(currentSid);
           }
-        });
+        } catch { /* ignorar fallos de red */ }
+      })();
     }
-  }, [session]);
+  }, [session, lastSyncedSid]);
 
   // La app está lista si:
   // 1. Auth está listo Y las fuentes están listas.
   // 2. O si el failsafe se activó (evita muerte por splash).
   const isAppReady = failsafeActive || (authReady && (fontsLoaded || !!fontError));
+
+  useEffect(() => {
+    if (!isAppReady) {
+      console.log(`[Boot] Waiting for: ${!authReady ? 'Auth ' : ''}${(!fontsLoaded && !fontError) ? 'Fonts' : ''}`);
+    } else {
+      console.log('[Boot] App Ready!');
+    }
+  }, [authReady, fontsLoaded, fontError, failsafeActive]);
 
   useEffect(() => {
     if (isAppReady) {

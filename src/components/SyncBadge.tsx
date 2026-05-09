@@ -6,7 +6,7 @@ import { Feather } from '@expo/vector-icons';
 
 export function SyncBadge() {
   const { colors } = useTheme();
-  const { minutesAgo, isLoading, triggerSync, isSyncing, activeCommand } = useSyncStatus();
+  const { minutesAgo, isLoading, triggerSync, forceResetSync, isSyncing, activeCommand } = useSyncStatus();
   const pulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -18,13 +18,36 @@ export function SyncBadge() {
     ).start();
   }, []);
 
-  const { dotColor, line1, line2, tag, tagColor, isClosed } = getState(minutesAgo, isLoading, colors, activeCommand);
+  const { dotColor, line1, line2, tag, tagColor, isClosed, isStuck } = getState(minutesAgo, isLoading, colors, activeCommand);
 
   const handleSync = () => {
     if (isClosed) {
       Alert.alert('Tienda Cerrada', 'El Serrucho está fuera de su horario laboral (8am - 6pm). Los datos se actualizarán automáticamente al abrir.');
       return;
     }
+
+    if (isStuck) {
+      Alert.alert(
+        'Sincronización Atascada',
+        'El backend local no está respondiendo. ¿Deseas forzar el reinicio del estado?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { 
+            text: 'Forzar Reinicio', 
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await forceResetSync();
+              } catch (e) {
+                Alert.alert('Error', 'No se pudo reiniciar el estado.');
+              }
+            }
+          }
+        ]
+      );
+      return;
+    }
+
     triggerSync('sync_all', {
       onError: (error) => {
         Alert.alert('Error de Sincronización', error.message || 'No se pudo conectar con el widget.');
@@ -48,16 +71,20 @@ export function SyncBadge() {
       <Pressable
         style={({ pressed }) => [
           styles.syncButton,
-          { backgroundColor: isClosed ? colors.border : colors.primary + '15' },
+          { backgroundColor: isClosed ? colors.border : isStuck ? colors.danger + '15' : colors.primary + '15' },
           pressed && !isClosed && { opacity: 0.7 },
         ]}
         onPress={handleSync}
-        disabled={isSyncing}
+        disabled={isSyncing && !isStuck}
       >
-        {isSyncing ? (
+        {isSyncing && !isStuck ? (
           <ActivityIndicator size="small" color={colors.primary} />
         ) : (
-          <Feather name={isClosed ? 'moon' : 'refresh-cw'} size={14} color={isClosed ? colors.textDim : colors.primary} />
+          <Feather 
+            name={isClosed ? 'moon' : isStuck ? 'alert-triangle' : 'refresh-cw'} 
+            size={14} 
+            color={isClosed ? colors.textDim : isStuck ? colors.danger : colors.primary} 
+          />
         )}
       </Pressable>
     </View>
@@ -68,7 +95,7 @@ function getState(
   minutesAgo: number | null,
   isLoading: boolean,
   colors: { success: string; warning: string; danger: string; textMuted: string; primary: string },
-  activeCommand: { status: string; comando: string } | null
+  activeCommand: { status: string; comando: string; runningMinutes?: number } | null
 ) {
   // 0. Verificar Horario de Atención (6 PM - 8 AM = Cerrado)
   const now = new Date();
@@ -77,13 +104,16 @@ function getState(
 
   if (activeCommand) {
     const isProcessing = activeCommand.status === 'ejecutando' || activeCommand.status === 'procesando';
+    const isStuck = (activeCommand.runningMinutes || 0) >= 2;
+
     return {
-      dotColor: isProcessing ? colors.primary : colors.warning,
-      line1:    isProcessing ? 'Sincronización en curso…' : 'Comando en cola (remoto)',
-      line2:    isProcessing ? 'Backend local procesando data' : 'Esperando respuesta del listener',
-      tag:      isProcessing ? 'Syncing' : 'Pendiente',
-      tagColor: isProcessing ? colors.primary : colors.warning,
+      dotColor: isStuck ? colors.danger : (isProcessing ? colors.primary : colors.warning),
+      line1:    isStuck ? 'Sincronización demorada' : (isProcessing ? 'Sincronización en curso…' : 'Comando en cola (remoto)'),
+      line2:    isStuck ? 'El backend local no responde' : (isProcessing ? 'Backend local procesando data' : 'Esperando respuesta del listener'),
+      tag:      isStuck ? 'Stuck' : (isProcessing ? 'Syncing' : 'Pendiente'),
+      tagColor: isStuck ? colors.danger : (isProcessing ? colors.primary : colors.warning),
       isClosed: false,
+      isStuck,
     };
   }
 

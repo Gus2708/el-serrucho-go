@@ -62,6 +62,18 @@ export function useSyncStatus() {
     },
   });
 
+  const forceResetSync = async () => {
+    if (!data?.activeCommand?.id) return;
+    
+    const { error } = await supabase
+      .from('comandos_remotos')
+      .update({ status: 'error_local' })
+      .eq('id', data.activeCommand.id);
+
+    if (error) throw error;
+    queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+  };
+
   const activeCommand = data?.activeCommand || null;
   const isSyncing = isMutationPending || (activeCommand && (activeCommand.status === 'pendiente' || activeCommand.status === 'ejecutando'));
 
@@ -71,6 +83,7 @@ export function useSyncStatus() {
     activeCommand,
     isLoading,
     triggerSync,
+    forceResetSync,
     isSyncing,
   };
 }
@@ -87,18 +100,28 @@ async function fetchSyncStatus() {
   // 2. Obtener comando remoto activo (si existe)
   const { data: cmdData } = await supabase
     .from('comandos_remotos')
-    .select('comando, status, creado_en')
+    .select('id, comando, status, creado_en')
     .order('creado_en', { ascending: false })
     .limit(1)
-    .single();
+    .maybeSingle();
 
   const lastSync = prodData ? new Date(prodData.actualizado_en) : null;
   const minutesAgo = lastSync ? Math.floor((Date.now() - lastSync.getTime()) / 60_000) : null;
 
-  // Solo considerar comando activo si es reciente (últimos 5 min) y no ha fallado/terminado
-  const activeCommand = (cmdData && cmdData.status !== 'completado' && cmdData.status !== 'error_local') 
-    ? cmdData 
-    : null;
+  // Solo considerar comando activo si es reciente (últimos 10 min) y no ha fallado/terminado
+  let activeCommand = null;
+  if (cmdData && cmdData.status !== 'completado' && cmdData.status !== 'error_local') {
+    const created = new Date(cmdData.creado_en).getTime();
+    const now = Date.now();
+    const diffMin = (now - created) / 60_000;
+    
+    if (diffMin < 10) {
+      activeCommand = {
+        ...cmdData,
+        runningMinutes: Math.floor(diffMin)
+      };
+    }
+  }
 
   return { lastSync, minutesAgo, activeCommand };
 }

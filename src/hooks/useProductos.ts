@@ -60,9 +60,23 @@ async function fetchProductos(
     .order('descripcion')
     .range(offset, offset + PAGE_SIZE - 1);
 
-  if (search.trim()) {
-    const term = `%${search.trim()}%`;
-    query = query.or(`descripcion.ilike.${term},codigo_interno.ilike.${term}`);
+  const trimmed = search.trim();
+  if (trimmed) {
+    if (trimmed.includes('*')) {
+      const words = trimmed.split(/\s+/).filter(w => w.endsWith('*') && w.length > 1);
+      if (words.length > 0) {
+        for (const word of words) {
+          const term = `%${word.slice(0, -1)}%`;
+          query = query.or(`descripcion.ilike.${term},codigo_interno.ilike.${term}`);
+        }
+      } else {
+        const term = `%${trimmed.replace(/\*/g, '')}%`;
+        query = query.or(`descripcion.ilike.${term},codigo_interno.ilike.${term}`);
+      }
+    } else {
+      const term = `%${trimmed}%`;
+      query = query.or(`descripcion.ilike.${term},codigo_interno.ilike.${term}`);
+    }
   }
 
   switch (filter) {

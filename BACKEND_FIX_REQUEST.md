@@ -1,5 +1,9 @@
 # 🔧 Backend Fix Request — Widget V2 Regression Report
 
+> [!IMPORTANT]
+> **NUEVO (09-May-2026):** Se ha detectado un error **401 Unauthorized** en el listener local que bloquea la sincronización. Ver instrucciones de solución urgente en: [BACKEND_AUTH_SYNC_FIX.md](./BACKEND_AUTH_SYNC_FIX.md)
+
+
 **Para:** Equipo de backend / cualquier agente de IA (Claude, Gemini, GPT-4, Cursor, etc.)
 **De:** App móvil "El Serrucho to GO" (React Native)
 **Fecha:** 8 de mayo de 2026
