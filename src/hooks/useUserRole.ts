@@ -29,6 +29,7 @@ export function useUserRole() {
 
       return { 
         role: data.role as 'admin' | 'empleado', 
+        is_active: data.is_active as boolean,
         profile: data as Profile 
       };
     },

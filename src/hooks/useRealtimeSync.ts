@@ -18,7 +18,6 @@ export function useRealtimeSync() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'ventas' },
         (payload) => {
-          console.log('Realtime: Cambio en VENTAS', payload.eventType);
           queryClient.invalidateQueries({ queryKey: ['ventas-period'] });
           queryClient.invalidateQueries({ queryKey: ['ventas-infinite'] });
           queryClient.invalidateQueries({ queryKey: ['profit-summary'] });
@@ -33,7 +32,6 @@ export function useRealtimeSync() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'productos' },
         (payload) => {
-          console.log('Realtime: Cambio en PRODUCTOS', payload.eventType);
           queryClient.invalidateQueries({ queryKey: ['productos'] });
           queryClient.invalidateQueries({ queryKey: ['alertas-stock'] });
           queryClient.invalidateQueries({ queryKey: ['sync-status'] });
@@ -45,7 +43,6 @@ export function useRealtimeSync() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'tazas' },
         (payload) => {
-          console.log('Realtime: Cambio en TAZAS', payload.eventType);
           queryClient.invalidateQueries({ queryKey: ['tazas-actual'] });
         }
       )
@@ -54,7 +51,6 @@ export function useRealtimeSync() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'comandos_remotos' },
         (payload) => {
-          console.log('Realtime: Cambio en COMANDOS', payload.eventType);
           queryClient.invalidateQueries({ queryKey: ['sync-status'] });
         }
       )
@@ -63,7 +59,6 @@ export function useRealtimeSync() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'anomalias' },
         (payload) => {
-          console.log('Realtime: Cambio en ANOMALIAS', payload.eventType);
           queryClient.invalidateQueries({ queryKey: ['anomalias'] });
         }
       )
@@ -72,14 +67,11 @@ export function useRealtimeSync() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'ordenes_cambio' },
         (payload) => {
-          console.log('Realtime: Cambio en ORDENES_CAMBIO', payload.eventType);
           queryClient.invalidateQueries({ queryKey: ['ordenes-history'] });
         }
       )
 
-      .subscribe((status) => {
-        console.log('Realtime Subscription Status:', status);
-      });
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);

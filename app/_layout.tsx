@@ -7,13 +7,8 @@ import { supabase } from '../src/lib/supabase';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
 import * as SplashScreen from 'expo-splash-screen';
 import { ActivityIndicator, View } from 'react-native';
-import { 
-  useFonts,
-  JetBrainsMono_400Regular,
-  JetBrainsMono_500Medium,
-  JetBrainsMono_600SemiBold,
-  JetBrainsMono_700Bold 
-} from '@expo-google-fonts/jetbrains-mono';
+import * as Font from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
 
 // Mantener el splash screen visible hasta que la app esté lista
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -26,29 +21,50 @@ const queryClient = new QueryClient({
   },
 });
 
+import { useUserRole } from '../src/hooks/useUserRole';
+
 function AuthGuard({ session, ready }: { session: Session | null; ready: boolean }) {
   const segments = useSegments();
   const router   = useRouter();
   const { colors } = useTheme();
+  const { data: roleData, isLoading: roleLoading } = useUserRole();
 
   useEffect(() => {
+    // Si no estamos listos (fuentes/auth), no hacemos nada
     if (!ready) return;
     
     const inAuth = segments[0] === '(auth)';
     const isRoot = segments.length < 1;
+    const isPending = segments[1] === 'pending';
 
     if (!session) {
+      // Caso 1: No hay sesión -> Mandar a login si no está ahí
       if (!inAuth) {
         router.replace('/(auth)/login');
       }
     } else {
-      if (inAuth || isRoot) {
-        router.replace('/(tabs)');
+      // Caso 2: Hay sesión pero estamos cargando el rol
+      if (roleLoading) return;
+
+      // Caso 3: Hay sesión y rol cargado
+      if (roleData) {
+        if (!roleData.is_active) {
+          // Usuario no activo -> Mandar a pantalla de espera
+          if (!isPending) {
+            router.replace('/(auth)/pending');
+          }
+        } else {
+          // Usuario activo -> Si está en auth, mandarlo a los tabs
+          if (inAuth || isRoot) {
+            router.replace('/(tabs)');
+          }
+        }
       }
     }
-  }, [session, ready, segments]);
+  }, [session, ready, segments, roleData, roleLoading]);
 
-  if (!ready) {
+  // Pantalla de carga mientras se decide el destino
+  if (!ready || (session && roleLoading)) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -71,18 +87,17 @@ export default function RootLayout() {
   const [authReady, setAuthReady] = useState(false);
   const [failsafeActive, setFailsafeActive] = useState(false);
 
-  // Carga de fuentes JetBrains Mono
-  const [fontsLoaded, fontError] = useFonts({
-    JetBrainsMono_400Regular,
-    JetBrainsMono_500Medium,
-    JetBrainsMono_600SemiBold,
-    JetBrainsMono_700Bold,
+  // Carga de fuentes JetBrains Mono Locales (Máxima performance)
+  const [fontsLoaded, fontError] = Font.useFonts({
+    'JetBrainsMono_400Regular': require('../assets/fonts/JetBrainsMono_400Regular.ttf'),
+    'JetBrainsMono_500Medium':  require('../assets/fonts/JetBrainsMono_500Medium.ttf'),
+    'JetBrainsMono_600SemiBold': require('../assets/fonts/JetBrainsMono_600SemiBold.ttf'),
+    'JetBrainsMono_700Bold':     require('../assets/fonts/JetBrainsMono_700Bold.ttf'),
   });
 
   useEffect(() => {
     if (fontError) {
-      console.warn('Font loading error, falling back to system fonts:', fontError);
-      // No bloqueamos la app si las fuentes fallan, pero lo logueamos.
+      console.warn('Error cargando fuentes locales:', fontError);
     }
   }, [fontError]);
 
@@ -120,6 +135,18 @@ export default function RootLayout() {
       subscription.unsubscribe();
     };
   }, []);
+
+  // Sincronización de sesión para evitar cuentas compartidas
+  useEffect(() => {
+    if (session?.user) {
+      supabase.rpc('sync_session')
+        .then(({ error }) => {
+          if (error) {
+            console.error('Error sincronizando sesión:', error.message);
+          }
+        });
+    }
+  }, [session]);
 
   // La app está lista si:
   // 1. Auth está listo Y las fuentes están listas.
