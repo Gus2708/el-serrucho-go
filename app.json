@@ -54,9 +54,10 @@
         "expo-font",
         {
           "fonts": [
-            "./node_modules/@expo-google-fonts/jetbrains-mono/400Regular/JetBrainsMono_400Regular.ttf",
-            "./node_modules/@expo-google-fonts/jetbrains-mono/500Medium/JetBrainsMono_500Medium.ttf",
-            "./node_modules/@expo-google-fonts/jetbrains-mono/700Bold/JetBrainsMono_700Bold.ttf"
+            "./assets/fonts/JetBrainsMono_400Regular.ttf",
+            "./assets/fonts/JetBrainsMono_500Medium.ttf",
+            "./assets/fonts/JetBrainsMono_600SemiBold.ttf",
+            "./assets/fonts/JetBrainsMono_700Bold.ttf"
           ]
         }
       ]

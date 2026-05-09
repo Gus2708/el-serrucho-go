@@ -7,9 +7,13 @@ import { supabase } from '../src/lib/supabase';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
 import * as SplashScreen from 'expo-splash-screen';
 import { ActivityIndicator, View } from 'react-native';
-// Las fuentes JetBrainsMono se bundlean como recurso nativo via el plugin
-// `expo-font` en app.json — el sistema operativo las tiene listas antes de
-// que JS arranque, así que NO necesitamos useFonts() ni esperar nada async.
+import { 
+  useFonts,
+  JetBrainsMono_400Regular,
+  JetBrainsMono_500Medium,
+  JetBrainsMono_600SemiBold,
+  JetBrainsMono_700Bold 
+} from '@expo-google-fonts/jetbrains-mono';
 
 // Mantener el splash screen visible hasta que la app esté lista
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -58,13 +62,33 @@ function AuthGuard({ session, ready }: { session: Session | null; ready: boolean
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [failsafeActive, setFailsafeActive] = useState(false);
+
+  // Carga de fuentes JetBrains Mono
+  const [fontsLoaded, fontError] = useFonts({
+    JetBrainsMono_400Regular,
+    JetBrainsMono_500Medium,
+    JetBrainsMono_600SemiBold,
+    JetBrainsMono_700Bold,
+  });
 
   useEffect(() => {
-    // Failsafe: si Supabase tarda demasiado en responder a getSession()
-    // (red lenta, DNS, etc.) abrir igual a los 5 s y dejar que la app
-    // muestre el login. Sin esto el splash quedaba colgado indefinidamente.
-    const failsafe = setTimeout(() => setAuthReady(true), 5000);
+    if (fontError) {
+      console.warn('Font loading error, falling back to system fonts:', fontError);
+      // No bloqueamos la app si las fuentes fallan, pero lo logueamos.
+    }
+  }, [fontError]);
 
+  useEffect(() => {
+    // ── FALLSAFE GLOBAL ──
+    // Si pasados 7 segundos la app no ha cargado (fuentes o auth), 
+    // forzamos la entrada para que el usuario no quede bloqueado.
+    const globalTimeout = setTimeout(() => {
+      console.warn('App loading timeout reached (7s). Forcing ready state.');
+      setFailsafeActive(true);
+    }, 7000);
+
+    // ── INICIALIZACIÓN AUTH ──
     supabase.auth.getSession()
       .then(({ data }) => {
         setSession(data.session);
@@ -73,10 +97,10 @@ export default function RootLayout() {
         console.error('Supabase initialization error:', err);
       })
       .finally(() => {
-        clearTimeout(failsafe);
         setAuthReady(true);
       });
 
+    // Suscripción a cambios de auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
       if (event === 'SIGNED_OUT' || event === 'SIGNED_IN') {
@@ -85,18 +109,25 @@ export default function RootLayout() {
     });
 
     return () => {
-      clearTimeout(failsafe);
+      clearTimeout(globalTimeout);
       subscription.unsubscribe();
     };
   }, []);
 
-  const isAppReady = authReady;
+  // La app está lista si:
+  // 1. Auth está listo Y las fuentes están listas.
+  // 2. O si el failsafe se activó (evita muerte por splash).
+  const isAppReady = failsafeActive || (authReady && (fontsLoaded || !!fontError));
 
   useEffect(() => {
     if (isAppReady) {
-      SplashScreen.hideAsync().catch(() => {
-        /* ignorar errores de ocultación */
-      });
+      // Pequeño delay para asegurar que el frame se renderice antes de ocultar
+      const h = setTimeout(() => {
+        SplashScreen.hideAsync().catch(() => {
+          /* ignorar errores */
+        });
+      }, 50);
+      return () => clearTimeout(h);
     }
   }, [isAppReady]);
 

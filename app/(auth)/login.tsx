@@ -18,7 +18,7 @@ import { StatusBar } from 'expo-status-bar';
 import { supabase } from '../../src/lib/supabase';
 import { useTheme } from '../../src/theme/ThemeContext';
 
-export default function LoginScreen() {
+export default function Login() {
   const { colors } = useTheme();
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');

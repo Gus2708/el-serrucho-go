@@ -42,18 +42,18 @@ function ProductRowImpl({ producto, onPress }: Props) {
         </View>
 
         <View style={styles.bottom}>
-          <Text style={[styles.meta, { color: colors.textMuted }]}>
+          <Text style={[styles.meta, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
             {producto.codigo_interno}
             {producto.unidad ? `  ·  ${producto.unidad}` : ''}
           </Text>
 
           <View style={styles.badges}>
             <View style={[styles.badge, { backgroundColor: stockColor + '22', borderColor: stockColor + '55' }]}>
-              <Text style={[styles.badgeText, { color: stockColor }]}>{stockLabel}</Text>
+              <Text style={[styles.badgeText, { color: stockColor }]} numberOfLines={1} adjustsFontSizeToFit>{stockLabel}</Text>
             </View>
             {margin < 0 && (
               <View style={[styles.badge, { backgroundColor: colors.danger + '22', borderColor: colors.danger + '55' }]}>
-                <Text style={[styles.badgeText, { color: colors.danger }]}>
+                <Text style={[styles.badgeText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
                   Margen {margin.toFixed(0)}%
                 </Text>
               </View>

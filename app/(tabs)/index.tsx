@@ -8,7 +8,15 @@ import {
   Pressable,
   RefreshControl,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
+
+// Ancho EXTERIOR del bigCard del Dashboard (de borde a borde de la tarjeta):
+//   SCREEN_W - marginHorizontal*2 (16+16). NO se resta el padding interior
+//   porque queremos que el sparkline rompa ese padding y abarque todo.
+const BIG_CARD_OUTER_W = Dimensions.get('window').width - 16 * 2;
+// Padding interior del bigCard (debe coincidir con `bigCard.padding` en styles)
+const BIG_CARD_PADDING = 20;
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -48,7 +56,7 @@ function getGreeting(): string {
   return 'Buenas noches';
 }
 
-export default function DashboardScreen() {
+export default function Index() {
   const { colors, formatUSD } = useTheme();
   const router      = useRouter();
   const queryClient = useQueryClient();
@@ -150,6 +158,13 @@ export default function DashboardScreen() {
 
   const isNeg = stats.ganancia < 0;
 
+  // Detección de bug del backend: cuando productos.costo = 0 para todos los
+  // ítems, ganancia = ingreso (porque ganancia = ingreso − costo = ingreso − 0).
+  // Es matemáticamente imposible en operación normal, así que es un signo
+  // claro de que los costos no están sincronizados desde HybridLite.
+  const costosPendientes =
+    stats.ingreso > 0 && Math.abs(stats.ganancia - stats.ingreso) < 0.01;
+
   if (loadingRole && !userAuth) {
     return (
       <View style={[styles.root, { backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' }]}>
@@ -200,10 +215,12 @@ export default function DashboardScreen() {
           <Text style={[styles.greetSub,   { color: colors.textMuted }]}>
             {getGreeting()}{userName ? `, ${userName}` : ''}
           </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text style={[styles.greetTitle, { color: colors.text }]}>Estadisticas:</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 }}>
+            <Text style={[styles.greetTitle, { color: colors.text, flex: 1 }]} numberOfLines={1} adjustsFontSizeToFit>
+              Estadísticas:
+            </Text>
             {sessionUser?.email && (
-              <Text style={{ fontSize: 10, color: colors.textDim, opacity: 0.6 }}>
+              <Text style={{ fontSize: 9, color: colors.textDim, opacity: 0.6, marginBottom: 5 }}>
                 {sessionUser.email}
               </Text>
             )}
@@ -230,7 +247,11 @@ export default function DashboardScreen() {
                 ]}
                 onPress={() => setPeriod(p.key)}
               >
-                <Text style={[styles.periodText, { color: active ? colors.onPrimary : colors.textMuted }]}>
+                <Text 
+                  style={[styles.periodText, { color: active ? colors.onPrimary : colors.textMuted }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
                   {p.label}
                 </Text>
               </Pressable>
@@ -241,23 +262,48 @@ export default function DashboardScreen() {
         {/* ── Big card ── */}
         {isAdmin && (
           <View style={[styles.bigCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.bigLabel, { color: colors.textMuted }]}>{stats.label}</Text>
+            <Text style={[styles.bigLabel, { color: colors.textMuted }]}>
+              {/* Si los costos están pendientes, no podemos mostrar "Ganancia" */}
+              {costosPendientes ? stats.label.replace('Ganancia', 'Ingreso') : stats.label}
+            </Text>
             {loadingSum ? (
               <ActivityIndicator color={colors.primary} style={{ marginVertical: 8 }} />
             ) : (
-              <Text style={[styles.bigValue, { color: isNeg ? colors.danger : colors.primary }]}>
-                {formatUSD(stats.ganancia)}
+              <Text style={[styles.bigValue, { color: isNeg ? colors.danger : colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
+                {formatUSD(costosPendientes ? stats.ingreso : stats.ganancia)}
               </Text>
             )}
             {!loadingSum && (
-              <Text style={[styles.bigSub, { color: colors.textDim }]}>
-                {isAdmin ? `Ingreso ${formatUSD(stats.ingreso)}` : `Ticket promedio: ${formatUSD(summary?.ticket_promedio ?? 0)}`}
-                {kpiVentas > 0 ? `  ·  ${kpiVentas} facturas` : ''}
+              <Text style={[styles.bigSub, { color: colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>
+                {isAdmin
+                  ? (costosPendientes
+                      ? `${kpiVentas} facturas · ganancia no disponible`
+                      : `Ingreso ${formatUSD(stats.ingreso)}${kpiVentas > 0 ? `  ·  ${kpiVentas} facturas` : ''}`)
+                  : `Ticket promedio: ${formatUSD(summary?.ticket_promedio ?? 0)}${kpiVentas > 0 ? `  ·  ${kpiVentas} facturas` : ''}`}
               </Text>
+            )}
+            {!loadingSum && costosPendientes && (
+              <View style={[styles.warnBanner, { backgroundColor: colors.warning + '15', borderColor: colors.warning + '40' }]}>
+                <Feather name="alert-triangle" size={11} color={colors.warning} />
+                <Text style={[styles.warnText, { color: colors.warning }]} numberOfLines={2}>
+                  Costos sin sincronizar · ganancia se calculará cuando el widget
+                  envíe los costos del POS
+                </Text>
+              </View>
             )}
             {loadingChart
               ? <View style={styles.chartPlaceholder} />
-              : <SparklineChart data={chartData} />
+              : (
+                // Sale del padding del bigCard para que la línea cubra todo
+                // el ancho del contenedor, de borde a borde, y el gradient
+                // se extienda hasta el bottom del card (height más generoso).
+                <View style={{
+                  marginHorizontal: -BIG_CARD_PADDING,
+                  marginBottom:     -BIG_CARD_PADDING,
+                }}>
+                  <SparklineChart data={chartData} width={BIG_CARD_OUTER_W} height={140} />
+                </View>
+              )
             }
           </View>
         )}
@@ -353,10 +399,10 @@ function TopToday({ isAdmin }: { isAdmin: boolean }) {
             weekday: 'short', day: 'numeric', month: 'short',
           })}
         </Text>
-        <Text style={[styles.topVal, { color: colors.primary }]}>
+        <Text style={[styles.topVal, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
           {isAdmin ? formatUSD(today.ganancia) : today.num_ventas}
         </Text>
-        <Text style={[styles.topSub, { color: colors.textDim }]}>
+        <Text style={[styles.topSub, { color: colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>
           {isAdmin 
             ? `${today.num_ventas} facturas · ingreso ${formatUSD(today.ingreso_bruto)}`
             : `Ventas registradas · Ticket promedio: ${formatUSD(today.num_ventas > 0 ? today.ingreso_bruto / today.num_ventas : 0)}`
@@ -389,7 +435,7 @@ function KpiCard({ icon, value, label, loading }: {
           {value}
         </Text>
       )}
-      <Text style={[styles.kpiLabel, { color: colors.textDim }]}>{label}</Text>
+      <Text style={[styles.kpiLabel, { color: colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
     </View>
   );
 }
@@ -429,7 +475,7 @@ const styles = StyleSheet.create({
 
   greeting: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10 },
   greetSub:   { fontSize: 11, marginBottom: 2, fontFamily: 'JetBrainsMono_400Regular' },
-  greetTitle: { fontSize: 22, fontFamily: 'JetBrainsMono_700Bold' },
+  greetTitle: { fontSize: 24, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -0.5 },
 
   periodRow: {
     flexDirection:     'row',
@@ -457,19 +503,31 @@ const styles = StyleSheet.create({
   bigLabel:         { fontSize: 11, marginBottom: 4, fontFamily: 'JetBrainsMono_400Regular' },
   bigValue:         { fontSize: 32, fontFamily: 'JetBrainsMono_700Bold', lineHeight: 36, marginBottom: 2 },
   bigSub:           { fontSize: 11, fontFamily: 'JetBrainsMono_400Regular' },
-  chartPlaceholder: { height: 68, marginTop: 14 },
+  warnBanner: {
+    flexDirection:    'row',
+    alignItems:       'center',
+    gap:              6,
+    marginTop:        10,
+    paddingVertical:  6,
+    paddingHorizontal: 10,
+    borderRadius:     8,
+    borderWidth:      0.5,
+  },
+  warnText: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', flex: 1, lineHeight: 14 },
+  chartPlaceholder: { height: 150, marginTop: 14 },
 
   kpiGrid: {
     flexDirection:     'row',
     flexWrap:          'wrap',
-    justifyContent:    'flex-start',
-    gap:               10,
+    justifyContent:    'space-between',   // ocupa todo el ancho, gap real entre las 2 columnas
+    rowGap:            10,
     paddingHorizontal: 16,
     marginBottom:      14,
   },
   kpiLoading: { paddingVertical: 24, alignItems: 'center', marginBottom: 14 },
   kpiCard: {
-    width: '47.5%', borderRadius: 16, borderWidth: 0.5, padding: 14,
+    width: '48.5%',                       // 2 columnas × 48.5% + gap ~3% = 100% del ancho disponible
+    borderRadius: 16, borderWidth: 0.5, padding: 14,
   },
   kpiIcon:  { marginBottom: 8 },
   kpiVal:   { fontSize: 17, fontFamily: 'JetBrainsMono_700Bold', marginBottom: 2 },

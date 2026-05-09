@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, Producto } from '../lib/supabase';
 
@@ -34,16 +34,18 @@ export function useProductos(search: string = '', filter: StockFilter = 'todos')
     return () => { supabase.removeChannel(channel); };
   }, [queryClient]);
 
-  const rawProductos = query.data?.pages.flat() ?? [];
-
-  // Push dot-only placeholder products (., .., ...) to the bottom
-  const productos = [...rawProductos].sort((a, b) => {
-    const aDot = isPlaceholder(a);
-    const bDot = isPlaceholder(b);
-    if (aDot && !bDot) return 1;
-    if (!aDot && bDot) return -1;
-    return 0;
-  });
+  // Productos ordenados, con placeholders al final.
+  // Memo: solo recalcula cuando query.data cambia, no en cada render del padre.
+  const productos = useMemo(() => {
+    const raw = query.data?.pages.flat() ?? [];
+    return [...raw].sort((a, b) => {
+      const aDot = isPlaceholder(a);
+      const bDot = isPlaceholder(b);
+      if (aDot && !bDot) return 1;
+      if (!aDot && bDot) return -1;
+      return 0;
+    });
+  }, [query.data]);
 
   return {
     productos,
@@ -98,7 +100,10 @@ async function fetchProductos(
   let result = (data ?? []) as Producto[];
 
   if (filter === 'margen_negativo') {
-    result = result.filter(p => p.costo > p.precio_venta);
+    // IVA-aware: precio_venta incluye IVA 16%; costo viene sin IVA.
+    // Hay que comparar manzanas con manzanas dividiendo por 1.16.
+    // Ignoramos productos con precio_venta = 0 (basura sin sincronizar).
+    result = result.filter(p => p.precio_venta > 0 && p.costo > p.precio_venta / 1.16);
   }
 
   return result;

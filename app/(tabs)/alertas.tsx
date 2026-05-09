@@ -39,7 +39,7 @@ type ListItem =
   | { type: 'empty-stock' }
   | { type: 'spacer', height: number };
 
-export default function AlertasScreen() {
+export default function Alertas() {
   const { colors } = useTheme();
   const queryClient = useQueryClient();
 
@@ -153,7 +153,7 @@ export default function AlertasScreen() {
             ? <ActivityIndicator size={13} color={colors.primary} />
             : <Feather name="cpu" size={13} color={colors.primary} />
           }
-          <Text style={[styles.analyzeBtnText, { color: colors.primary }]}>
+          <Text style={[styles.analyzeBtnText, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
             {analyzing ? 'Analizando…' : 'Analizar con IA'}
           </Text>
         </Pressable>
@@ -162,7 +162,7 @@ export default function AlertasScreen() {
       {analyzeResult && (
         <View style={[styles.resultBanner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Feather name="zap" size={12} color={colors.primary} />
-          <Text style={[styles.resultText, { color: colors.textMuted }]}>{analyzeResult}</Text>
+          <Text style={[styles.resultText, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>{analyzeResult}</Text>
         </View>
       )}
 
@@ -218,7 +218,7 @@ export default function AlertasScreen() {
                           ]}
                           onPress={() => setStockFilter(f.key)}
                         >
-                          <Text style={[styles.chipText, { color: active ? colors.onPrimary : colors.textMuted }]}>
+                          <Text style={[styles.chipText, { color: active ? colors.onPrimary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
                             {f.label}
                           </Text>
                         </Pressable>

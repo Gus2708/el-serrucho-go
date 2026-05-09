@@ -25,7 +25,7 @@ const FILTERS: { key: StockFilter; label: string }[] = [
   { key: 'margen_negativo', label: 'Margen negativo' },
 ];
 
-export default function InventarioScreen() {
+export default function Inventario() {
   const { colors } = useTheme();
   const router = useRouter();
 
@@ -108,7 +108,7 @@ export default function InventarioScreen() {
                 <Text style={[
                   styles.chipText,
                   { color: active ? colors.onPrimary : colors.textMuted },
-                ]}>
+                ]} numberOfLines={1} adjustsFontSizeToFit>
                   {f.label}
                 </Text>
               </Pressable>

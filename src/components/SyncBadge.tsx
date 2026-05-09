@@ -33,8 +33,8 @@ export function SyncBadge() {
       <Animated.View style={[styles.dot, { backgroundColor: dotColor, opacity: pulse }]} />
 
       <View style={styles.texts}>
-        <Text style={[styles.t1, { color: colors.text }]} numberOfLines={1}>{line1}</Text>
-        <Text style={[styles.t2, { color: colors.textMuted }]} numberOfLines={1}>{line2}</Text>
+        <Text style={[styles.t1, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{line1}</Text>
+        <Text style={[styles.t2, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>{line2}</Text>
       </View>
 
       <View style={[styles.tag, { backgroundColor: tagColor + '18', borderColor: tagColor + '40' }]}>
@@ -157,8 +157,10 @@ const styles = StyleSheet.create({
     borderRadius:     20,
     borderWidth:      0.5,
     paddingVertical:  3,
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     flexShrink:       0,
+    minWidth:         60,
+    alignItems:       'center',
   },
   tagText: {
     fontSize:   10,

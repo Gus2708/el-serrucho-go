@@ -20,7 +20,7 @@ import { useTheme } from '../src/theme/ThemeContext';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUserRole } from '../src/hooks/useUserRole';
 
-export default function PerfilScreen() {
+export default function Perfil() {
   const { colors } = useTheme();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -158,7 +158,7 @@ export default function PerfilScreen() {
                     placeholderTextColor={colors.textMuted}
                   />
                 ) : (
-                  <Text style={[styles.mainName, { color: colors.text }]} numberOfLines={1}>
+                  <Text style={[styles.mainName, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
                     {profile?.display_name}
                   </Text>
                 )}
@@ -193,7 +193,7 @@ export default function PerfilScreen() {
           <View style={styles.cardFooter}>
             <View style={styles.footerItem}>
               <Feather name="mail" size={14} color={colors.primary} style={{ opacity: 0.7 }} />
-              <Text style={[styles.footerText, { color: colors.textDim }]}>{profile?.email}</Text>
+              <Text style={[styles.footerText, { color: colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>{profile?.email}</Text>
             </View>
           </View>
         </View>

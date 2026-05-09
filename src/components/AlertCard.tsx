@@ -30,7 +30,7 @@ export function StockAlertCard({ alerta }: StockAlertProps) {
         </Text>
         <View style={styles.metaRow}>
           <TypeChip label={titulo} color={accentColor} />
-          <Text style={[styles.detalle, { color: colors.textMuted }]}>{detalle}</Text>
+          <Text style={[styles.detalle, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>{detalle}</Text>
         </View>
       </View>
       <View style={styles.prices}>
@@ -108,7 +108,7 @@ export function AnomaliaCard({ anomalia, onResolve }: AnomaliaProps) {
             label={`IA · ${anomalia.severidad}`}
             color={severityColor}
           />
-          <Text style={[styles.detalle, { color: colors.textDim }]}>
+          <Text style={[styles.detalle, { color: colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>
             {formatRelative(anomalia.detectado_en)}
           </Text>
         </View>
@@ -129,7 +129,7 @@ export function AnomaliaCard({ anomalia, onResolve }: AnomaliaProps) {
 function TypeChip({ label, color }: { label: string; color: string }) {
   return (
     <View style={[styles.chip, { backgroundColor: color + '22', borderColor: color + '55' }]}>
-      <Text style={[styles.chipText, { color }]}>{label}</Text>
+      <Text style={[styles.chipText, { color }]} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
     </View>
   );
 }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { BarChart } from 'react-native-gifted-charts';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../theme/ThemeContext';
 import type { ProfitDailyRow } from '../lib/supabase';
 
@@ -42,25 +43,26 @@ export function GananciaChart({ data, mode = 'ganancia' }: Props) {
     <View style={[styles.wrap, { backgroundColor: colors.surface, borderColor: colors.border, minHeight: 180 }]}>
       <BarChart
         data={barData}
-        width={CHART_W - 60}
+        width={CHART_W - 80}
         height={140}
-        barWidth={22}
+        barWidth={18}
         spacing={12}
         noOfSections={3}
-        maxValue={maxVal * 1.2}
+        maxValue={maxVal * 1.1}
         hideRules
-        showYAxisIndices
         yAxisThickness={0}
         xAxisThickness={1}
         xAxisColor={colors.border}
         yAxisColor="transparent"
         yAxisTextStyle={{ color: colors.textDim, fontSize: 8, fontFamily: 'JetBrainsMono_400Regular' }}
         xAxisLabelTextStyle={{ color: colors.textDim, fontSize: 8, fontFamily: 'JetBrainsMono_400Regular' }}
-        isAnimated
-        animationDuration={500}
-        roundedTop
-        barBorderRadius={4}
+        isAnimated={false}
         frontColor={colors.primary}
+        initialSpacing={10}
+        // ── Bordes superiores redondeados en cada barra ──
+        roundedTop
+        barBorderTopLeftRadius={4}
+        barBorderTopRightRadius={4}
       />
     </View>
   );

@@ -28,7 +28,7 @@ const PERIODS: { value: Period; label: string }[] = [
   { value: 90, label: '90d' },
 ];
 
-export default function ReportesScreen() {
+export default function Reportes() {
   const { colors, formatUSD } = useTheme();
   const queryClient = useQueryClient();
 
@@ -93,7 +93,7 @@ export default function ReportesScreen() {
                 ]}
                 onPress={() => setPeriod(p.value)}
               >
-                <Text style={[styles.periodText, { color: active ? colors.onPrimary : colors.textMuted }]}>
+                <Text style={[styles.periodText, { color: active ? colors.onPrimary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
                   {p.label}
                 </Text>
               </Pressable>
@@ -117,7 +117,7 @@ export default function ReportesScreen() {
                 ]}
                 onPress={() => setChartMode(m)}
               >
-                <Text style={[styles.periodText, { color: active ? colors.text : colors.textDim }]}>
+                <Text style={[styles.periodText, { color: active ? colors.text : colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>
                   {m === 'ganancia' ? 'Ganancia' : 'Ingresos'}
                 </Text>
               </Pressable>
@@ -172,10 +172,10 @@ export default function ReportesScreen() {
             >
               <Text style={[styles.rank, { color: colors.textDim }]}>{i + 1}</Text>
               <View style={styles.productInfo}>
-                <Text style={[styles.productName, { color: colors.text }]} numberOfLines={1}>
+                <Text style={[styles.productName, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
                   {p.descripcion}
                 </Text>
-                <Text style={[styles.productMeta, { color: colors.textMuted }]}>
+                <Text style={[styles.productMeta, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
                   {p.unidades_vendidas} uds vendidas
                 </Text>
               </View>
@@ -201,7 +201,7 @@ function SummaryPill({ label, value, color }: { label: string; value: string; co
   return (
     <View style={[styles.pill, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <Text style={[styles.pillLabel, { color: colors.textMuted }]}>{label}</Text>
-      <Text style={[styles.pillValue, { color }]}>{value}</Text>
+      <Text style={[styles.pillValue, { color }]} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
     </View>
   );
 }

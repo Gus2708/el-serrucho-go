@@ -31,14 +31,14 @@ export function StatCard({ label, value, sub, accent, danger, halfWidth }: Props
         accent && { backgroundColor: colors.primaryFaded },
       ]}
     >
-      <Text style={[styles.label, { color: colors.textMuted }]} numberOfLines={1}>
+      <Text style={[styles.label, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
         {label}
       </Text>
       <Text style={[styles.value, { color: valueColor }]} numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
       {sub ? (
-        <Text style={[styles.sub, { color: colors.textMuted }]} numberOfLines={1}>
+        <Text style={[styles.sub, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
           {sub}
         </Text>
       ) : null}

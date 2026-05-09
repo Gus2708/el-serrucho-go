@@ -22,7 +22,7 @@ import { supabase } from '../../src/lib/supabase';
 
 type Tab = 'borrador' | 'historial';
 
-export default function OrdenesScreen() {
+export default function Ordenes() {
   const { colors, formatUSD } = useTheme();
   const router       = useRouter();
   const queryClient  = useQueryClient();
@@ -123,7 +123,7 @@ function BorradorView({ router }: { router: any }) {
                 >
                   <View style={styles.itemTop}>
                     <View style={styles.itemInfo}>
-                      <Text style={[styles.itemName, { color: colors.text }]} numberOfLines={1}>
+                      <Text style={[styles.itemName, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
                         {item.descripcion}
                       </Text>
                       <Text style={[styles.itemCode, { color: colors.textMuted }]}>
@@ -254,7 +254,7 @@ function HistorialView({ queryClient }: { queryClient: any }) {
           style={[styles.histCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
         >
           <View style={styles.histTop}>
-            <Text style={[styles.histId, { color: colors.primary }]}>
+            <Text style={[styles.histId, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
               OC-{String(o.id).padStart(4, '0')}
             </Text>
             <View style={[
@@ -262,13 +262,13 @@ function HistorialView({ queryClient }: { queryClient: any }) {
               { backgroundColor: o.status === 'emitido' ? colors.success + '22' : colors.warning + '22',
                 borderColor:     o.status === 'emitido' ? colors.success + '55' : colors.warning + '55' },
             ]}>
-              <Text style={[styles.statusText, { color: o.status === 'emitido' ? colors.success : colors.warning }]}>
+              <Text style={[styles.statusText, { color: o.status === 'emitido' ? colors.success : colors.warning }]} numberOfLines={1} adjustsFontSizeToFit>
                 {o.status}
               </Text>
             </View>
           </View>
 
-          <Text style={[styles.histMeta, { color: colors.textMuted }]}>
+          <Text style={[styles.histMeta, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
             {new Date(o.creado_en).toLocaleString('es-VE', {
               day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
             })}
@@ -306,7 +306,7 @@ function TabBtn({ label, active, onPress }: { label: string; active: boolean; on
       style={({ pressed }) => [styles.tabBtn, active && { borderBottomColor: colors.primary, borderBottomWidth: 2 }, pressed && { opacity: 0.7 }]}
       onPress={onPress}
     >
-      <Text style={[styles.tabText, { color: active ? colors.primary : colors.textMuted }]}>
+      <Text style={[styles.tabText, { color: active ? colors.primary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
         {label}
       </Text>
     </Pressable>

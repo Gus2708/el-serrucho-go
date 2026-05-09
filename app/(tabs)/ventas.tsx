@@ -48,7 +48,7 @@ const KPI_LABELS: Record<VentasPeriod, string> = {
   mes:    'Ingreso mes',
 };
 
-export default function VentasScreen() {
+export default function Ventas() {
   const { data: userAuth } = useUserRole();
   const isAdmin = userAuth?.role === 'admin';
   const { colors, formatUSD } = useTheme();
@@ -187,7 +187,7 @@ export default function VentasScreen() {
                     ]}
                     onPress={() => setPeriod(p.key)}
                   >
-                    <Text style={[styles.periodText, { color: active ? colors.onPrimary : colors.textMuted }]}>
+                    <Text style={[styles.periodText, { color: active ? colors.onPrimary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
                       {p.label}
                     </Text>
                   </Pressable>
@@ -204,7 +204,7 @@ export default function VentasScreen() {
                 {loadingStats ? (
                   <ActivityIndicator size="small" color={colors.primary} style={{ alignSelf: 'flex-start' }} />
                 ) : (
-                  <Text style={[styles.kpiValue, { color: colors.primary }]}>
+                  <Text style={[styles.kpiValue, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
                     {isAdmin ? formatUSD(montoTotal) : formatUSD(totalFacturas > 0 ? montoTotal / totalFacturas : 0)}
                   </Text>
                 )}
@@ -214,7 +214,7 @@ export default function VentasScreen() {
                 {loadingStats ? (
                   <ActivityIndicator size="small" color={colors.primary} style={{ alignSelf: 'flex-start' }} />
                 ) : (
-                  <Text style={[styles.kpiValue, { color: colors.text }]}>{totalFacturas}</Text>
+                  <Text style={[styles.kpiValue, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{totalFacturas}</Text>
                 )}
               </View>
             </View>
@@ -286,7 +286,7 @@ function VentaCard({ venta, onPress }: { venta: VentaHoy; onPress: () => void })
     >
       <View style={styles.cardTop}>
         <View style={styles.docInfo}>
-          <Text style={[styles.docNum, { color: colors.primary }]}>
+          <Text style={[styles.docNum, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
             {venta.documento || `Factura #${venta.id}`}
           </Text>
           <View style={styles.timeRow}>
@@ -294,7 +294,7 @@ function VentaCard({ venta, onPress }: { venta: VentaHoy; onPress: () => void })
             <Text style={[styles.docTime, { color: colors.textDim }]}>{time}</Text>
           </View>
         </View>
-        <Text style={[styles.docAmount, { color: colors.text }]}>
+        <Text style={[styles.docAmount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
           {formatUSD(Number(venta.total_usd) ?? 0)}
         </Text>
       </View>
@@ -302,14 +302,14 @@ function VentaCard({ venta, onPress }: { venta: VentaHoy; onPress: () => void })
       <View style={[styles.cardBottom, { borderTopColor: colors.border + '40' }]}>
         <View style={styles.clientRow}>
           <Feather name="user" size={11} color={colors.primary} />
-          <Text style={[styles.clientName, { color: colors.textMuted }]} numberOfLines={1}>
+          <Text style={[styles.clientName, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
             {venta.nombre_cliente}
           </Text>
         </View>
         {pago && (
           <View style={[styles.pagoChip, { backgroundColor: pago.color + '18', borderColor: pago.color + '40' }]}>
             <Feather name={pago.icon} size={10} color={pago.color} />
-            <Text style={[styles.pagoChipText, { color: pago.color }]} numberOfLines={1}>
+            <Text style={[styles.pagoChipText, { color: pago.color }]} numberOfLines={1} adjustsFontSizeToFit>
               {pago.label}
             </Text>
           </View>
@@ -477,7 +477,7 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
                       <Text style={[styles.detailDesc, { color: colors.text }]} numberOfLines={2}>
                         {item.descripcion}
                       </Text>
-                      <Text style={[styles.detailSubtotal, { color: colors.primary }]}>
+                      <Text style={[styles.detailSubtotal, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
                         {formatUSD(item.subtotal_usd)}
                       </Text>
                     </View>
@@ -485,7 +485,7 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
                       <Text style={[styles.detailCode, { color: colors.textDim }]}>
                         {item.codigo_producto}
                       </Text>
-                      <Text style={[styles.detailUnit, { color: colors.textMuted }]}>
+                      <Text style={[styles.detailUnit, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
                         {item.cantidad} × {formatUSD(item.precio_unitario_usd)}
                       </Text>
                     </View>

@@ -2,7 +2,7 @@ import { Link, Stack } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../src/theme/ThemeContext';
 
-export default function NotFoundScreen() {
+export default function NotFound() {
   const { colors } = useTheme();
 
   return (

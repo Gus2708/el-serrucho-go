@@ -23,7 +23,11 @@ export function CurrencyText({ amount, style, muted, primary }: Props) {
     : colors.text;
 
   return (
-    <Text style={[{ color, fontFamily: 'JetBrainsMono_400Regular' }, style]}>
+    <Text 
+      style={[{ color, fontFamily: 'JetBrainsMono_400Regular' }, style]}
+      numberOfLines={1}
+      adjustsFontSizeToFit
+    >
       {formatUSD(amount)}
     </Text>
   );

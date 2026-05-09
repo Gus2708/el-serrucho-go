@@ -14,7 +14,7 @@ import { CurrencyText } from '../../src/components/CurrencyText';
 import { supabase, Producto } from '../../src/lib/supabase';
 import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
 
-export default function ProductoDetailScreen() {
+export default function ProductoDetail() {
   const { colors, tokens, formatUSD } = useTheme();
   const router  = useRouter();
   const { id }  = useLocalSearchParams<{ id: string }>();
@@ -85,7 +85,7 @@ export default function ProductoDetailScreen() {
         <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}>
           <Feather name="arrow-left" size={22} color={colors.text} />
         </Pressable>
-        <Text style={[styles.navTitle, { color: colors.text }]} numberOfLines={1}>
+        <Text style={[styles.navTitle, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
           Detalle de producto
         </Text>
         <View style={styles.navPlaceholder} />
@@ -107,23 +107,23 @@ export default function ProductoDetailScreen() {
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           {/* Product name + code */}
           <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.productName, { color: colors.text }]}>
+            <Text style={[styles.productName, { color: colors.text }]} numberOfLines={2} adjustsFontSizeToFit>
               {producto.descripcion}
             </Text>
             <View style={styles.codeRow}>
               <Text style={[styles.label, { color: colors.textMuted }]}>Código interno</Text>
-              <Text style={[styles.code, { color: colors.primary }]}>{producto.codigo_interno}</Text>
+              <Text style={[styles.code, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>{producto.codigo_interno}</Text>
             </View>
             {producto.codigo_barras ? (
               <View style={styles.codeRow}>
                 <Text style={[styles.label, { color: colors.textMuted }]}>Código de barras</Text>
-                <Text style={[styles.code, { color: colors.textMuted }]}>{producto.codigo_barras}</Text>
+                <Text style={[styles.code, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>{producto.codigo_barras}</Text>
               </View>
             ) : null}
             {producto.unidad ? (
               <View style={styles.codeRow}>
                 <Text style={[styles.label, { color: colors.textMuted }]}>Unidad</Text>
-                <Text style={[styles.value, { color: colors.text }]}>{producto.unidad}</Text>
+                <Text style={[styles.value, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{producto.unidad}</Text>
               </View>
             ) : null}
           </View>
@@ -276,7 +276,7 @@ function StatCard({
   return (
     <View style={[styles.statCard, { backgroundColor: bg, borderColor: border }]}>
       <Text style={[styles.statLabel, { color: colors.textMuted }]}>{label}</Text>
-      <Text style={[styles.statValue, { color: valueColor ?? colors.text }]}>{value}</Text>
+      <Text style={[styles.statValue, { color: valueColor ?? colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
     </View>
   );
 }
@@ -294,7 +294,7 @@ function MarginBar({ producto, colors }: { producto: Producto; colors: any }) {
     <View>
       <View style={styles.marginHeader}>
         <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>Margen</Text>
-        <Text style={[styles.marginPct, { color: barColor }]}>
+        <Text style={[styles.marginPct, { color: barColor }]} numberOfLines={1} adjustsFontSizeToFit>
           {isNeg ? '-' : ''}{Math.abs(pct).toFixed(1)}%
         </Text>
       </View>
@@ -315,7 +315,7 @@ function StockDisplay({ producto, colors }: { producto: Producto; colors: any })
     <View style={styles.stockRow}>
       <Text style={[styles.stockQty, { color }]}>{qty}</Text>
       <View style={[styles.stockBadge, { backgroundColor: color + '22', borderColor: color + '55' }]}>
-        <Text style={[styles.stockBadgeText, { color }]}>
+        <Text style={[styles.stockBadgeText, { color }]} numberOfLines={1} adjustsFontSizeToFit>
           {isEmpty ? 'Sin stock' : isLow ? 'Stock bajo' : 'En stock'}
         </Text>
       </View>
