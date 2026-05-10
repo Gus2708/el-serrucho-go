@@ -15,12 +15,14 @@ import {
   PanResponder,
   Dimensions,
   TextInput,
+  Platform,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
@@ -30,7 +32,10 @@ import { useVentaDetalle } from '../../src/hooks/useVentaDetalle';
 import { VentaDetalleUSD } from '../../src/lib/supabase';
 import { useUserRole } from '../../src/hooks/useUserRole';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
-import Svg, { Path, Defs, LinearGradient as SvgGradient, Stop, Filter, FeGaussianBlur, Line } from 'react-native-svg';
+import Svg, { 
+  Path, Rect, Defs, LinearGradient as SvgGradient, Stop, Filter, 
+  FeGaussianBlur, FeOffset, FeComponentTransfer, FeFuncA, FeMerge, FeMergeNode, Line 
+} from 'react-native-svg';
 
 const PERIODS: { key: VentasPeriod; label: string }[] = [
   { key: 'hoy',    label: 'Hoy'    },
@@ -66,6 +71,7 @@ export default function Ventas() {
   const { scrollOffsetVentas, setScrollOffsetVentas } = useInventarioStore();
   const [refreshing,    setRefreshing]    = useState(false);
   const [selectedVenta, setSelectedVenta] = useState<VentaHoy | null>(null);
+  const [ventaToDelete, setVentaToDelete] = useState<string | null>(null);
   const [period,        setPeriod]        = useState<VentasPeriod>('hoy');
   const [hasDefaulted,  setHasDefaulted]  = useState(false);
 
@@ -296,7 +302,9 @@ export default function Ventas() {
           <View style={{ paddingHorizontal: 16, marginBottom: 10 }}>
             <VentaCard
               venta={venta}
-              onPress={() => setSelectedVenta(venta)}
+              onPress={() => {
+                setSelectedVenta(venta);
+              }}
             />
           </View>
         )}
@@ -430,6 +438,10 @@ function VentaCard({ venta, onPress }: { venta: VentaHoy; onPress: () => void })
           <Text style={[styles.clientName, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
             {venta.nombre_cliente}
           </Text>
+          <View style={[styles.itemsChip, { backgroundColor: colors.primaryFaded, borderColor: colors.primary + '30' }]}>
+            <Feather name="box" size={9} color={colors.primary} />
+            <Text style={[styles.itemsChipText, { color: colors.primary }]}>{venta.items_count}</Text>
+          </View>
         </View>
         {pago && (
           <View style={[styles.pagoChip, { backgroundColor: pago.color + '18', borderColor: pago.color + '40' }]}>
@@ -482,119 +494,107 @@ function TicketBackground({ width, height, notchY }: { width: number; height: nu
   
   const d = `
     M ${r} 0
-    L ${width - r} 0
+    H ${width - r}
     A ${r} ${r} 0 0 1 ${width} ${r}
-    L ${width} ${notchY - nr}
+    V ${notchY - nr}
     A ${nr} ${nr} 0 0 0 ${width} ${notchY + nr}
-    L ${width} ${height - r}
+    V ${height - r}
     A ${r} ${r} 0 0 1 ${width - r} ${height}
-    L ${r} ${height}
+    H ${r}
     A ${r} ${r} 0 0 1 0 ${height - r}
-    L 0 ${notchY + nr}
+    V ${notchY + nr}
     A ${nr} ${nr} 0 0 0 0 ${notchY - nr}
-    L 0 ${r}
+    V ${r}
     A ${r} ${r} 0 0 1 ${r} 0
     Z
   `;
 
   return (
-    <View style={{ width, height, position: 'absolute' }}>
-      <Svg width={width + 60} height={height + 60} viewBox={`-30 -20 ${width + 60} ${height + 60}`} style={{ position: 'absolute', left: -30, top: -20 }}>
+    <View style={{ width, height, position: 'absolute', overflow: 'visible' }}>
+      <Svg width={width + 80} height={height + 80} viewBox={`-40 -40 ${width + 80} ${height + 80}`} style={{ position: 'absolute', left: -40, top: -40 }}>
         <Defs>
-          <SvgGradient id="ticketGrad" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="#222222" stopOpacity="1" />
-            <Stop offset="1" stopColor="#121212" stopOpacity="1" />
-          </SvgGradient>
-          
-          <SvgGradient id="edgeGrad" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="rgba(255,255,255,0.12)" stopOpacity="1" />
-            <Stop offset="1" stopColor="rgba(255,255,255,0.03)" stopOpacity="1" />
-          </SvgGradient>
-
-          <Filter id="shadowBlur" x="-20%" y="-20%" width="140%" height="140%">
-            <FeGaussianBlur in="SourceGraphic" stdDeviation="6" />
+          <Filter id="premiumShadow" x="-50%" y="-50%" width="200%" height="200%">
+            <FeGaussianBlur in="SourceAlpha" stdDeviation="10" />
+            <FeOffset dx="0" dy="8" result="offsetblur" />
+            <FeComponentTransfer>
+              <FeFuncA type="linear" slope="0.4" />
+            </FeComponentTransfer>
+            <FeMerge>
+              <FeMergeNode />
+              <FeMergeNode in="SourceGraphic" />
+            </FeMerge>
           </Filter>
+          
+          <SvgGradient id="ticketGrad" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#2A2A2A" stopOpacity="1" />
+            <Stop offset="1" stopColor="#181818" stopOpacity="1" />
+          </SvgGradient>
         </Defs>
         
-        <Path 
-          d={d} 
-          fill="rgba(0,0,0,0.9)" 
-          transform="translate(0, 10)" 
-          filter="url(#shadowBlur)"
-        />
+        {/* Main Body with Shadow */}
+        <Path d={d} fill="url(#ticketGrad)" filter="url(#premiumShadow)" />
         
+        {/* Premium Edge Highlight - Notches */}
         <Path 
-          d={d} 
-          fill="url(#ticketGrad)" 
-          stroke="url(#edgeGrad)" 
-          strokeWidth="1.2" 
+          d={`M ${width} ${notchY - nr} A ${nr} ${nr} 0 0 0 ${width} ${notchY + nr}`} 
+          stroke="rgba(255,255,255,0.06)" 
+          strokeWidth="1.5" 
+        />
+        <Path 
+          d={`M 0 ${notchY + nr} A ${nr} ${nr} 0 0 0 0 ${notchY - nr}`} 
+          stroke="rgba(255,255,255,0.06)" 
+          strokeWidth="1.5" 
         />
 
-        {/* Perfectly centered perforation line */}
-        <Line 
-          x1={nr} 
-          y1={notchY} 
-          x2={width - nr} 
-          y2={notchY} 
-          stroke="rgba(255,255,255,0.2)" 
-          strokeWidth="1.5" 
-          strokeDasharray="6 6" 
+        {/* Improved Perforation line */}
+        <Line
+          x1={nr + 4}
+          y1={notchY}
+          x2={width - nr - 4}
+          y2={notchY}
+          stroke="rgba(255,255,255,0.12)"
+          strokeWidth="1.5"
+          strokeDasharray="6 6"
         />
       </Svg>
     </View>
   );
 }
 
+
 function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose: () => void }) {
+  const [showTicketDots, setShowTicketDots] = useState(true);
   const { colors, formatUSD } = useTheme();
   const { data: details = [], isLoading } = useVentaDetalle(venta?.venta_id ?? null);
+  const distinctCount = details.length;
   
-  const screenHeight = Dimensions.get('window').height;
-  const panY = useRef(new Animated.Value(screenHeight)).current;
+  const { height: screenHeight } = Dimensions.get('screen');
+  const animProgress = useRef(new Animated.Value(0)).current; 
   const [ticketLayout, setTicketLayout] = useState({ width: 0, height: 0 });
 
   const closeModal = () => {
-    Animated.timing(panY, {
-      toValue: screenHeight,
-      duration: 200,
+    Animated.timing(animProgress, {
+      toValue: 0,
+      duration: 250,
       useNativeDriver: true,
     }).start(onClose);
   };
 
+  const onShow = () => {
+    animProgress.setValue(0);
+    Animated.spring(animProgress, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 65,
+      friction: 11
+    }).start();
+  };
+
   useEffect(() => {
     if (venta) {
-      Animated.spring(panY, {
-        toValue: 0,
-        useNativeDriver: true,
-        tension: 40,
-        friction: 8,
-      }).start();
+      onShow();
     }
   }, [venta]);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gestureState) => gestureState.dy > 5,
-      onPanResponderMove: (_, gestureState) => {
-        if (gestureState.dy > 0) {
-          panY.setValue(gestureState.dy);
-        }
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dy > 120 || gestureState.vy > 0.5) {
-          closeModal();
-        } else {
-          Animated.spring(panY, {
-            toValue: 0,
-            useNativeDriver: true,
-            tension: 40,
-            friction: 8,
-          }).start();
-        }
-      },
-    })
-  ).current;
 
   if (!venta) return null;
 
@@ -610,30 +610,59 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
   return (
     <Modal
       visible={!!venta}
-      animationType="fade"
       transparent={true}
-      onRequestClose={onClose}
+      animationType="none" // Use custom animation
+      statusBarTranslucent={true}
+      hardwareAccelerated={true}
+      onRequestClose={closeModal}
     >
-      <View style={styles.modalOverlay}>
+      <Animated.View 
+        style={[
+          styles.modalOverlay, 
+          { 
+            opacity: animProgress.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, 1]
+            }) 
+          }
+        ]}
+      >
         <Pressable
           style={StyleSheet.absoluteFill}
           onPress={closeModal}
         />
+        <View style={styles.modalCloseContainer}>
+          <Pressable 
+            onPress={closeModal} 
+            style={({ pressed }) => [
+              styles.modalCloseBtn,
+              { opacity: pressed ? 0.7 : 1 }
+            ]}
+          >
+            <Feather name="x" size={24} color="#FFF" />
+          </Pressable>
+        </View>
         <Animated.View 
           style={[
-            styles.modalSheet, 
+            styles.modalTicketWindow, 
             { 
-              backgroundColor: colors.surface, 
-              transform: [{ translateY: panY }] 
+              transform: [
+                { 
+                  scale: animProgress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.92, 1]
+                  }) 
+                },
+                {
+                  translateY: animProgress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [20, 0]
+                  })
+                }
+              ] 
             }
           ]}
         >
-          <View 
-            {...panResponder.panHandlers} 
-            style={styles.modalHandleArea}
-          >
-            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-          </View>
           {isLoading ? (
             <View style={styles.modalLoading}>
               <ActivityIndicator color={colors.primary} size="large" />
@@ -644,28 +673,38 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
               contentContainerStyle={styles.modalContentWrapper}
               showsVerticalScrollIndicator={false}
             >
-              <View 
-                style={styles.ticketShadowWrapper}
-                onLayout={(e) => {
-                  const { width, height } = e.nativeEvent.layout;
-                  setTicketLayout({ width, height });
-                }}
-              >
-                {ticketLayout.width > 0 && (
+              <View style={styles.ticketShadowWrapper}>
+                {ticketLayout.width > 0 ? (
                   <TicketBackground 
                     width={ticketLayout.width} 
                     height={ticketLayout.height} 
                     notchY={104}
                   />
+                ) : (
+                  <View style={[StyleSheet.absoluteFill, { backgroundColor: '#222', borderRadius: 24 }]} />
                 )}
                 
-                <View style={styles.ticketInnerContent}>
+                <View 
+                  style={[
+                    styles.ticketInnerContent,
+                    { paddingBottom: 32 }
+                  ]}
+                  onLayout={(e) => {
+                    const { width, height } = e.nativeEvent.layout;
+                    if (Math.abs(ticketLayout.width - width) > 1 || Math.abs(ticketLayout.height - height) > 1) {
+                      setTicketLayout({ width, height });
+                    }
+                  }}
+                >
                   {/* Header */}
                   <View style={styles.ticketHeader}>
                     <View style={styles.ticketHeaderLeft}>
                       <Text style={[styles.ticketTitle, { color: colors.textDim }]}>RECIBO DE VENTA</Text>
                       <Text style={[styles.ticketFolio, { color: colors.text }]}>
                         {venta.documento || `#${venta.venta_id}`}
+                      </Text>
+                      <Text style={[styles.ticketProducts, { color: colors.textMuted }]}>
+                        {distinctCount} {distinctCount === 1 ? 'producto' : 'productos'}
                       </Text>
                     </View>
                     <View style={styles.ticketTimeContainer}>
@@ -679,25 +718,53 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
                     </View>
                   </View>
 
-                  <View style={{ height: 40 }} />
+                  <View style={{ height: 32 }} />
 
-                  {/* Items List - Unified with the ticket scroll */}
-                  <View style={styles.ticketList}>
-                    {details.map((item) => (
-                      <View key={item.id} style={styles.ticketItemRow}>
-                        <View style={styles.ticketItemMain}>
-                          <Text style={[styles.ticketItemDesc, { color: colors.text }]}>
-                            {item.descripcion}
-                          </Text>
-                          <Text style={[styles.ticketItemQty, { color: colors.textDim }]}>
-                            {item.cantidad} × {formatUSD(item.precio_unitario_usd)}
-                          </Text>
-                        </View>
-                        <Text style={[styles.ticketItemPrice, { color: colors.text }]}>
-                          {formatUSD(item.subtotal_usd)}
-                        </Text>
+                  {/* Items List - Internal scroll for 3+ items */}
+                  <View style={{ height: 16 }} />
+                  <View style={[styles.ticketListContainer, { maxHeight: 180 }]}>
+                    <ScrollView 
+                      nestedScrollEnabled={true} 
+                      showsVerticalScrollIndicator={false}
+                      onScroll={(e) => {
+                        const y = e.nativeEvent.contentOffset.y;
+                        if (y > 10 && showTicketDots) setShowTicketDots(false);
+                        if (y <= 10 && !showTicketDots) setShowTicketDots(true);
+                      }}
+                      scrollEventThrottle={16}
+                    >
+                      <View style={styles.ticketList}>
+                        {details.map((item) => (
+                          <View key={item.id} style={styles.ticketItemRow}>
+                            <View style={styles.ticketItemMain}>
+                              <Text style={[styles.ticketItemDesc, { color: colors.text }]}>
+                                {item.descripcion}
+                              </Text>
+                              <Text style={[styles.ticketItemQty, { color: colors.textDim }]}>
+                                {item.cantidad} × {formatUSD(item.precio_unitario_usd)}
+                              </Text>
+                            </View>
+                            <Text style={[styles.ticketItemPrice, { color: colors.text }]}>
+                              {formatUSD(item.subtotal_usd)}
+                            </Text>
+                          </View>
+                        ))}
                       </View>
-                    ))}
+                    </ScrollView>
+                    
+                    {details.length > 3 && (
+                      <>
+                        <LinearGradient
+                          colors={['transparent', 'rgba(34,34,34,0.8)', '#222222']}
+                          style={styles.ticketListFade}
+                        />
+                        {showTicketDots && (
+                          <View style={styles.ticketScrollIndicator}>
+                            <Text style={[styles.ticketScrollDots, { color: colors.text }]}>...</Text>
+                          </View>
+                        )}
+                      </>
+                    )}
                   </View>
 
                   {/* Footer & Totals */}
@@ -738,12 +805,14 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
                       </View>
                     </View>
                   </View>
+                  
+                  {/* Bottom Padding */}
                 </View>
               </View>
             </ScrollView>
           )}
         </Animated.View>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }
@@ -774,6 +843,7 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
   searchClear: { padding: 4 },
+
 
   suggestions: {
     marginTop: 24,
@@ -891,6 +961,21 @@ const styles = StyleSheet.create({
     fontFamily:    'JetBrainsMono_700Bold',
     letterSpacing: 0.2,
   },
+  itemsChip: {
+    flexDirection:    'row',
+    alignItems:       'center',
+    gap:              3,
+    borderRadius:     999,
+    borderWidth:      0.5,
+    paddingVertical:  2,
+    paddingHorizontal: 7,
+    marginLeft:       6,
+  },
+  itemsChipText: {
+    fontSize:      10,
+    fontFamily:    'JetBrainsMono_700Bold',
+    lineHeight:    13,
+  },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 80, gap: 16 },
   emptyIcon: {
@@ -900,17 +985,21 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 17, fontFamily: 'JetBrainsMono_700Bold' },
   emptySub: { fontSize: 13, textAlign: 'center', lineHeight: 20, fontFamily: 'JetBrainsMono_400Regular' },
   
-  modalSheet: {
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    maxHeight: '90%',
-    width: '100%',
-    overflow: 'hidden',
+  modalTicketWindow: {
+    width: '92%',
+    maxWidth: 500,
+    maxHeight: '85%',
+    borderRadius: 32,
+    overflow: 'visible',
+    alignSelf: 'center',
   },
-  modalScroll: { flex: 1 },
+  modalScroll: { 
+    borderRadius: 32,
+    overflow: 'visible',
+  },
   modalContentWrapper: {
     padding: 16,
-    paddingBottom: 60,
+    paddingBottom: 32,
   },
   ticketShadowWrapper: {
     borderRadius: 24,
@@ -921,11 +1010,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 10,
     backgroundColor: 'transparent',
+    overflow: 'visible',
   },
   ticketInnerContent: {
     paddingTop: 32,
     paddingBottom: 32,
-    overflow: 'hidden',
+    overflow: 'visible',
   },
   ticketHeader: {
     paddingHorizontal: 28,
@@ -937,6 +1027,7 @@ const styles = StyleSheet.create({
   ticketHeaderLeft: { gap: 0 },
   ticketTitle: { fontSize: 9, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.2, textTransform: 'uppercase', opacity: 0.6 },
   ticketFolio: { fontSize: 22, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -0.5 },
+  ticketProducts: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', marginTop: 4, opacity: 0.7 },
   ticketTimeContainer: { alignItems: 'flex-end', gap: 0 },
   ticketDateLabel: { fontSize: 9, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1, opacity: 0.6, marginBottom: 2 },
   ticketDate: { fontSize: 12, fontFamily: 'JetBrainsMono_700Bold' },
@@ -956,7 +1047,34 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   
-  ticketList: { paddingHorizontal: 24, paddingTop: 16 },
+  ticketListContainer: {
+    width: '100%',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  ticketList: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 24 },
+  ticketListFade: {
+    position: 'absolute',
+    bottom: 0,
+    left: 24,
+    right: 24,
+    height: 45,
+    pointerEvents: 'none',
+  },
+  ticketScrollIndicator: {
+    position: 'absolute',
+    bottom: 4,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    opacity: 0.5,
+  },
+  ticketScrollDots: {
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 2,
+    lineHeight: 20,
+  },
   ticketItemRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -997,23 +1115,27 @@ const styles = StyleSheet.create({
   ticketTotalCurrency: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold', marginTop: 4 },
   ticketTotalValue: { fontSize: 42, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -1 },
 
-  modalHandleArea: {
-    paddingTop: 12,
-    paddingBottom: 4,
-    alignItems: 'center',
-    width: '100%',
-  },
-  modalHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    marginBottom: 8,
-    opacity: 0.3,
-  },
   modalLoading: { height: 200, alignItems: 'center', justifyContent: 'center' },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.88)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalCloseContainer: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 100,
+  },
+  modalCloseBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
 });
