@@ -82,7 +82,16 @@ export default function ProductoDetail() {
 
       {/* Nav bar */}
       <View style={[styles.nav, { borderColor: colors.border }]}>
-        <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}>
+        <Pressable 
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/(tabs)/inventario');
+            }
+          }} 
+          style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}
+        >
           <Feather name="arrow-left" size={22} color={colors.text} />
         </Pressable>
         <Text style={[styles.navTitle, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>

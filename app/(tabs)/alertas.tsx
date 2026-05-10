@@ -133,7 +133,7 @@ export default function Alertas() {
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Alertas</Text>
+        <Text style={[styles.title, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>Alertas</Text>
         {!isLoading && totalCount > 0 && (
           <View style={[styles.badge, { backgroundColor: colors.danger + '22', borderColor: colors.danger + '55' }]}>
             <Text style={[styles.badgeText, { color: colors.danger }]}>{totalCount}</Text>
@@ -260,7 +260,7 @@ function SectionHeader({ title, count }: { title: string; count: number }) {
   const { colors } = useTheme();
   return (
     <View style={[styles.sectionHeader]}>
-      <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>{title}</Text>
+      <Text style={[styles.sectionTitle, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>{title}</Text>
       <View style={[styles.countBadge, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
         <Text style={[styles.countText, { color: colors.text }]}>{count}</Text>
       </View>

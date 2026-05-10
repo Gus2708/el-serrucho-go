@@ -190,8 +190,8 @@ export default function Index() {
         <View style={styles.logoStrip}>
           <LogoMark />
           <View style={styles.logoWords}>
-            <Text style={[styles.logoSub,  { color: colors.textDim  }]}>Ferretería</Text>
-            <Text style={[styles.logoName, { color: colors.primary  }]}>El Serrucho GO</Text>
+            <Text style={[styles.logoSub,  { color: colors.textDim  }]} numberOfLines={1} adjustsFontSizeToFit>Ferretería</Text>
+            <Text style={[styles.logoName, { color: colors.primary  }]} numberOfLines={1} adjustsFontSizeToFit>El Serrucho GO</Text>
           </View>
           
           <View style={styles.headerActions}>

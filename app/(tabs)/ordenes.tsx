@@ -200,12 +200,12 @@ function BorradorView({ router }: { router: any }) {
       {/* Submit bar */}
       {items.length > 0 && (
         <View style={[styles.submitBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <View>
-            <Text style={[styles.submitCount, { color: colors.text }]}>
+          <View style={styles.submitInfo}>
+            <Text style={[styles.submitCount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
               {items.length} ítem{items.length > 1 ? 's' : ''}
             </Text>
             <Pressable onPress={clear} style={({ pressed }) => pressed && { opacity: 0.7 }}>
-              <Text style={[styles.clearText, { color: colors.danger }]}>Limpiar borrador</Text>
+              <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>Limpiar borrador</Text>
             </Pressable>
           </View>
           <Pressable
@@ -217,7 +217,7 @@ function BorradorView({ router }: { router: any }) {
               ? <ActivityIndicator color={colors.onPrimary} />
               : <>
                   <Feather name="send" size={16} color={colors.onPrimary} />
-                  <Text style={[styles.submitBtnText, { color: colors.onPrimary }]}>Emitir y PDF</Text>
+                  <Text style={[styles.submitBtnText, { color: colors.onPrimary }]} numberOfLines={1} adjustsFontSizeToFit>Emitir y PDF</Text>
                 </>
             }
           </Pressable>
@@ -435,7 +435,9 @@ const styles = StyleSheet.create({
     borderRadius:      16,
     borderWidth:       0.5,
     padding:           16,
+    gap:               12,
   },
+  submitInfo:    { flex: 1, gap: 2 },
   submitCount:   { fontSize: 15, fontFamily: 'JetBrainsMono_700Bold' },
   clearText:     { fontSize: 12, marginTop: 2, fontFamily: 'JetBrainsMono_400Regular' },
   submitBtn: {

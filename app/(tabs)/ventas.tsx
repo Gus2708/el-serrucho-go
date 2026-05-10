@@ -165,10 +165,10 @@ export default function Ventas() {
           <>
             {/* Header */}
             <View style={styles.header}>
-              <Text style={[styles.title, { color: colors.text }]}>{PERIOD_LABELS[period]}</Text>
+              <Text style={[styles.title, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{PERIOD_LABELS[period]}</Text>
               <View style={styles.headerSub}>
-                <Text style={[styles.subtitle, { color: colors.textMuted }]}>Listado detallado de facturación</Text>
-                <Text style={[styles.dateContext, { color: colors.textDim }]}>{dateRangeLabel}</Text>
+                <Text style={[styles.subtitle, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>Listado detallado de facturación</Text>
+                <Text style={[styles.dateContext, { color: colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>{dateRangeLabel}</Text>
               </View>
             </View>
 

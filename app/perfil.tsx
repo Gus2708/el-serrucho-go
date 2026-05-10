@@ -132,7 +132,7 @@ export default function Perfil() {
         >
           <Feather name="chevron-left" size={22} color={colors.text} />
         </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>MI PERFIL</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>MI PERFIL</Text>
         <View style={{ width: 38 }} />
       </View>
 

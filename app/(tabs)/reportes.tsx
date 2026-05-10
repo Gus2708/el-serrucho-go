@@ -7,6 +7,7 @@ import {
   Pressable,
   ActivityIndicator,
   RefreshControl,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -33,6 +34,7 @@ export default function Reportes() {
   const { colors, formatUSD } = useTheme();
   const queryClient = useQueryClient();
   const { isDesktop } = useDeviceSize();
+  const { width: screenW } = useWindowDimensions();
 
   const [period,    setPeriod]    = useState<Period>(30);
   const [chartMode, setChartMode] = useState<ChartMode>('ganancia');
@@ -207,7 +209,7 @@ function SummaryPill({ label, value, color }: { label: string; value: string; co
   const { colors } = useTheme();
   return (
     <View style={[styles.pill, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <Text style={[styles.pillLabel, { color: colors.textMuted }]}>{label}</Text>
+      <Text style={[styles.pillLabel, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
       <Text style={[styles.pillValue, { color }]} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
     </View>
   );

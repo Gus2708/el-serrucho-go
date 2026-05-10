@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { useProductos, StockFilter } from '../../src/hooks/useProductos';
+import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 import { ProductRow } from '../../src/components/ProductRow';
 import type { Producto } from '../../src/lib/supabase';
@@ -30,9 +31,7 @@ export default function Inventario() {
   const { colors } = useTheme();
   const router = useRouter();
   const { isDesktop } = useDeviceSize();
-
-  const [search, setSearch]   = useState('');
-  const [filter, setFilter]   = useState<StockFilter>('todos');
+  const { search, filter, setSearch, setFilter } = useInventarioStore();
 
   const { productos, isLoading, isFetchingMore, hasMore, fetchMore, error } = useProductos(search, filter);
 
@@ -61,7 +60,7 @@ export default function Inventario() {
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Inventario</Text>
+        <Text style={[styles.title, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>Inventario</Text>
       </View>
 
       {/* Toolbar: search + filter chips. Stacked on mobile, side-by-side on desktop */}
