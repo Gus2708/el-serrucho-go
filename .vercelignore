@@ -1,0 +1,10 @@
+android
+ios
+.expo
+.expo-shared
+*.log
+contexts mds
+supabase
+.claude
+DIAGNOSTICO_SINCRONIZACION.md
+CONTEXT_SESION.md
