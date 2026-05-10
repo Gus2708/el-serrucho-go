@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Slot, useRouter, useSegments } from 'expo-router';
+
+// Web only: remove input focus outline
+if (typeof window !== 'undefined') {
+  require('./global.css');
+}
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Session } from '@supabase/supabase-js';

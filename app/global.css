@@ -1,0 +1,8 @@
+/* Remove default browser outline on web inputs */
+@media (hover: hover) {
+  input:focus,
+  textarea:focus,
+  select:focus {
+    outline: none;
+  }
+}
