@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { useProductos, StockFilter } from '../../src/hooks/useProductos';
+import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 import { ProductRow } from '../../src/components/ProductRow';
 import type { Producto } from '../../src/lib/supabase';
 
@@ -28,6 +29,7 @@ const FILTERS: { key: StockFilter; label: string }[] = [
 export default function Inventario() {
   const { colors } = useTheme();
   const router = useRouter();
+  const { isDesktop } = useDeviceSize();
 
   const [search, setSearch]   = useState('');
   const [filter, setFilter]   = useState<StockFilter>('todos');
@@ -62,59 +64,66 @@ export default function Inventario() {
         <Text style={[styles.title, { color: colors.text }]}>Inventario</Text>
       </View>
 
-      {/* Search bar */}
-      <View style={[styles.searchWrap, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
-        <Feather name="search" size={16} color={colors.textMuted} />
-        <TextInput
-          style={[styles.searchInput, { color: colors.text }]}
-          placeholder="Buscar por nombre o código…"
-          placeholderTextColor={colors.textDim}
-          value={search}
-          onChangeText={setSearch}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
-          clearButtonMode="while-editing"
-        />
-        {search.length > 0 && (
-          <Pressable onPress={() => setSearch('')} hitSlop={8} style={({ pressed }) => pressed && { opacity: 0.6 }}>
-            <Feather name="x" size={16} color={colors.textMuted} />
-          </Pressable>
-        )}
-      </View>
+      {/* Toolbar: search + filter chips. Stacked on mobile, side-by-side on desktop */}
+      <View style={isDesktop ? styles.toolbarDesktop : undefined}>
+        {/* Search bar */}
+        <View style={[
+          styles.searchWrap,
+          isDesktop && styles.searchWrapDesktop,
+          { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+        ]}>
+          <Feather name="search" size={16} color={colors.textMuted} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            placeholder="Buscar por nombre o código…"
+            placeholderTextColor={colors.textDim}
+            value={search}
+            onChangeText={setSearch}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+          />
+          {search.length > 0 && (
+            <Pressable onPress={() => setSearch('')} hitSlop={8} style={({ pressed }) => pressed && { opacity: 0.6 }}>
+              <Feather name="x" size={16} color={colors.textMuted} />
+            </Pressable>
+          )}
+        </View>
 
-      {/* Filter chips */}
-      <View style={styles.chipsContainer}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipsContent}
-        >
-          {FILTERS.map(f => {
-            const active = filter === f.key;
-            return (
-              <Pressable
-                key={f.key}
-                style={({ pressed }) => [
-                  styles.chip,
-                  {
-                    backgroundColor: active ? colors.primary : colors.surfaceAlt,
-                    borderColor:     active ? colors.primary : colors.border,
-                  },
-                  pressed && { opacity: 0.75 },
-                ]}
-                onPress={() => setFilter(f.key)}
-              >
-                <Text style={[
-                  styles.chipText,
-                  { color: active ? colors.onPrimary : colors.textMuted },
-                ]} numberOfLines={1} adjustsFontSizeToFit>
-                  {f.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+        {/* Filter chips */}
+        <View style={[styles.chipsContainer, isDesktop && styles.chipsContainerDesktop]}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipsContent}
+          >
+            {FILTERS.map(f => {
+              const active = filter === f.key;
+              return (
+                <Pressable
+                  key={f.key}
+                  style={({ pressed }) => [
+                    styles.chip,
+                    {
+                      backgroundColor: active ? colors.primary : colors.surfaceAlt,
+                      borderColor:     active ? colors.primary : colors.border,
+                    },
+                    pressed && { opacity: 0.75 },
+                  ]}
+                  onPress={() => setFilter(f.key)}
+                >
+                  <Text style={[
+                    styles.chipText,
+                    { color: active ? colors.onPrimary : colors.textMuted },
+                  ]} numberOfLines={1} adjustsFontSizeToFit>
+                    {f.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
       </View>
 
       {/* List */}
@@ -173,6 +182,13 @@ const styles = StyleSheet.create({
   title: { fontSize: 26, fontFamily: 'JetBrainsMono_700Bold' },
   count: { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular' },
 
+  toolbarDesktop: {
+    flexDirection:    'row',
+    alignItems:       'center',
+    gap:              16,
+    paddingHorizontal: 16,
+    marginBottom:     14,
+  },
   searchWrap: {
     flexDirection:     'row',
     alignItems:        'center',
@@ -184,6 +200,12 @@ const styles = StyleSheet.create({
     borderRadius:      12,
     borderWidth:       0.5,
   },
+  searchWrapDesktop: {
+    marginHorizontal: 0,
+    marginBottom:     0,
+    flex:             1,
+    maxWidth:         480,
+  },
   searchInput: {
     flex:     1,
     fontSize: 14,
@@ -192,6 +214,10 @@ const styles = StyleSheet.create({
 
   chipsContainer: {
     marginBottom: 12,
+  },
+  chipsContainerDesktop: {
+    flex:         1,
+    marginBottom: 0,
   },
   chipsContent: {
     paddingHorizontal: 16,

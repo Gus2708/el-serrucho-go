@@ -15,6 +15,7 @@ import { useTheme } from '../../src/theme/ThemeContext';
 import { useProfitDaily } from '../../src/hooks/useProfitSummary';
 import { useTopProductos } from '../../src/hooks/useTopProductos';
 import { useVelocidad } from '../../src/hooks/useVelocidad';
+import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 import { GananciaChart } from '../../src/components/GananciaChart';
 import { DonutChart } from '../../src/components/DonutChart';
 import { CurrencyText } from '../../src/components/CurrencyText';
@@ -31,6 +32,7 @@ const PERIODS: { value: Period; label: string }[] = [
 export default function Reportes() {
   const { colors, formatUSD } = useTheme();
   const queryClient = useQueryClient();
+  const { isDesktop } = useDeviceSize();
 
   const [period,    setPeriod]    = useState<Period>(30);
   const [chartMode, setChartMode] = useState<ChartMode>('ganancia');
@@ -134,23 +136,28 @@ export default function Reportes() {
           </View>
         )}
 
-        {/* Bar chart */}
-        {loadingDaily
-          ? <View style={styles.loadingRow}><ActivityIndicator color={colors.primary} /></View>
-          : <GananciaChart data={daily} mode={chartMode} />
-        }
+        {/* Charts row: bar (60%) + donut (40%) on desktop, stacked on mobile */}
+        <View style={isDesktop ? styles.chartsRowDesktop : undefined}>
+          <View style={isDesktop ? { flex: 6 } : undefined}>
+            {loadingDaily
+              ? <View style={styles.loadingRow}><ActivityIndicator color={colors.primary} /></View>
+              : <GananciaChart data={daily} mode={chartMode} />
+            }
+          </View>
 
-        {/* Product velocity donut */}
-        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
-          Velocidad de productos · 30 días
-        </Text>
-        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          {loadingVel
-            ? <ActivityIndicator color={colors.primary} />
-            : velocidad
-            ? <DonutChart counts={velocidad} />
-            : <Text style={[styles.emptyText, { color: colors.textMuted }]}>Sin datos</Text>
-          }
+          <View style={isDesktop ? { flex: 4 } : undefined}>
+            <Text style={[styles.sectionLabel, { color: colors.textMuted }, isDesktop && { marginTop: 0 }]}>
+              Velocidad de productos · 30 días
+            </Text>
+            <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              {loadingVel
+                ? <ActivityIndicator color={colors.primary} />
+                : velocidad
+                ? <DonutChart counts={velocidad} />
+                : <Text style={[styles.emptyText, { color: colors.textMuted }]}>Sin datos</Text>
+              }
+            </View>
+          </View>
         </View>
 
         {/* Top 20 products */}
@@ -232,6 +239,12 @@ const styles = StyleSheet.create({
   summaryRow: {
     flexDirection: 'row',
     gap:           8,
+  },
+  chartsRowDesktop: {
+    flexDirection: 'row',
+    gap:           12,
+    paddingHorizontal: 0,
+    marginTop:     8,
   },
   pill: {
     flex:          1,

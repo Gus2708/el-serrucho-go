@@ -26,6 +26,7 @@ import { useProfitSummary } from '../../src/hooks/useProfitSummary';
 import { useVentaDetalle } from '../../src/hooks/useVentaDetalle';
 import { VentaDetalleUSD } from '../../src/lib/supabase';
 import { useUserRole } from '../../src/hooks/useUserRole';
+import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 
 const PERIODS: { key: VentasPeriod; label: string }[] = [
   { key: 'hoy',    label: 'Hoy'    },
@@ -53,6 +54,7 @@ export default function Ventas() {
   const isAdmin = userAuth?.role === 'admin';
   const { colors, formatUSD } = useTheme();
   const queryClient = useQueryClient();
+  const { isDesktop } = useDeviceSize();
   const [refreshing,    setRefreshing]    = useState(false);
   const [selectedVenta, setSelectedVenta] = useState<VentaHoy | null>(null);
   const [period,        setPeriod]        = useState<VentasPeriod>('hoy');
@@ -171,14 +173,14 @@ export default function Ventas() {
             </View>
 
             {/* Period badges */}
-            <View style={styles.periodRow}>
+            <View style={[styles.periodRow, isDesktop && styles.periodRowDesktop]}>
               {PERIODS.map(p => {
                 const active = period === p.key;
                 return (
                   <Pressable
                     key={p.key}
                     style={({ pressed }) => [
-                      styles.periodBtn,
+                      isDesktop ? styles.periodBtnDesktop : styles.periodBtn,
                       {
                         backgroundColor: active ? colors.primary  : colors.surface,
                         borderColor:     active ? colors.primary  : colors.border,
@@ -187,7 +189,7 @@ export default function Ventas() {
                     ]}
                     onPress={() => setPeriod(p.key)}
                   >
-                    <Text style={[styles.periodText, { color: active ? colors.onPrimary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
+                    <Text style={[styles.periodText, { color: active ? colors.onPrimary : colors.textMuted }]} numberOfLines={1}>
                       {p.label}
                     </Text>
                   </Pressable>
@@ -196,8 +198,8 @@ export default function Ventas() {
             </View>
 
             {/* KPIs */}
-            <View style={styles.kpiRow}>
-              <View style={[styles.kpiCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.kpiRow, isDesktop && styles.kpiRowDesktop]}>
+              <View style={[styles.kpiCard, isDesktop && styles.kpiCardDesktop, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 <Text style={[styles.kpiLabel, { color: colors.textDim }]}>
                   {isAdmin ? KPI_LABELS[period] : 'Ticket promedio'}
                 </Text>
@@ -209,7 +211,7 @@ export default function Ventas() {
                   </Text>
                 )}
               </View>
-              <View style={[styles.kpiCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={[styles.kpiCard, isDesktop && styles.kpiCardDesktop, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 <Text style={[styles.kpiLabel, { color: colors.textDim }]}>Facturas</Text>
                 {loadingStats ? (
                   <ActivityIndicator size="small" color={colors.primary} style={{ alignSelf: 'flex-start' }} />
@@ -552,12 +554,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom:      14,
   },
+  periodRowDesktop: { gap: 8, justifyContent: 'flex-start' },
   periodBtn: {
     flex:              1,
     alignItems:        'center',
     paddingVertical:   8,
     borderRadius:      12,
     borderWidth:       0.5,
+  },
+  periodBtnDesktop: {
+    alignItems:        'center',
+    justifyContent:    'center',
+    paddingVertical:   9,
+    paddingHorizontal: 22,
+    borderRadius:      10,
+    borderWidth:       0.5,
+    minWidth:          96,
   },
   periodText: { fontSize: 12, fontFamily: 'JetBrainsMono_500Medium' },
 
@@ -567,6 +579,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 20,
   },
+  kpiRowDesktop: { gap: 12 },
   kpiCard: {
     flex: 1,
     padding: 16,
@@ -574,6 +587,7 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     gap: 4,
   },
+  kpiCardDesktop: { flexBasis: 0, padding: 18 },
   kpiLabel: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.5 },
   kpiValue: { fontSize: 20, fontFamily: 'JetBrainsMono_700Bold' },
 

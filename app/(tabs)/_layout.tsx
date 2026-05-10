@@ -4,8 +4,8 @@ import { FloatingTabBar } from '../../src/components/FloatingTabBar';
 import { Sidebar } from '../../src/components/Sidebar';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 
-// Max readable width for dashboard content on large screens
-const CONTENT_MAX_WIDTH = 1080;
+// Max readable width for content on very wide screens (1920px+)
+const CONTENT_MAX_WIDTH = 1400;
 
 export default function TabLayout() {
   const { isDesktop } = useDeviceSize();
@@ -29,8 +29,8 @@ export default function TabLayout() {
     <View style={{ flex: 1, flexDirection: useWebSidebar ? 'row' : 'column' }}>
       {useWebSidebar && <Sidebar />}
 
-      {/* Content pane: centered at CONTENT_MAX_WIDTH on desktop */}
-      <View style={{ flex: 1, minWidth: 0, alignItems: useWebSidebar ? 'center' : 'stretch' }}>
+      {/* Content pane: left-aligned (after sidebar), capped to CONTENT_MAX_WIDTH */}
+      <View style={{ flex: 1, minWidth: 0 }}>
         <View style={{ flex: 1, width: '100%', maxWidth: useWebSidebar ? CONTENT_MAX_WIDTH : undefined }}>
           {tabs}
         </View>

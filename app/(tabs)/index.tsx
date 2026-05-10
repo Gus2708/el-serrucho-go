@@ -242,8 +242,7 @@ export default function Index() {
               <Pressable
                 key={p.key}
                 style={({ pressed }) => [
-                  styles.periodBtn,
-                  isDesktop && styles.periodBtnDesktop,
+                  isDesktop ? styles.periodBtnDesktop : styles.periodBtn,
                   {
                     backgroundColor: active ? colors.primary    : colors.surface,
                     borderColor:     active ? colors.primary    : colors.border,
@@ -440,8 +439,7 @@ function KpiCard({ icon, value, label, loading, desktop }: {
   const { colors } = useTheme();
   return (
     <View style={[
-      styles.kpiCard,
-      desktop && styles.kpiCardDesktop,
+      desktop ? styles.kpiCardDesktop : styles.kpiCard,
       { backgroundColor: colors.surface, borderColor: colors.border },
     ]}>
       <Feather name={icon} size={17} color={colors.primary} style={styles.kpiIcon} />
@@ -501,7 +499,8 @@ const styles = StyleSheet.create({
     marginBottom:      12,
   },
   periodRowDesktop: {
-    justifyContent: 'flex-start',
+    gap:               8,
+    justifyContent:    'flex-start',
   },
   periodBtn: {
     flex:              1,
@@ -510,10 +509,15 @@ const styles = StyleSheet.create({
     borderRadius:      12,
     borderWidth:       0.5,
   },
+  // Desktop: complete replacement (NOT merged) — explicit basis-auto so text shows
   periodBtnDesktop: {
-    flex:              0,
-    paddingHorizontal: 24,
-    paddingVertical:   7,
+    alignItems:        'center',
+    justifyContent:    'center',
+    paddingVertical:   9,
+    paddingHorizontal: 22,
+    borderRadius:      10,
+    borderWidth:       0.5,
+    minWidth:          96,
   },
   periodText: { fontSize: 12, fontFamily: 'JetBrainsMono_500Medium' },
 
@@ -552,7 +556,6 @@ const styles = StyleSheet.create({
   kpiGridDesktop: {
     flexWrap:       'nowrap',   // 4 cards in a single row
     gap:            12,
-    justifyContent: 'stretch',
   },
   kpiLoading: { paddingVertical: 24, alignItems: 'center', marginBottom: 14 },
   kpiCard: {
@@ -561,9 +564,13 @@ const styles = StyleSheet.create({
     borderWidth:  0.5,
     padding:      14,
   },
+  // Desktop: complete replacement (NOT merged with kpiCard) — flex:1 + no width
   kpiCardDesktop: {
-    flex:  1,       // equal-width 4-col on desktop
-    width: undefined,
+    flex:         1,
+    flexBasis:    0,
+    borderRadius: 16,
+    borderWidth:  0.5,
+    padding:      16,
   },
   kpiIcon:  { marginBottom: 8 },
   kpiVal:   { fontSize: 17, fontFamily: 'JetBrainsMono_700Bold', marginBottom: 2 },
