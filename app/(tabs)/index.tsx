@@ -8,13 +8,9 @@ import {
   Pressable,
   RefreshControl,
   ActivityIndicator,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 
-// Ancho EXTERIOR del bigCard del Dashboard (de borde a borde de la tarjeta):
-//   SCREEN_W - marginHorizontal*2 (16+16). NO se resta el padding interior
-//   porque queremos que el sparkline rompa ese padding y abarque todo.
-const BIG_CARD_OUTER_W = Dimensions.get('window').width - 16 * 2;
 // Padding interior del bigCard (debe coincidir con `bigCard.padding` en styles)
 const BIG_CARD_PADDING = 20;
 import { Image } from 'expo-image';
@@ -61,6 +57,10 @@ export default function Index() {
   const { colors, formatUSD } = useTheme();
   const router      = useRouter();
   const queryClient = useQueryClient();
+  const { width: screenW } = useWindowDimensions();
+  const isDesktop = screenW >= 768;
+  // BigCard outer width: on desktop it fills the content column minus margins
+  const BIG_CARD_OUTER_W = screenW - 16 * 2;
 
   const [refreshing, setRefreshing] = useState(false);
   const [userName,   setUserName]   = useState('');
@@ -235,7 +235,7 @@ export default function Index() {
         <TasaCard />
 
         {/* ── Period toggle ── */}
-        <View style={styles.periodRow}>
+        <View style={[styles.periodRow, isDesktop && styles.periodRowDesktop]}>
           {PERIODS.map(p => {
             const active = period === p.key;
             return (
@@ -243,6 +243,7 @@ export default function Index() {
                 key={p.key}
                 style={({ pressed }) => [
                   styles.periodBtn,
+                  isDesktop && styles.periodBtnDesktop,
                   {
                     backgroundColor: active ? colors.primary    : colors.surface,
                     borderColor:     active ? colors.primary    : colors.border,
@@ -251,10 +252,9 @@ export default function Index() {
                 ]}
                 onPress={() => setPeriod(p.key)}
               >
-                <Text 
+                <Text
                   style={[styles.periodText, { color: active ? colors.onPrimary : colors.textMuted }]}
                   numberOfLines={1}
-                  adjustsFontSizeToFit
                 >
                   {p.label}
                 </Text>
@@ -312,25 +312,28 @@ export default function Index() {
           </View>
         )}
 
-        {/* ── KPI grid 2×2 ── */}
-        <View style={styles.kpiGrid}>
+        {/* ── KPI grid: 2×2 mobile / 4×1 desktop ── */}
+        <View style={[styles.kpiGrid, isDesktop && styles.kpiGridDesktop]}>
           <KpiCard
             icon="shopping-cart"
             value={String(stats.ventas)}
             label={`Ventas ${period === 'dia' ? 'hoy' : period === 'ayer' ? 'ayer' : period === 'semana' ? 'semana' : 'del mes'}`}
             loading={loadingSum}
+            desktop={isDesktop}
           />
           <KpiCard
             icon="file-text"
             value={formatUSD(summary?.ticket_promedio ?? 0)}
             label="Ticket promedio"
             loading={loadingSum}
+            desktop={isDesktop}
           />
           <KpiCard
             icon="package"
             value={String(Math.round(stats.items))}
             label={`Unidades ${period === 'dia' ? 'hoy' : period === 'ayer' ? 'ayer' : period === 'semana' ? 'semana' : 'del mes'}`}
             loading={loadingSum}
+            desktop={isDesktop}
           />
           {isAdmin ? (
             <KpiCard
@@ -338,6 +341,7 @@ export default function Index() {
               value={formatUSD(stats.ingreso)}
               label={`Ingreso ${period === 'dia' ? 'hoy' : period === 'ayer' ? 'ayer' : period === 'semana' ? 'semana' : 'mes'}`}
               loading={loadingSum}
+              desktop={isDesktop}
             />
           ) : (
             <KpiCard
@@ -345,18 +349,22 @@ export default function Index() {
               value={stats.ventas > 0 ? (stats.items / stats.ventas).toFixed(1) : '0'}
               label="Artículos / ticket"
               loading={loadingSum}
+              desktop={isDesktop}
             />
           )}
         </View>
 
-        {/* ── Charts ── */}
+        {/* ── Charts: stacked on mobile, side-by-side on desktop ── */}
         {isAdmin && (
-          <View style={{ gap: 12, marginTop: 4 }}>
-            <Text style={[styles.sectionLabel, { color: colors.textDim }]}>Tendencia de Ganancia</Text>
-            <GananciaChart data={daily7} mode="ganancia" />
-            
-            <Text style={[styles.sectionLabel, { color: colors.textDim }]}>Tendencia de Ingreso</Text>
-            <GananciaChart data={daily7} mode="ingreso" />
+          <View style={[{ marginTop: 4 }, isDesktop && { flexDirection: 'row', gap: 12, paddingHorizontal: 16 }]}>
+            <View style={[{ gap: 8 }, isDesktop && { flex: 1 }]}>
+              <Text style={[styles.sectionLabel, { color: colors.textDim }, isDesktop && { paddingHorizontal: 0 }]}>Tendencia de Ganancia</Text>
+              <GananciaChart data={daily7} mode="ganancia" />
+            </View>
+            <View style={[{ gap: 8 }, isDesktop && { flex: 1 }]}>
+              <Text style={[styles.sectionLabel, { color: colors.textDim }, isDesktop && { paddingHorizontal: 0 }]}>Tendencia de Ingreso</Text>
+              <GananciaChart data={daily7} mode="ingreso" />
+            </View>
           </View>
         )}
 
@@ -422,15 +430,20 @@ function TopToday({ isAdmin }: { isAdmin: boolean }) {
 
 // ── KPI card ──────────────────────────────────────────────────────────────────
 
-function KpiCard({ icon, value, label, loading }: {
-  icon:  React.ComponentProps<typeof Feather>['name'];
-  value: string;
-  label: string;
+function KpiCard({ icon, value, label, loading, desktop }: {
+  icon:     React.ComponentProps<typeof Feather>['name'];
+  value:    string;
+  label:    string;
   loading?: boolean;
+  desktop?: boolean;
 }) {
   const { colors } = useTheme();
   return (
-    <View style={[styles.kpiCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+    <View style={[
+      styles.kpiCard,
+      desktop && styles.kpiCardDesktop,
+      { backgroundColor: colors.surface, borderColor: colors.border },
+    ]}>
       <Feather name={icon} size={17} color={colors.primary} style={styles.kpiIcon} />
       {loading ? (
         <ActivityIndicator size="small" color={colors.primary} style={{ alignSelf: 'flex-start', marginVertical: 4 }} />
@@ -487,12 +500,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom:      12,
   },
+  periodRowDesktop: {
+    justifyContent: 'flex-start',
+  },
   periodBtn: {
     flex:              1,
     alignItems:        'center',
     paddingVertical:   8,
     borderRadius:      12,
     borderWidth:       0.5,
+  },
+  periodBtnDesktop: {
+    flex:              0,
+    paddingHorizontal: 24,
+    paddingVertical:   7,
   },
   periodText: { fontSize: 12, fontFamily: 'JetBrainsMono_500Medium' },
 
@@ -523,15 +544,26 @@ const styles = StyleSheet.create({
   kpiGrid: {
     flexDirection:     'row',
     flexWrap:          'wrap',
-    justifyContent:    'space-between',   // ocupa todo el ancho, gap real entre las 2 columnas
+    justifyContent:    'space-between',
     rowGap:            10,
     paddingHorizontal: 16,
     marginBottom:      14,
   },
+  kpiGridDesktop: {
+    flexWrap:       'nowrap',   // 4 cards in a single row
+    gap:            12,
+    justifyContent: 'stretch',
+  },
   kpiLoading: { paddingVertical: 24, alignItems: 'center', marginBottom: 14 },
   kpiCard: {
-    width: '48.5%',                       // 2 columnas × 48.5% + gap ~3% = 100% del ancho disponible
-    borderRadius: 16, borderWidth: 0.5, padding: 14,
+    width:        '48.5%',   // 2-col on mobile
+    borderRadius: 16,
+    borderWidth:  0.5,
+    padding:      14,
+  },
+  kpiCardDesktop: {
+    flex:  1,       // equal-width 4-col on desktop
+    width: undefined,
   },
   kpiIcon:  { marginBottom: 8 },
   kpiVal:   { fontSize: 17, fontFamily: 'JetBrainsMono_700Bold', marginBottom: 2 },
