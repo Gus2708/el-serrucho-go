@@ -16,8 +16,9 @@
 - **🛡️ Role-Based Access (RBAC)**: Secure access control for Administrators and Employees with tailored interfaces.
 - **📈 Interactive Visualizations**: Dynamic charts and sparklines for financial health tracking.
 - **🔔 Smart Alerts**: Automated monitoring for inventory anomalies and critical system notifications.
+- **💾 State Persistence**: Global search and filter parameters preserved across navigation (Zustand).
+- **📱 Ultra-Responsive UI**: Optimized for all screen sizes with dynamic font scaling and flexible layouts.
 - **📄 PDF Integration**: Professional report generation and document sharing (invoices, inventory lists).
-- **🎨 Premium Dark UI**: A meticulously crafted dark theme using glassmorphism and modern typography (JetBrains Mono).
 
 ---
 
@@ -111,6 +112,15 @@
 ## 📄 License
 
 Distributed under the MIT License. See `LICENSE` for more information.
+
+---
+
+## ✨ Recent Improvements (v2.2)
+
+- **Inventario Inteligente**: Implementación de un store global (Zustand) para persistir búsquedas y filtros al navegar entre pantallas.
+- **Navegación Robusta**: Lógica de retorno inteligente en el detalle de productos para asegurar que el usuario siempre regrese al inventario.
+- **Optimización Mobile**: Ajuste de tipografías dinámicas (`adjustsFontSizeToFit`) y manejo de desbordamientos en pantallas pequeñas (iPhone SE, etc).
+- **Sincronización Mejorada**: Integración de indicadores de estado en tiempo real basados en la última actualización del POS.
 
 ---
 
