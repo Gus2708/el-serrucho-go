@@ -12,7 +12,7 @@ import { supabase } from '../src/lib/supabase';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
 import * as Font from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import { ActivityIndicator, Platform, View } from 'react-native';
+import { ActivityIndicator, Platform, View, useWindowDimensions } from 'react-native';
 // SplashScreen is a no-op on web
 if (Platform.OS !== 'web') {
   SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -89,6 +89,8 @@ export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [failsafeActive, setFailsafeActive] = useState(false);
+  const { width: windowWidth } = useWindowDimensions();
+  const isDesktop = Platform.OS === 'web' && windowWidth >= 768;
 
   // Carga de fuentes JetBrains Mono Locales (Máxima performance)
   const [fontsLoaded, fontError] = Font.useFonts({
@@ -200,7 +202,7 @@ export default function RootLayout() {
   if (Platform.OS === 'web') {
     return (
       <View style={{ flex: 1, backgroundColor: '#0C0C0C', alignItems: 'center' }}>
-        <View style={{ flex: 1, width: '100%', maxWidth: 480 }}>
+        <View style={{ flex: 1, width: '100%', maxWidth: isDesktop ? 960 : 480 }}>
           {inner}
         </View>
       </View>

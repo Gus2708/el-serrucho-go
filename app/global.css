@@ -1,8 +1,33 @@
-/* Remove default browser outline on web inputs */
+/* Remove default browser focus outline on inputs */
 @media (hover: hover) {
   input:focus,
   textarea:focus,
   select:focus {
     outline: none;
+  }
+}
+
+/* Custom scrollbar for desktop */
+@media (min-width: 768px) {
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #161616;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2C2C2C;
+    border-radius: 2px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3C3C3C;
+  }
+}
+
+/* Prevent horizontal overflow on desktop content area */
+@media (min-width: 768px) {
+  body {
+    overflow-x: hidden;
   }
 }
