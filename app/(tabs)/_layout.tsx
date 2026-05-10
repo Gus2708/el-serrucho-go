@@ -4,9 +4,6 @@ import { FloatingTabBar } from '../../src/components/FloatingTabBar';
 import { Sidebar } from '../../src/components/Sidebar';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 
-// Max readable width for content on very wide screens (1920px+)
-const CONTENT_MAX_WIDTH = 1400;
-
 export default function TabLayout() {
   const { isDesktop } = useDeviceSize();
   const useWebSidebar = Platform.OS === 'web' && isDesktop;
@@ -29,11 +26,9 @@ export default function TabLayout() {
     <View style={{ flex: 1, flexDirection: useWebSidebar ? 'row' : 'column' }}>
       {useWebSidebar && <Sidebar />}
 
-      {/* Content pane: left-aligned (after sidebar), capped to CONTENT_MAX_WIDTH */}
+      {/* Content pane: fills the full remaining viewport width on desktop */}
       <View style={{ flex: 1, minWidth: 0 }}>
-        <View style={{ flex: 1, width: '100%', maxWidth: useWebSidebar ? CONTENT_MAX_WIDTH : undefined }}>
-          {tabs}
-        </View>
+        {tabs}
       </View>
     </View>
   );
