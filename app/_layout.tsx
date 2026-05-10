@@ -200,9 +200,13 @@ export default function RootLayout() {
   );
 
   if (Platform.OS === 'web') {
+    // Desktop: full width — sidebar + content fill the entire screen
+    if (isDesktop) return inner;
+
+    // Mobile browser: center a 480px column (looks like the native app)
     return (
       <View style={{ flex: 1, backgroundColor: '#0C0C0C', alignItems: 'center' }}>
-        <View style={{ flex: 1, width: '100%', maxWidth: isDesktop ? 960 : 480 }}>
+        <View style={{ flex: 1, width: '100%', maxWidth: 480 }}>
           {inner}
         </View>
       </View>
