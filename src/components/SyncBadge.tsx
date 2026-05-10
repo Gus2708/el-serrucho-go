@@ -1,7 +1,8 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, Animated, Pressable, ActivityIndicator } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 import { useSyncStatus } from '../hooks/useSyncStatus';
+import { notify, confirm } from '../lib/notify';
 import { Feather } from '@expo/vector-icons';
 
 export function SyncBadge() {
@@ -22,36 +23,31 @@ export function SyncBadge() {
 
   const handleSync = () => {
     if (isClosed) {
-      Alert.alert('Tienda Cerrada', 'El Serrucho está fuera de su horario laboral (8am - 6pm). Los datos se actualizarán automáticamente al abrir.');
+      notify('Tienda Cerrada', 'El Serrucho está fuera de su horario laboral (8am - 6pm). Los datos se actualizarán automáticamente al abrir.');
       return;
     }
 
     if (isStuck) {
-      Alert.alert(
-        'Sincronización Atascada',
-        'El backend local no está respondiendo. ¿Deseas forzar el reinicio del estado?',
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          { 
-            text: 'Forzar Reinicio', 
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                await forceResetSync();
-              } catch (e) {
-                Alert.alert('Error', 'No se pudo reiniciar el estado.');
-              }
-            }
+      confirm({
+        title:       'Sincronización Atascada',
+        message:     'El backend local no está respondiendo. ¿Deseas forzar el reinicio del estado?',
+        confirmText: 'Forzar Reinicio',
+        destructive: true,
+        onConfirm: async () => {
+          try {
+            await forceResetSync();
+          } catch {
+            notify('Error', 'No se pudo reiniciar el estado.');
           }
-        ]
-      );
+        },
+      });
       return;
     }
 
     triggerSync('sync_all', {
       onError: (error) => {
-        Alert.alert('Error de Sincronización', error.message || 'No se pudo conectar con el widget.');
-      }
+        notify('Error de Sincronización', error.message || 'No se pudo conectar con el widget.');
+      },
     });
   };
 

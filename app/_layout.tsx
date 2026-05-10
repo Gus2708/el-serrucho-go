@@ -20,7 +20,11 @@ if (Platform.OS !== 'web') {
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { retry: 1, staleTime: 30_000 },
+    queries: { 
+      retry: 1, 
+      staleTime: 30_000,
+      refetchOnWindowFocus: false, // Prevents flickering/reloading when switching windows
+    },
   },
 });
 
@@ -36,29 +40,33 @@ function AuthGuard({ session, ready }: { session: Session | null; ready: boolean
     // Si no estamos listos (fuentes/auth), no hacemos nada
     if (!ready) return;
     
-    const inAuth = segments[0] === '(auth)';
-    const isRoot = segments.length < 1;
-    const isPending = segments[1] === 'pending';
+    // Cast a string[] porque typedRoutes restringe los valores de segments al
+    // enum de rutas y no permite comparar contra '' o length 0.
+    const segs = segments as string[];
+    const inAuth = segs[0] === '(auth)';
+    const isRoot = segs.length === 0;
+    // Expo Router can sometimes represent index as [''] or []
+    const isIndex = segs.length === 1 && segs[0] === '';
 
     if (!session) {
-      // Caso 1: No hay sesión -> Mandar a login si no está ahí
+      // Case 1: No session -> Mandar a login si no está ahí
       if (!inAuth) {
         router.replace('/(auth)/login');
       }
     } else {
-      // Caso 2: Hay sesión pero estamos cargando el rol
+      // Case 2: Hay sesión pero estamos cargando el rol
       if (roleLoading) return;
 
-      // Caso 3: Hay sesión y rol cargado
+      // Case 3: Hay sesión y rol cargado
       if (roleData) {
         if (!roleData.is_active) {
           // Usuario no activo -> Mandar a pantalla de espera
-          if (!isPending) {
+          if (segs[segs.length - 1] !== 'pending') {
             router.replace('/(auth)/pending');
           }
         } else {
-          // Usuario activo -> Si está en auth, mandarlo a los tabs
-          if (inAuth || isRoot) {
+          // Usuario activo -> Solo redireccionar si está en auth o en la raíz absoluta
+          if (inAuth || isRoot || isIndex) {
             router.replace('/(tabs)');
           }
         }
@@ -79,6 +87,7 @@ function AuthGuard({ session, ready }: { session: Session | null; ready: boolean
 }
 
 import { useRealtimeSync } from '../src/hooks/useRealtimeSync';
+import { useSessionEnforcer } from '../src/hooks/useSessionEnforcer';
 
 function RealtimeInitializer({ children }: { children: React.ReactNode }) {
   useRealtimeSync();
@@ -130,7 +139,10 @@ export default function RootLayout() {
     // Suscripción a cambios de auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
-      if (event === 'SIGNED_OUT' || event === 'SIGNED_IN') {
+      // Solo limpiamos cache al salir. 
+      // Al entrar (SIGNED_IN), Supabase puede disparar el evento varias veces al refrescar tokens en web,
+      // lo que causaba que React Query vaciara todo y la app pareciera "reiniciarse".
+      if (event === 'SIGNED_OUT') {
         queryClient.clear();
       }
     });
@@ -141,26 +153,9 @@ export default function RootLayout() {
     };
   }, []);
 
-  // Sincronización de sesión para evitar cuentas compartidas
-  const [lastSyncedSid, setLastSyncedSid] = useState<string | null>(null);
-
-  useEffect(() => {
-    const currentSid = session?.access_token;
-    if (session?.user && currentSid && currentSid !== lastSyncedSid) {
-      (async () => {
-        try {
-          const { error } = await supabase.rpc('sync_session');
-          if (error) {
-            if (!error.message.includes('No session found in JWT')) {
-              console.error('Error sincronizando sesión:', error.message);
-            }
-          } else {
-            setLastSyncedSid(currentSid);
-          }
-        } catch { /* ignorar fallos de red */ }
-      })();
-    }
-  }, [session, lastSyncedSid]);
+  // Single-device login: reclama allowed_sid, escucha cambios y firma fuera
+  // si otro dispositivo se queda con la sesión.
+  useSessionEnforcer(session);
 
   // La app está lista si:
   // 1. Auth está listo Y las fuentes están listas.

@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   View,
   Text,
@@ -13,6 +14,7 @@ import {
   Animated,
   PanResponder,
   Dimensions,
+  TextInput,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 
@@ -21,18 +23,21 @@ import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../../src/theme/ThemeContext';
-import { useVentasInfinite, VentaHoy, VentasPeriod } from '../../src/hooks/useVentasHoy';
+import { useInventarioStore } from '../../src/hooks/useInventarioStore';
+import { useVentasInfinite, VentaHoy, VentasPeriod, useVentasSearchSummary } from '../../src/hooks/useVentasHoy';
 import { useProfitSummary } from '../../src/hooks/useProfitSummary';
 import { useVentaDetalle } from '../../src/hooks/useVentaDetalle';
 import { VentaDetalleUSD } from '../../src/lib/supabase';
 import { useUserRole } from '../../src/hooks/useUserRole';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
+import Svg, { Path, Defs, LinearGradient as SvgGradient, Stop, Filter, FeGaussianBlur, Line } from 'react-native-svg';
 
 const PERIODS: { key: VentasPeriod; label: string }[] = [
   { key: 'hoy',    label: 'Hoy'    },
   { key: 'ayer',   label: 'Ayer'   },
   { key: 'semana', label: 'Semana' },
   { key: 'mes',    label: 'Mes'    },
+  { key: 'todo',   label: 'Todo'   },
 ];
 
 const PERIOD_LABELS: Record<VentasPeriod, string> = {
@@ -40,6 +45,7 @@ const PERIOD_LABELS: Record<VentasPeriod, string> = {
   ayer:   'Ventas de ayer',
   semana: 'Últimos 7 días',
   mes:    'Últimos 30 días',
+  todo:   'Historial completo',
 };
 
 const KPI_LABELS: Record<VentasPeriod, string> = {
@@ -47,6 +53,7 @@ const KPI_LABELS: Record<VentasPeriod, string> = {
   ayer:   'Ingreso ayer',
   semana: 'Ingreso semana',
   mes:    'Ingreso mes',
+  todo:   'Ingreso total',
 };
 
 export default function Ventas() {
@@ -54,11 +61,33 @@ export default function Ventas() {
   const isAdmin = userAuth?.role === 'admin';
   const { colors, formatUSD } = useTheme();
   const queryClient = useQueryClient();
+  const listRef = useRef<FlashList<any>>(null);
   const { isDesktop } = useDeviceSize();
+  const { scrollOffsetVentas, setScrollOffsetVentas } = useInventarioStore();
   const [refreshing,    setRefreshing]    = useState(false);
   const [selectedVenta, setSelectedVenta] = useState<VentaHoy | null>(null);
   const [period,        setPeriod]        = useState<VentasPeriod>('hoy');
   const [hasDefaulted,  setHasDefaulted]  = useState(false);
+
+  // Restaurar scroll
+  useFocusEffect(
+    useCallback(() => {
+      if (scrollOffsetVentas > 0 && listRef.current) {
+        const timer = setTimeout(() => {
+          listRef.current?.scrollToOffset({ offset: scrollOffsetVentas, animated: false });
+        }, 100);
+        return () => clearTimeout(timer);
+      }
+    }, [scrollOffsetVentas])
+  );
+
+  // Guardar scroll
+  const handleScroll = useCallback((event: any) => {
+    const offset = event.nativeEvent.contentOffset.y;
+    if (offset >= 0) {
+      setScrollOffsetVentas(offset);
+    }
+  }, [setScrollOffsetVentas]);
 
   const dateRangeLabel = useMemo(() => {
     const today = new Date();
@@ -88,13 +117,28 @@ export default function Ventas() {
     return '';
   }, [period]);
 
-  const { 
-    data, 
-    isLoading: loadingVentas, 
-    fetchNextPage, 
-    hasNextPage, 
-    isFetchingNextPage 
-  } = useVentasInfinite(period);
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  // Debounce search to optimize network requests
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: loadingVentas,
+    refetch,
+  } = useVentasInfinite(period, debouncedSearch);
+
+  const isEmpty = !loadingVentas && (!data || data.pages.flat().length === 0);
+  const { data: suggestions, isLoading: loadingSuggestions } = useVentasSearchSummary(debouncedSearch, !!(isEmpty && debouncedSearch));
 
   const { data: summary, isLoading: loadingStats } = useProfitSummary();
 
@@ -147,11 +191,14 @@ export default function Ventas() {
       <StatusBar style="light" />
 
       <FlashList
+        ref={listRef}
         data={ventas}
         keyExtractor={(item) => item.venta_id.toString()}
         estimatedItemSize={114}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
         }
@@ -169,6 +216,27 @@ export default function Ventas() {
               <View style={styles.headerSub}>
                 <Text style={[styles.subtitle, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>Listado detallado de facturación</Text>
                 <Text style={[styles.dateContext, { color: colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>{dateRangeLabel}</Text>
+              </View>
+            </View>
+
+            {/* Search Input */}
+            <View style={{ paddingHorizontal: 16, marginBottom: 16 }}>
+              <View style={[styles.searchContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Feather name="search" size={16} color={colors.textDim} style={styles.searchIcon} />
+                <TextInput
+                  placeholder="Buscar cliente o factura..."
+                  placeholderTextColor={colors.textDim}
+                  value={search}
+                  onChangeText={setSearch}
+                  style={[styles.searchInput, { color: colors.text }]}
+                  selectionColor={colors.primary}
+                  autoCorrect={false}
+                />
+                {search.length > 0 && (
+                  <Pressable onPress={() => setSearch('')} style={styles.searchClear}>
+                    <Feather name="x-circle" size={16} color={colors.textDim} />
+                  </Pressable>
+                )}
               </View>
             </View>
 
@@ -198,28 +266,30 @@ export default function Ventas() {
             </View>
 
             {/* KPIs */}
-            <View style={[styles.kpiRow, isDesktop && styles.kpiRowDesktop]}>
-              <View style={[styles.kpiCard, isDesktop && styles.kpiCardDesktop, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Text style={[styles.kpiLabel, { color: colors.textDim }]}>
-                  {isAdmin ? KPI_LABELS[period] : 'Ticket promedio'}
-                </Text>
-                {loadingStats ? (
-                  <ActivityIndicator size="small" color={colors.primary} style={{ alignSelf: 'flex-start' }} />
-                ) : (
-                  <Text style={[styles.kpiValue, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
-                    {isAdmin ? formatUSD(montoTotal) : formatUSD(totalFacturas > 0 ? montoTotal / totalFacturas : 0)}
+            {period !== 'todo' && (
+              <View style={[styles.kpiRow, isDesktop && styles.kpiRowDesktop]}>
+                <View style={[styles.kpiCard, isDesktop && styles.kpiCardDesktop, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <Text style={[styles.kpiLabel, { color: colors.textDim }]}>
+                    {isAdmin ? KPI_LABELS[period] : 'Ticket promedio'}
                   </Text>
-                )}
+                  {loadingStats ? (
+                    <ActivityIndicator size="small" color={colors.primary} style={{ alignSelf: 'flex-start' }} />
+                  ) : (
+                    <Text style={[styles.kpiValue, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
+                      {isAdmin ? formatUSD(montoTotal) : formatUSD(totalFacturas > 0 ? montoTotal / totalFacturas : 0)}
+                    </Text>
+                  )}
+                </View>
+                <View style={[styles.kpiCard, isDesktop && styles.kpiCardDesktop, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <Text style={[styles.kpiLabel, { color: colors.textDim }]}>Facturas</Text>
+                  {loadingStats ? (
+                    <ActivityIndicator size="small" color={colors.primary} style={{ alignSelf: 'flex-start' }} />
+                  ) : (
+                    <Text style={[styles.kpiValue, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{totalFacturas}</Text>
+                  )}
+                </View>
               </View>
-              <View style={[styles.kpiCard, isDesktop && styles.kpiCardDesktop, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Text style={[styles.kpiLabel, { color: colors.textDim }]}>Facturas</Text>
-                {loadingStats ? (
-                  <ActivityIndicator size="small" color={colors.primary} style={{ alignSelf: 'flex-start' }} />
-                ) : (
-                  <Text style={[styles.kpiValue, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{totalFacturas}</Text>
-                )}
-              </View>
-            </View>
+            )}
           </>
         }
         renderItem={({ item: venta }) => (
@@ -238,12 +308,65 @@ export default function Ventas() {
           ) : (
             <View style={styles.center}>
               <View style={[styles.emptyIcon, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Feather name="shopping-bag" size={32} color={colors.textDim} />
+                <Feather name={debouncedSearch ? "search" : "shopping-bag"} size={32} color={colors.textDim} />
               </View>
-              <Text style={[styles.emptyTitle, { color: colors.textMuted }]}>Sin ventas registradas</Text>
-              <Text style={[styles.emptySub, { color: colors.textDim }]}>
-                No hay facturas para este período.
+              <Text style={[styles.emptyTitle, { color: colors.textMuted }]}>
+                {debouncedSearch ? 'Sin resultados' : 'Sin ventas registradas'}
               </Text>
+              <Text style={[styles.emptySub, { color: colors.textDim }]}>
+                {debouncedSearch 
+                  ? `No encontramos nada para "${debouncedSearch}" ${period === 'hoy' ? 'hoy' : 'en este periodo'}`
+                  : 'No hay facturas para este período.'
+                }
+              </Text>
+
+              {/* Suggestions for search */}
+              {debouncedSearch && (loadingSuggestions || (suggestions && Object.values(suggestions).some(c => c > 0))) && (
+                <View style={styles.suggestions}>
+                  <Text style={[styles.suggestionTitle, { color: colors.textMuted }]}>
+                    {loadingSuggestions ? 'Escaneando historial...' : 'Prueba buscando en:'}
+                  </Text>
+                  
+                  {loadingSuggestions ? (
+                    <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 8 }} />
+                  ) : (
+                    <View style={styles.suggestionRow}>
+                      {(suggestions?.todo ?? 0) > 0 && period !== 'todo' && (
+                      <Pressable
+                        style={[styles.suggestionChip, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        onPress={() => setPeriod('todo')}
+                      >
+                        <Text style={[styles.suggestionChipText, { color: colors.textMuted }]}>Todo ({suggestions?.todo})</Text>
+                      </Pressable>
+                    )}
+                    {(suggestions?.ayer ?? 0) > 0 && period !== 'ayer' && (
+                      <Pressable
+                        style={[styles.suggestionChip, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        onPress={() => setPeriod('ayer')}
+                      >
+                        <Text style={[styles.suggestionChipText, { color: colors.textMuted }]}>Ayer ({suggestions?.ayer})</Text>
+                      </Pressable>
+                    )}
+                    {(suggestions?.semana ?? 0) > 0 && period !== 'semana' && (
+                      <Pressable
+                        style={[styles.suggestionChip, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        onPress={() => setPeriod('semana')}
+                      >
+                        <Text style={[styles.suggestionChipText, { color: colors.textMuted }]}>Semana ({suggestions?.semana})</Text>
+                      </Pressable>
+                    )}
+                    {(suggestions?.mes ?? 0) > 0 && period !== 'mes' && (
+                      <Pressable
+                        style={[styles.suggestionChip, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        onPress={() => setPeriod('mes')}
+                      >
+                        <Text style={[styles.suggestionChipText, { color: colors.textMuted }]}>Mes ({suggestions?.mes})</Text>
+                      </Pressable>
+                    )}
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
           )
         }
@@ -353,12 +476,82 @@ function getPagoMeta(
   return { icon: 'tag', color: colors.textMuted, label: m };
 }
 
+function TicketBackground({ width, height, notchY }: { width: number; height: number; notchY: number }) {
+  const r = 24; // corner radius
+  const nr = 14; // notch radius
+  
+  const d = `
+    M ${r} 0
+    L ${width - r} 0
+    A ${r} ${r} 0 0 1 ${width} ${r}
+    L ${width} ${notchY - nr}
+    A ${nr} ${nr} 0 0 0 ${width} ${notchY + nr}
+    L ${width} ${height - r}
+    A ${r} ${r} 0 0 1 ${width - r} ${height}
+    L ${r} ${height}
+    A ${r} ${r} 0 0 1 0 ${height - r}
+    L 0 ${notchY + nr}
+    A ${nr} ${nr} 0 0 0 0 ${notchY - nr}
+    L 0 ${r}
+    A ${r} ${r} 0 0 1 ${r} 0
+    Z
+  `;
+
+  return (
+    <View style={{ width, height, position: 'absolute' }}>
+      <Svg width={width + 60} height={height + 60} viewBox={`-30 -20 ${width + 60} ${height + 60}`} style={{ position: 'absolute', left: -30, top: -20 }}>
+        <Defs>
+          <SvgGradient id="ticketGrad" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#222222" stopOpacity="1" />
+            <Stop offset="1" stopColor="#121212" stopOpacity="1" />
+          </SvgGradient>
+          
+          <SvgGradient id="edgeGrad" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="rgba(255,255,255,0.12)" stopOpacity="1" />
+            <Stop offset="1" stopColor="rgba(255,255,255,0.03)" stopOpacity="1" />
+          </SvgGradient>
+
+          <Filter id="shadowBlur" x="-20%" y="-20%" width="140%" height="140%">
+            <FeGaussianBlur in="SourceGraphic" stdDeviation="6" />
+          </Filter>
+        </Defs>
+        
+        <Path 
+          d={d} 
+          fill="rgba(0,0,0,0.9)" 
+          transform="translate(0, 10)" 
+          filter="url(#shadowBlur)"
+        />
+        
+        <Path 
+          d={d} 
+          fill="url(#ticketGrad)" 
+          stroke="url(#edgeGrad)" 
+          strokeWidth="1.2" 
+        />
+
+        {/* Perfectly centered perforation line */}
+        <Line 
+          x1={nr} 
+          y1={notchY} 
+          x2={width - nr} 
+          y2={notchY} 
+          stroke="rgba(255,255,255,0.2)" 
+          strokeWidth="1.5" 
+          strokeDasharray="6 6" 
+        />
+      </Svg>
+    </View>
+  );
+}
+
 function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose: () => void }) {
   const { colors, formatUSD } = useTheme();
   const { data: details = [], isLoading } = useVentaDetalle(venta?.venta_id ?? null);
   
   const screenHeight = Dimensions.get('window').height;
   const panY = useRef(new Animated.Value(screenHeight)).current;
+  const [ticketLayout, setTicketLayout] = useState({ width: 0, height: 0 });
 
   const closeModal = () => {
     Animated.timing(panY, {
@@ -368,7 +561,6 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
     }).start(onClose);
   };
 
-  // Reset animation when modal opens
   useEffect(() => {
     if (venta) {
       Animated.spring(panY, {
@@ -406,8 +598,6 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
 
   if (!venta) return null;
 
-  // Backend ahora guarda los totales en USD directamente (post-fix sales).
-  // Si total_bruto/impuesto del backend están disponibles, usarlos. Caso contrario, derivar de IVA 16%.
   const totalUSD = Number(venta.total_neto_usd  || venta.total_usd || 0);
   const baseUSD  = venta.total_bruto_usd > 0
     ? Number(venta.total_bruto_usd)
@@ -415,6 +605,7 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
   const ivaUSD   = venta.total_impuesto_usd > 0
     ? Number(venta.total_impuesto_usd)
     : totalUSD - baseUSD;
+  const pagoModal = getPagoMeta(venta.metodo_pago, colors);
 
   return (
     <Modal
@@ -442,96 +633,114 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
             style={styles.modalHandleArea}
           >
             <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-            
-            <View style={styles.modalHeaderRow}>
-              <View>
-                <Text style={[styles.modalTitle, { color: colors.text }]}>Detalle de Venta</Text>
-                <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
-                  Folio: {venta.documento || `#${venta.venta_id}`}
-                </Text>
-              </View>
-              <View style={styles.modalHeaderRight}>
-                <Text style={[styles.modalDate, { color: colors.textDim }]}>
-                  {new Date(venta.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </Text>
-              </View>
-            </View>
           </View>
-
           {isLoading ? (
             <View style={styles.modalLoading}>
               <ActivityIndicator color={colors.primary} size="large" />
             </View>
           ) : (
-            <FlatList
-              data={details}
-              keyExtractor={(item) => item.id.toString()}
-              contentContainerStyle={styles.modalList}
-              renderItem={({ item }) => (
-                <View style={[styles.detailRow, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
-                  <View style={styles.detailIconContainer}>
-                    <View style={[styles.itemIcon, { backgroundColor: colors.surfaceAlt }]}>
-                      <Feather name="package" size={16} color={colors.primaryDim} />
+            <ScrollView 
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalContentWrapper}
+              showsVerticalScrollIndicator={false}
+            >
+              <View 
+                style={styles.ticketShadowWrapper}
+                onLayout={(e) => {
+                  const { width, height } = e.nativeEvent.layout;
+                  setTicketLayout({ width, height });
+                }}
+              >
+                {ticketLayout.width > 0 && (
+                  <TicketBackground 
+                    width={ticketLayout.width} 
+                    height={ticketLayout.height} 
+                    notchY={104}
+                  />
+                )}
+                
+                <View style={styles.ticketInnerContent}>
+                  {/* Header */}
+                  <View style={styles.ticketHeader}>
+                    <View style={styles.ticketHeaderLeft}>
+                      <Text style={[styles.ticketTitle, { color: colors.textDim }]}>RECIBO DE VENTA</Text>
+                      <Text style={[styles.ticketFolio, { color: colors.text }]}>
+                        {venta.documento || `#${venta.venta_id}`}
+                      </Text>
+                    </View>
+                    <View style={styles.ticketTimeContainer}>
+                      <Text style={[styles.ticketDateLabel, { color: colors.textDim }]}>FECHA / HORA</Text>
+                      <Text style={[styles.ticketDate, { color: colors.text }]}>
+                        {new Date(venta.created_at).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                      </Text>
+                      <Text style={[styles.ticketTime, { color: colors.text }]}>
+                        {new Date(venta.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+                      </Text>
                     </View>
                   </View>
-                  <View style={styles.detailBody}>
-                    <View style={styles.detailMain}>
-                      <Text style={[styles.detailDesc, { color: colors.text }]} numberOfLines={2}>
-                        {item.descripcion}
-                      </Text>
-                      <Text style={[styles.detailSubtotal, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
-                        {formatUSD(item.subtotal_usd)}
-                      </Text>
-                    </View>
-                    <View style={styles.detailMeta}>
-                      <Text style={[styles.detailCode, { color: colors.textDim }]}>
-                        {item.codigo_producto}
-                      </Text>
-                      <Text style={[styles.detailUnit, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
-                        {item.cantidad} × {formatUSD(item.precio_unitario_usd)}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              )}
-              ListFooterComponent={() => {
-                const pagoModal = getPagoMeta(venta.metodo_pago, colors);
-                return (
-                <View style={[styles.modalFooter, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
-                  {pagoModal && (
-                    <>
-                      <View style={styles.footerRow}>
-                        <Text style={[styles.footerLabel, { color: colors.textMuted }]}>Método de pago</Text>
-                        <View style={[styles.pagoChip, { backgroundColor: pagoModal.color + '18', borderColor: pagoModal.color + '40' }]}>
-                          <Feather name={pagoModal.icon} size={11} color={pagoModal.color} />
-                          <Text style={[styles.pagoChipText, { color: pagoModal.color, fontSize: 11 }]}>
-                            {pagoModal.label}
+
+                  <View style={{ height: 40 }} />
+
+                  {/* Items List - Unified with the ticket scroll */}
+                  <View style={styles.ticketList}>
+                    {details.map((item) => (
+                      <View key={item.id} style={styles.ticketItemRow}>
+                        <View style={styles.ticketItemMain}>
+                          <Text style={[styles.ticketItemDesc, { color: colors.text }]}>
+                            {item.descripcion}
+                          </Text>
+                          <Text style={[styles.ticketItemQty, { color: colors.textDim }]}>
+                            {item.cantidad} × {formatUSD(item.precio_unitario_usd)}
                           </Text>
                         </View>
+                        <Text style={[styles.ticketItemPrice, { color: colors.text }]}>
+                          {formatUSD(item.subtotal_usd)}
+                        </Text>
                       </View>
-                      <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                    </>
-                  )}
-                  <View style={styles.footerRow}>
-                    <Text style={[styles.footerLabel, { color: colors.textMuted }]}>Subtotal Base</Text>
-                    <Text style={[styles.footerValue, { color: colors.text }]}>{formatUSD(baseUSD)}</Text>
+                    ))}
                   </View>
-                  <View style={styles.footerRow}>
-                    <Text style={[styles.footerLabel, { color: colors.textMuted }]}>IVA (16%)</Text>
-                    <Text style={[styles.footerValue, { color: colors.text }]}>{formatUSD(ivaUSD)}</Text>
-                  </View>
-                  <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                  <View style={[styles.footerRow, styles.totalRow]}>
-                    <Text style={[styles.totalLabel, { color: colors.text }]}>TOTAL</Text>
-                    <View style={styles.totalValueContainer}>
-                      <Text style={[styles.totalCurrency, { color: colors.primaryDim }]}>USD</Text>
-                      <Text style={[styles.totalValue, { color: colors.primary }]}>{formatUSD(totalUSD).replace('$', '')}</Text>
+
+                  {/* Footer & Totals */}
+                  <View style={styles.ticketFooter}>
+                    <View style={{ height: 20 }} />
+                    
+                    <View style={styles.ticketFooterGrid}>
+                      <View style={styles.ticketFooterRow}>
+                        <Text style={[styles.ticketFooterLabel, { color: colors.textDim }]}>MÉTODO</Text>
+                        {pagoModal ? (
+                          <View style={[styles.pagoChip, { backgroundColor: pagoModal.color + '18', borderColor: pagoModal.color + '40', marginRight: 0 }]}>
+                            <Feather name={pagoModal.icon} size={10} color={pagoModal.color} />
+                            <Text style={[styles.pagoChipText, { color: pagoModal.color, fontFamily: 'JetBrainsMono_700Bold' }]} numberOfLines={1}>
+                              {pagoModal.label}
+                            </Text>
+                          </View>
+                        ) : (
+                          <Text style={[styles.ticketFooterValue, { color: colors.text }]}>---</Text>
+                        )}
+                      </View>
+                      <View style={styles.ticketFooterRow}>
+                        <Text style={[styles.ticketFooterLabel, { color: colors.textDim }]}>SUBTOTAL</Text>
+                        <Text style={[styles.ticketFooterValue, { color: colors.text }]}>{formatUSD(baseUSD)}</Text>
+                      </View>
+                      <View style={styles.ticketFooterRow}>
+                        <Text style={[styles.ticketFooterLabel, { color: colors.textDim }]}>IVA (16%)</Text>
+                        <Text style={[styles.ticketFooterValue, { color: colors.text }]}>{formatUSD(ivaUSD)}</Text>
+                      </View>
+                    </View>
+
+                    <View style={[styles.ticketTotalSection, { backgroundColor: colors.primary + '08', borderColor: colors.primary + '30' }]}>
+                      <Text style={[styles.ticketTotalLabel, { color: colors.textDim }]}>TOTAL PAGADO</Text>
+                      <View style={styles.ticketTotalValueRow}>
+                        <Text style={[styles.ticketTotalCurrency, { color: colors.primary }]}>USD</Text>
+                        <Text style={[styles.ticketTotalValue, { color: colors.primary }]}>
+                          {formatUSD(totalUSD).replace('$', '')}
+                        </Text>
+                      </View>
                     </View>
                   </View>
                 </View>
-                );
-              }}
-            />
+              </View>
+            </ScrollView>
           )}
         </Animated.View>
       </View>
@@ -541,12 +750,58 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  scroll: { paddingBottom: 20 },
+  scroll: { paddingBottom: 110 },
   header: { paddingHorizontal: 16, paddingTop: 12, marginBottom: 16 },
   headerSub: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },
   title: { fontSize: 26, fontFamily: 'JetBrainsMono_700Bold' },
   dateContext: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium' },
   subtitle: { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular' },
+
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 0.5,
+    paddingHorizontal: 12,
+  },
+  searchIcon: { marginRight: 10 },
+  searchInput: {
+    flex: 1,
+    height: '100%',
+    fontFamily: 'JetBrainsMono_400Regular',
+    fontSize: 14,
+    paddingVertical: 0,
+  },
+  searchClear: { padding: 4 },
+
+  suggestions: {
+    marginTop: 24,
+    alignItems: 'center',
+    width: '100%',
+  },
+  suggestionTitle: {
+    fontSize: 12,
+    fontFamily: 'JetBrainsMono_500Medium',
+    marginBottom: 12,
+    opacity: 0.7,
+  },
+  suggestionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  suggestionChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 0.5,
+  },
+  suggestionChipText: {
+    fontSize: 12,
+    fontFamily: 'JetBrainsMono_500Medium',
+  },
 
   periodRow: {
     flexDirection:     'row',
@@ -598,6 +853,7 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     gap: 12,
   },
+  bottomPad: { height: 40 },
   cardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -631,8 +887,8 @@ const styles = StyleSheet.create({
     maxWidth:         120,
   },
   pagoChipText: {
-    fontSize:      10,
-    fontWeight:    '700',
+    fontSize:      12,
+    fontFamily:    'JetBrainsMono_700Bold',
     letterSpacing: 0.2,
   },
 
@@ -643,25 +899,104 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 17, fontFamily: 'JetBrainsMono_700Bold' },
   emptySub: { fontSize: 13, textAlign: 'center', lineHeight: 20, fontFamily: 'JetBrainsMono_400Regular' },
-  bottomPad: { height: 120 },
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    justifyContent: 'flex-end',
-  },
+  
   modalSheet: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
     maxHeight: '90%',
     width: '100%',
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 24,
   },
+  modalScroll: { flex: 1 },
+  modalContentWrapper: {
+    padding: 16,
+    paddingBottom: 60,
+  },
+  ticketShadowWrapper: {
+    borderRadius: 24,
+    // We reduce OS elevation as SVG now provides the notched shadow
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    backgroundColor: 'transparent',
+  },
+  ticketInnerContent: {
+    paddingTop: 32,
+    paddingBottom: 32,
+    overflow: 'hidden',
+  },
+  ticketHeader: {
+    paddingHorizontal: 28,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  ticketHeaderLeft: { gap: 0 },
+  ticketTitle: { fontSize: 9, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.2, textTransform: 'uppercase', opacity: 0.6 },
+  ticketFolio: { fontSize: 22, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -0.5 },
+  ticketTimeContainer: { alignItems: 'flex-end', gap: 0 },
+  ticketDateLabel: { fontSize: 9, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1, opacity: 0.6, marginBottom: 2 },
+  ticketDate: { fontSize: 12, fontFamily: 'JetBrainsMono_700Bold' },
+  ticketTime: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', opacity: 0.7 },
+  
+  ticketSeparatorContainer: {
+    height: 30,
+    justifyContent: 'center',
+    overflow: 'hidden',
+    paddingHorizontal: 12,
+  },
+  ticketDashedLine: {
+    fontSize: 16,
+    fontFamily: 'JetBrainsMono_400Regular',
+    letterSpacing: 4,
+    opacity: 0.35, // Increased visibility
+    textAlign: 'center',
+  },
+  
+  ticketList: { paddingHorizontal: 24, paddingTop: 16 },
+  ticketItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start', // Top aligned for wrapped text
+    marginBottom: 20,
+  },
+  ticketItemMain: { flex: 1, gap: 2, paddingRight: 16 },
+  ticketItemDesc: { fontSize: 13, fontFamily: 'JetBrainsMono_700Bold', lineHeight: 18 },
+  ticketItemQty: { fontSize: 11, fontFamily: 'JetBrainsMono_500Medium', opacity: 0.85, marginTop: 2 },
+  ticketItemPrice: { fontSize: 15, fontFamily: 'JetBrainsMono_700Bold' },
+
+  ticketFooter: {
+    paddingHorizontal: 24,
+    marginTop: 10,
+  },
+  ticketFooterGrid: {
+    gap: 14,
+    marginBottom: 32,
+  },
+  ticketFooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  ticketFooterLabel: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 0.5, textTransform: 'uppercase', opacity: 0.6 },
+  ticketFooterValue: { fontSize: 18, fontFamily: 'JetBrainsMono_700Bold' },
+
+  ticketTotalSection: {
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  ticketTotalLabel: { fontSize: 11, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.5, marginBottom: 8, opacity: 0.6 },
+  ticketTotalValueRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  ticketTotalCurrency: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold', marginTop: 4 },
+  ticketTotalValue: { fontSize: 42, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -1 },
+
   modalHandleArea: {
     paddingTop: 12,
     paddingBottom: 4,
@@ -672,99 +1007,13 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    marginBottom: 16,
-    opacity: 0.5,
-  },
-  modalHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingBottom: 20,
-    width: '100%',
-  },
-  modalHeaderRight: {
-    alignItems: 'flex-end',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontFamily: 'JetBrainsMono_700Bold',
-    letterSpacing: -0.5,
-  },
-  modalSubtitle: {
-    fontSize: 13,
-    fontFamily: 'JetBrainsMono_500Medium',
-    marginTop: 2,
-  },
-  modalDate: {
-    fontSize: 12,
-    fontFamily: 'JetBrainsMono_700Bold',
-    textTransform: 'uppercase',
+    marginBottom: 8,
+    opacity: 0.3,
   },
   modalLoading: { height: 200, alignItems: 'center', justifyContent: 'center' },
-  modalList: { paddingHorizontal: 20, paddingBottom: 40, gap: 12 },
-  
-  detailRow: {
-    flexDirection: 'row',
-    padding: 16,
-    borderRadius: 20,
-    gap: 16,
-    alignItems: 'center',
-    borderWidth: 1,
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.88)',
+    justifyContent: 'flex-end',
   },
-  detailIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  itemIcon: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  detailBody: { flex: 1, gap: 4 },
-  detailMain: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  detailDesc: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold', flex: 1, lineHeight: 20 },
-  detailSubtotal: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold' },
-  detailMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  detailCode: { fontSize: 11, fontFamily: 'JetBrainsMono_500Medium' },
-  detailUnit: { fontSize: 12, fontFamily: 'JetBrainsMono_500Medium' },
-
-  modalFooter: {
-    marginTop: 12,
-    marginBottom: 40,
-    padding: 24,
-    borderRadius: 24,
-    borderWidth: 1,
-    gap: 12,
-  },
-  footerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  footerLabel: { fontSize: 14, fontFamily: 'JetBrainsMono_500Medium' },
-  footerValue: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold' },
-  divider: { height: 1, marginVertical: 8, opacity: 0.5 },
-  totalRow: {
-    marginTop: 4,
-    paddingTop: 8,
-  },
-  totalLabel: { fontSize: 18, fontFamily: 'JetBrainsMono_700Bold' },
-  totalValueContainer: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
-  totalCurrency: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold' },
-  totalValue: { fontSize: 32, fontFamily: 'JetBrainsMono_700Bold' },
 });

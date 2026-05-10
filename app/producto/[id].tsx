@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Modal, TextInput, Animated, PanResponder, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Modal, TextInput, Animated, PanResponder, Dimensions } from 'react-native';
+import { notify } from '../../src/lib/notify';
 
 const screenHeight = Dimensions.get('window').height;
 
@@ -84,11 +85,10 @@ export default function ProductoDetail() {
       <View style={[styles.nav, { borderColor: colors.border }]}>
         <Pressable 
           onPress={() => {
-            if (router.canGoBack()) {
-              router.back();
-            } else {
-              router.replace('/(tabs)/inventario');
-            }
+            // Navegamos explícitamente al inventario para asegurar el destino.
+            // La pantalla de Inventario se encargará de restaurar el scroll manualmente
+            // usando la posición guardada en el Store (Zustand).
+            router.navigate('/inventario');
           }} 
           style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}
         >
@@ -175,21 +175,47 @@ export default function ProductoDetail() {
             })}
           </Text>
 
-          {/* Add to draft order */}
-          <Pressable
-            style={({ pressed }) => [styles.addBtn, { backgroundColor: colors.primaryFaded, borderColor: colors.primary }, pressed && { opacity: 0.75 }]}
-            onPress={() => {
-              setNewQty(String(producto.existencia));
-              setShowAddSheet(true);
-            }}
-          >
-            <Feather name={items.some(i => i.codigo_producto === producto.codigo_interno) ? 'check' : 'plus'} size={16} color={colors.primary} />
-            <Text style={[styles.addBtnText, { color: colors.primary }]}>
-              {items.some(i => i.codigo_producto === producto.codigo_interno)
-                ? 'En el borrador · editar'
-                : 'Agregar al borrador'}
-            </Text>
-          </Pressable>
+          {/* Add to draft order / Edit */}
+          {items.some(i => i.codigo_producto === producto.codigo_interno) ? (
+            <View style={{ gap: 10, marginHorizontal: 16, marginTop: 8 }}>
+              <Pressable
+                style={({ pressed }) => [styles.addBtn, { marginHorizontal: 0, marginTop: 0, backgroundColor: colors.primaryFaded, borderColor: colors.primary }, pressed && { opacity: 0.75 }]}
+                onPress={() => {
+                  const existingItem = items.find(i => i.codigo_producto === producto.codigo_interno);
+                  setNewQty(String(existingItem?.nueva_existencia ?? producto.existencia));
+                  setShowAddSheet(true);
+                }}
+              >
+                <Feather name="edit-2" size={16} color={colors.primary} />
+                <Text style={[styles.addBtnText, { color: colors.primary }]}>
+                  Editar cantidad en borrador
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [styles.addBtn, { marginHorizontal: 0, marginTop: 0, backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.75 }]}
+                onPress={() => router.navigate('/ordenes')}
+              >
+                <Feather name="file-text" size={16} color={colors.textMuted} />
+                <Text style={[styles.addBtnText, { color: colors.textMuted }]}>
+                  Ir al borrador
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              style={({ pressed }) => [styles.addBtn, { backgroundColor: colors.primaryFaded, borderColor: colors.primary }, pressed && { opacity: 0.75 }]}
+              onPress={() => {
+                setNewQty(String(producto.existencia));
+                setShowAddSheet(true);
+              }}
+            >
+              <Feather name="plus" size={16} color={colors.primary} />
+              <Text style={[styles.addBtnText, { color: colors.primary }]}>
+                Agregar al borrador
+              </Text>
+            </Pressable>
+          )}
         </ScrollView>
 
         {/* Add to order sheet */}
@@ -247,7 +273,7 @@ export default function ProductoDetail() {
                 onPress={() => {
                   const qty = parseFloat(newQty);
                   if (isNaN(qty) || qty < 0) {
-                    Alert.alert('Cantidad inválida', 'Ingresa un número mayor o igual a 0');
+                    notify('Cantidad inválida', 'Ingresa un número mayor o igual a 0');
                     return;
                   }
                   addItem({

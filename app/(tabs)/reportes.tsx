@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useCallback, useRef } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   View,
   Text,
@@ -13,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../../src/theme/ThemeContext';
+import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useProfitDaily } from '../../src/hooks/useProfitSummary';
 import { useTopProductos } from '../../src/hooks/useTopProductos';
 import { useVelocidad } from '../../src/hooks/useVelocidad';
@@ -33,12 +35,34 @@ const PERIODS: { value: Period; label: string }[] = [
 export default function Reportes() {
   const { colors, formatUSD } = useTheme();
   const queryClient = useQueryClient();
+  const scrollRef = useRef<ScrollView>(null);
   const { isDesktop } = useDeviceSize();
+  const { scrollOffsetReportes, setScrollOffsetReportes } = useInventarioStore();
   const { width: screenW } = useWindowDimensions();
 
   const [period,    setPeriod]    = useState<Period>(30);
   const [chartMode, setChartMode] = useState<ChartMode>('ganancia');
   const [refreshing, setRefreshing] = useState(false);
+
+  // Restaurar scroll al entrar
+  useFocusEffect(
+    useCallback(() => {
+      if (scrollOffsetReportes > 0 && scrollRef.current) {
+        const timer = setTimeout(() => {
+          scrollRef.current?.scrollTo({ y: scrollOffsetReportes, animated: false });
+        }, 100);
+        return () => clearTimeout(timer);
+      }
+    }, [scrollOffsetReportes])
+  );
+
+  // Guardar scroll al mover
+  const handleScroll = (event: any) => {
+    const offset = event.nativeEvent.contentOffset.y;
+    if (offset >= 0) {
+      setScrollOffsetReportes(offset);
+    }
+  };
 
   const { data: daily      = [], isLoading: loadingDaily }   = useProfitDaily(period);
   const { data: topProductos = [], isLoading: loadingTop  }  = useTopProductos();
@@ -65,8 +89,11 @@ export default function Reportes() {
       <StatusBar style="light" />
 
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

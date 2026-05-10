@@ -126,22 +126,32 @@ export function SparklineChart({ data, width, height = 70 }: Props) {
   const tickWidth = isDaily ? 38 : 22; // Un poco más estrechos para que quepan más
 
   if ((isHourly || isDaily) && data.length > 1) {
-    // Para semana (≤8 días) muestra TODOS; para más, maximizamos espacio.
-    const target = isDaily && data.length <= 8 ? data.length : Math.max(6, Math.floor(w / (tickWidth * 0.9)));
-    const minGap = Math.ceil((tickWidth * 0.8) / spacing); // Reducimos margen para que quepan más
+    // Calculamos cuántos ticks caben sin solaparse (basado en tickWidth + margen)
+    const target = isDaily && data.length <= 8 
+      ? data.length 
+      : Math.max(4, Math.floor(w / (tickWidth * 1.5))); // Más aire entre etiquetas
+    
+    const minGap = Math.ceil((tickWidth * 1.3) / spacing); // Gap mínimo en índices para evitar solapamiento visual
     const indices: number[] = [0];
     let lastAdded = 0;
 
     const step = Math.max(1, Math.floor(data.length / (target - 1)));
 
+    // Recorremos los datos buscando puntos que respeten el minGap
     for (let i = step; i < data.length - 1; i += step) {
+      // Solo agregamos si hay espacio suficiente con el anterior Y con el que será el último
       if (i - lastAdded >= minGap && (data.length - 1 - i) >= minGap) {
         indices.push(i);
         lastAdded = i;
       }
     }
 
+    // El último siempre es prioritario para cerrar el rango temporal
     if (data.length > 1 && !indices.includes(data.length - 1)) {
+      // Si el último que agregamos está muy cerca del final, lo quitamos para que el final no se amontone
+      if (data.length - 1 - lastAdded < minGap && indices.length > 1) {
+        indices.pop();
+      }
       indices.push(data.length - 1);
     }
 
@@ -223,6 +233,7 @@ export function SparklineChart({ data, width, height = 70 }: Props) {
           yAxisLabelWidth={0}
           yAxisThickness={0}
           xAxisThickness={0}
+          disableScroll
           hideDataPoints={false}
 
           // ── Gradient fill (más visible) ──

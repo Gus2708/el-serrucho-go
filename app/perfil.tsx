@@ -7,15 +7,14 @@ import {
   Pressable,
   TextInput,
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '../src/lib/supabase';
+import { notify, confirm } from '../src/lib/notify';
 import { useTheme } from '../src/theme/ThemeContext';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUserRole } from '../src/hooks/useUserRole';
@@ -61,7 +60,7 @@ export default function Perfil() {
       setProfile(data);
       setNewName(data.display_name || '');
     } catch (error: any) {
-      Alert.alert('Error', error.message);
+      notify('Error', error.message);
     } finally {
       setLoading(false);
     }
@@ -90,29 +89,33 @@ export default function Perfil() {
       setProfile({ ...profile, display_name: newName.trim() });
       setIsEditing(false);
     } catch (error: any) {
-      Alert.alert('Error', error.message);
+      notify('Error', error.message);
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleLogout() {
-    Alert.alert(
-      'Cerrar sesión',
-      '¿Estás seguro de que quieres salir?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { 
-          text: 'Salir', 
-          style: 'destructive',
-          onPress: async () => {
-            await supabase.auth.signOut();
-            queryClient.clear();
-            router.replace('/(auth)/login');
-          }
-        }
-      ]
-    );
+  async function performLogout() {
+    try {
+      // En web, sin "global", signOut puede quedarse colgado intentando
+      // contactar al endpoint de logout — usamos "local" que solo limpia
+      // el storage del cliente y siempre resuelve.
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (e) {
+      console.warn('signOut error (ignored):', e);
+    }
+    queryClient.clear();
+    router.replace('/(auth)/login');
+  }
+
+  function handleLogout() {
+    confirm({
+      title:       'Cerrar sesión',
+      message:     '¿Estás seguro de que quieres salir?',
+      confirmText: 'Salir',
+      destructive: true,
+      onConfirm:   performLogout,
+    });
   }
 
   if (loading) {

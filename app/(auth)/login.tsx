@@ -9,13 +9,13 @@ import {
   ScrollView,
   Platform,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { Image } from 'expo-image';
 
 const logo = require('../../src/assets/img/EL SERRUCHO go.png');
 import { StatusBar } from 'expo-status-bar';
 import { supabase } from '../../src/lib/supabase';
+import { notify } from '../../src/lib/notify';
 import { useTheme } from '../../src/theme/ThemeContext';
 
 export default function Login() {
@@ -29,7 +29,7 @@ export default function Login() {
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     setLoading(false);
-    if (error) Alert.alert('Error al iniciar sesión', error.message);
+    if (error) notify('Error al iniciar sesión', error.message);
   }
 
   return (

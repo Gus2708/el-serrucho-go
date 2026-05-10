@@ -15,7 +15,11 @@ export default function PendingActivation() {
   const { data: roleData, isLoading, refetch } = useUserRole();
 
   async function handleLogout() {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (e) {
+      console.warn('signOut error (ignored):', e);
+    }
     router.replace('/(auth)/login');
   }
 

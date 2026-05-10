@@ -1,7 +1,7 @@
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { supabase, getLocalDateStr, getDateDaysAgo } from '../lib/supabase';
 
-export type VentasPeriod = 'hoy' | 'ayer' | 'semana' | 'mes';
+export type VentasPeriod = 'hoy' | 'ayer' | 'semana' | 'mes' | 'todo';
 
 export interface VentaHoy {
   venta_id:                    number;
@@ -36,10 +36,10 @@ export function useVentasPeriod(period: VentasPeriod) {
   });
 }
 
-export function useVentasInfinite(period: VentasPeriod) {
+export function useVentasInfinite(period: VentasPeriod, search?: string) {
   return useInfiniteQuery({
-    queryKey: ['ventas-infinite', period],
-    queryFn: ({ pageParam }) => fetchVentas(period, pageParam as number, (pageParam as number) + PAGE_SIZE - 1),
+    queryKey: ['ventas-infinite', period, search],
+    queryFn: ({ pageParam }) => fetchVentas(period, pageParam as number, (pageParam as number) + PAGE_SIZE - 1, search),
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
       return lastPage.length === PAGE_SIZE ? allPages.length * PAGE_SIZE : undefined;
@@ -48,7 +48,7 @@ export function useVentasInfinite(period: VentasPeriod) {
   });
 }
 
-async function fetchVentas(period: VentasPeriod, from: number, to: number): Promise<VentaHoy[]> {
+async function fetchVentas(period: VentasPeriod, from: number, to: number, search?: string): Promise<VentaHoy[]> {
   const today     = getLocalDateStr();
   const yesterday = getDateDaysAgo(1);
 
@@ -72,6 +72,14 @@ async function fetchVentas(period: VentasPeriod, from: number, to: number): Prom
     case 'mes':
       query = query.gte('fecha_emision', getDateDaysAgo(30));
       break;
+    case 'todo':
+      // No date filter applied
+      break;
+  }
+  
+  if (search && search.trim().length > 0) {
+    const s = `%${search.trim()}%`;
+    query = query.or(`nombre_cliente.ilike.${s},documento.ilike.${s}`);
   }
 
   const { data, error } = await query;
@@ -95,6 +103,35 @@ function parseRows(rows: any[]): VentaHoy[] {
     metodo_pago:                 v.metodo_pago ?? null,
     id_unico:                    v.id_unico ?? null,
   }));
+}
+
+export function useVentasSearchSummary(search: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['ventas-search-summary', search],
+    queryFn: async () => {
+      if (!search.trim()) return null;
+      const s = `%${search.trim()}%`;
+      
+      const periods = [
+        { key: 'ayer',   filter: (q: any) => q.eq('fecha_emision', getDateDaysAgo(1)) },
+        { key: 'semana', filter: (q: any) => q.gte('fecha_emision', getDateDaysAgo(7)) },
+        { key: 'mes',    filter: (q: any) => q.gte('fecha_emision', getDateDaysAgo(30)) },
+        { key: 'todo',   filter: (q: any) => q },
+      ];
+
+      const results = await Promise.all(periods.map(async (p) => {
+        let q = supabase.from('vw_ventas_usd').select('*', { count: 'exact', head: true }).eq('status', 1);
+        q = p.filter(q);
+        q = q.or(`nombre_cliente.ilike.${s},documento.ilike.${s}`);
+        const { count } = await q;
+        return { key: p.key, count: count ?? 0 };
+      }));
+
+      return results.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.count }), {} as Record<string, number>);
+    },
+    enabled: enabled && search.trim().length > 0,
+    staleTime: 60_000,
+  });
 }
 
 // Keep old export for compatibility

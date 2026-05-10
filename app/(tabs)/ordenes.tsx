@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useCallback, useRef } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   View,
   Text,
@@ -7,15 +8,16 @@ import {
   Pressable,
   TextInput,
   ActivityIndicator,
-  Alert,
   Linking,
 } from 'react-native';
+import { notify, confirm } from '../../src/lib/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../../src/theme/ThemeContext';
+import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
 import { useOrdenesHistory } from '../../src/hooks/useOrdenesHistory';
 import { supabase } from '../../src/lib/supabase';
@@ -62,29 +64,25 @@ function BorradorView({ router }: { router: any }) {
     return data.user?.id ?? '';
   }
 
-  async function handleSubmit() {
+  async function performSubmit() {
+    try {
+      const userId = await getUserId();
+      const { orderId } = await submit(userId);
+      clear();
+      notify('✓ Orden emitida', `OC-${String(orderId).padStart(4, '0')} generada y PDF compartido.`);
+    } catch (e: any) {
+      notify('Error', e.message ?? 'No se pudo emitir la orden');
+    }
+  }
+
+  function handleSubmit() {
     if (items.length === 0) return;
-    Alert.alert(
-      'Emitir orden',
-      `Se creará una orden con ${items.length} ítem${items.length > 1 ? 's' : ''} y se generará el PDF.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Emitir',
-          style: 'default',
-          onPress: async () => {
-            try {
-              const userId = await getUserId();
-              const { orderId } = await submit(userId);
-              clear();
-              Alert.alert('✓ Orden emitida', `OC-${String(orderId).padStart(4, '0')} generada y PDF compartido.`);
-            } catch (e: any) {
-              Alert.alert('Error', e.message ?? 'No se pudo emitir la orden');
-            }
-          },
-        },
-      ]
-    );
+    confirm({
+      title:       'Emitir orden',
+      message:     `Se creará una orden con ${items.length} ítem${items.length > 1 ? 's' : ''} y se generará el PDF.`,
+      confirmText: 'Emitir',
+      onConfirm:   performSubmit,
+    });
   }
 
   return (
@@ -161,7 +159,7 @@ function BorradorView({ router }: { router: any }) {
                       />
                     </View>
                     <View style={[styles.deltaBadge, { backgroundColor: deltaColor + '22', borderColor: deltaColor + '55' }]}>
-                      <Text style={[styles.deltaText, { color: deltaColor }]}>
+                      <Text style={[styles.deltaText, { color: deltaColor }]} numberOfLines={1} adjustsFontSizeToFit>
                         {isNeg ? '' : '+'}{delta}
                       </Text>
                     </View>
@@ -231,7 +229,29 @@ function BorradorView({ router }: { router: any }) {
 
 function HistorialView({ queryClient }: { queryClient: any }) {
   const { colors } = useTheme();
+  const { scrollOffsetOrdenes, setScrollOffsetOrdenes } = useInventarioStore();
+  const scrollRef = useRef<ScrollView>(null);
   const { data: ordenes = [], isLoading } = useOrdenesHistory();
+
+  // Restaurar scroll
+  useFocusEffect(
+    useCallback(() => {
+      if (scrollOffsetOrdenes > 0 && scrollRef.current) {
+        const timer = setTimeout(() => {
+          scrollRef.current?.scrollTo({ y: scrollOffsetOrdenes, animated: false });
+        }, 100);
+        return () => clearTimeout(timer);
+      }
+    }, [scrollOffsetOrdenes])
+  );
+
+  // Guardar scroll
+  const handleScroll = (event: any) => {
+    const offset = event.nativeEvent.contentOffset.y;
+    if (offset >= 0) {
+      setScrollOffsetOrdenes(offset);
+    }
+  };
 
   if (isLoading) {
     return <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>;
@@ -379,30 +399,31 @@ const styles = StyleSheet.create({
   itemBottom: {
     flexDirection: 'row',
     alignItems:    'center',
-    gap:           10,
+    gap:           8,
   },
   qtyGroup:  { alignItems: 'center', gap: 2 },
   qtyLabel:  { fontSize: 9, fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.3 },
-  qtyVal:    { fontSize: 18, fontFamily: 'JetBrainsMono_700Bold' },
+  qtyVal:    { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold' },
   qtyEdit: {
-    fontSize:   18,
+    fontSize:   16,
     fontFamily: 'JetBrainsMono_700Bold',
     textAlign:  'center',
     borderWidth: 0.5,
     borderRadius: 8,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical:    4,
-    minWidth:    60,
+    minWidth:    50,
+    flexShrink:  1,
     fontVariant: ['tabular-nums'],
   },
   deltaBadge: {
     borderRadius: 999,
     borderWidth:  0.5,
-    paddingVertical:  3,
-    paddingHorizontal: 10,
+    paddingVertical:  2,
+    paddingHorizontal: 8,
   },
   deltaText: { 
-    fontSize: 13, 
+    fontSize: 12, 
     fontFamily: 'JetBrainsMono_700Bold', 
     fontVariant: ['tabular-nums'] 
   },

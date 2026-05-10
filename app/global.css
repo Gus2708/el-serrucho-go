@@ -3,13 +3,14 @@ html, body, #root {
   background-color: #0C0C0C;
 }
 
-/* Remove default browser focus outline on inputs */
-@media (hover: hover) {
-  input:focus,
-  textarea:focus,
-  select:focus {
-    outline: none;
-  }
+/* Remove default browser focus outline/rings on inputs (Web) */
+input, textarea, select {
+  outline: none !important;
+  box-shadow: none !important;
+}
+input:focus, textarea:focus, select:focus {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 /* Custom scrollbar for desktop */

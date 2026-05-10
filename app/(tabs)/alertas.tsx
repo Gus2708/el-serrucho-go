@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   View,
   Text,
@@ -15,6 +16,7 @@ import { Feather } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { FlashList } from '@shopify/flash-list';
 import { useTheme } from '../../src/theme/ThemeContext';
+import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useAlertas, resolverAnomalia } from '../../src/hooks/useAlertas';
 import { StockAlertCard, AnomaliaCard } from '../../src/components/AlertCard';
 import { supabase } from '../../src/lib/supabase';
@@ -42,12 +44,34 @@ type ListItem =
 export default function Alertas() {
   const { colors } = useTheme();
   const queryClient = useQueryClient();
+  const listRef = useRef<FlashList<any>>(null);
+  const { scrollOffsetAlertas, setScrollOffsetAlertas } = useInventarioStore();
 
   const [stockFilter,   setStockFilter]   = useState<StockFilter>('todos');
   const [refreshing,    setRefreshing]    = useState(false);
   const [analyzing,     setAnalyzing]     = useState(false);
   const [analyzeResult, setAnalyzeResult] = useState<string | null>(null);
   const [isReady,       setIsReady]       = useState(false);
+
+  // Restaurar scroll
+  useFocusEffect(
+    useCallback(() => {
+      if (scrollOffsetAlertas > 0 && listRef.current) {
+        const timer = setTimeout(() => {
+          listRef.current?.scrollToOffset({ offset: scrollOffsetAlertas, animated: false });
+        }, 100);
+        return () => clearTimeout(timer);
+      }
+    }, [scrollOffsetAlertas])
+  );
+
+  // Guardar scroll
+  const handleScroll = (event: any) => {
+    const offset = event.nativeEvent.contentOffset.y;
+    if (offset >= 0) {
+      setScrollOffsetAlertas(offset);
+    }
+  };
 
   useEffect(() => {
     const task = InteractionManager.runAfterInteractions(() => {
@@ -178,6 +202,7 @@ export default function Alertas() {
         </View>
       ) : (
         <FlashList
+          ref={listRef}
           data={listData}
           keyExtractor={(item, index) => {
              if (item.type === 'anomalia') return `anom-${item.data.id}`;
@@ -185,6 +210,8 @@ export default function Alertas() {
              return `item-${item.type}-${index}`;
           }}
           estimatedItemSize={80}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
           renderItem={({ item }) => {
             switch (item.type) {
               case 'header':

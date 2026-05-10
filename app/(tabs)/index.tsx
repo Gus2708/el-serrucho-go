@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   View,
@@ -57,6 +59,8 @@ export default function Index() {
   const { colors, formatUSD } = useTheme();
   const router      = useRouter();
   const queryClient = useQueryClient();
+  const scrollRef   = useRef<ScrollView>(null);
+  const { scrollOffsetDashboard, setScrollOffsetDashboard } = useInventarioStore();
   const { width: screenW } = useWindowDimensions();
   const isDesktop = screenW >= 768;
   // BigCard outer width: on desktop it fills the content column minus margins
@@ -65,6 +69,26 @@ export default function Index() {
   const [refreshing, setRefreshing] = useState(false);
   const [userName,   setUserName]   = useState('');
   const [period,     setPeriod]     = useState<Period>('mes');
+
+  // Restaurar scroll
+  useFocusEffect(
+    useCallback(() => {
+      if (scrollOffsetDashboard > 0 && scrollRef.current) {
+        const timer = setTimeout(() => {
+          scrollRef.current?.scrollTo({ y: scrollOffsetDashboard, animated: false });
+        }, 100);
+        return () => clearTimeout(timer);
+      }
+    }, [scrollOffsetDashboard])
+  );
+
+  // Guardar scroll
+  const handleScroll = (event: any) => {
+    const offset = event.nativeEvent.contentOffset.y;
+    if (offset >= 0) {
+      setScrollOffsetDashboard(offset);
+    }
+  };
 
   const todayStr     = useMemo(() => getLocalDateStr(), []);
   const yesterdayStr = useMemo(() => getDateDaysAgo(1), []);
@@ -180,8 +204,11 @@ export default function Index() {
       <StatusBar style="light" />
 
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
         }

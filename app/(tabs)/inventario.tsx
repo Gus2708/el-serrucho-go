@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
 import { FlashList } from '@shopify/flash-list';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { useProductos, StockFilter } from '../../src/hooks/useProductos';
@@ -30,10 +30,33 @@ const FILTERS: { key: StockFilter; label: string }[] = [
 export default function Inventario() {
   const { colors } = useTheme();
   const router = useRouter();
+  const listRef = useRef<FlashList<Producto>>(null);
   const { isDesktop } = useDeviceSize();
-  const { search, filter, setSearch, setFilter } = useInventarioStore();
+  const { search, filter, scrollOffset, setSearch, setFilter, setScrollOffset } = useInventarioStore();
 
   const { productos, isLoading, isFetchingMore, hasMore, fetchMore, error } = useProductos(search, filter);
+
+  // Restaurar scroll al entrar
+  useFocusEffect(
+    useCallback(() => {
+      if (scrollOffset > 0 && listRef.current) {
+        // Un pequeño delay asegura que el FlashList esté listo para scrollear
+        const timer = setTimeout(() => {
+          listRef.current?.scrollToOffset({ offset: scrollOffset, animated: false });
+        }, 100);
+        return () => clearTimeout(timer);
+      }
+    }, [scrollOffset])
+  );
+
+  // Guardar scroll al mover
+  const handleScroll = useCallback((event: any) => {
+    const offset = event.nativeEvent.contentOffset.y;
+    // Solo guardamos si es positivo para evitar rebotes raros
+    if (offset >= 0) {
+      setScrollOffset(offset);
+    }
+  }, [setScrollOffset]);
 
   // Dispatcher pattern: stable callback that takes scalar id (no closure over item)
   const handlePress = useCallback((codigo: string) => {
@@ -146,6 +169,7 @@ export default function Inventario() {
         </View>
       ) : (
         <FlashList
+          ref={listRef}
           data={productos}
           keyExtractor={keyExtractor}
           renderItem={renderItem}
@@ -155,6 +179,8 @@ export default function Inventario() {
           keyboardShouldPersistTaps="handled"
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.3}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
           ListFooterComponent={
             isFetchingMore
               ? <ActivityIndicator color={colors.primary} style={{ paddingVertical: 16 }} />
