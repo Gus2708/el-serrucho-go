@@ -1,3 +1,8 @@
+/* Match app theme so the area beyond max-width never flashes white */
+html, body, #root {
+  background-color: #0C0C0C;
+}
+
 /* Remove default browser focus outline on inputs */
 @media (hover: hover) {
   input:focus,

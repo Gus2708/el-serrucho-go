@@ -200,8 +200,15 @@ export default function RootLayout() {
   );
 
   if (Platform.OS === 'web') {
-    // Desktop: full width — sidebar + content fill the entire screen
-    if (isDesktop) return inner;
+    // Desktop: full viewport with dark background so the area beyond
+    // CONTENT_MAX_WIDTH does not flash white
+    if (isDesktop) {
+      return (
+        <View style={{ flex: 1, backgroundColor: '#0C0C0C' }}>
+          {inner}
+        </View>
+      );
+    }
 
     // Mobile browser: center a 480px column (looks like the native app)
     return (
