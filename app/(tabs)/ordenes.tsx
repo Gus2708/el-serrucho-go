@@ -12,7 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { notify, confirm } from '../../src/lib/notify';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -58,6 +58,7 @@ export default function Ordenes() {
 
 function BorradorView({ router }: { router: any }) {
   const { colors, formatUSD } = useTheme();
+  const insets = useSafeAreaInsets();
   const { items, nota, isLoading, removeItem, updateItem, setNota, clear, submit } = useOrdenCambio();
 
   const [session, setSession] = useState<string | null>(null);
@@ -268,7 +269,11 @@ function BorradorView({ router }: { router: any }) {
       {items.length > 0 && (
         <View style={[
           styles.submitBar, 
-          { backgroundColor: colors.surface, borderColor: colors.border },
+          { 
+            backgroundColor: colors.surface, 
+            borderColor: colors.border,
+            bottom: Platform.OS === 'web' ? 0 : insets.bottom + 82 
+          },
           Platform.OS === 'web' && styles.submitBarWeb
         ]}>
           <View style={styles.submitInfo}>

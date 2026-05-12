@@ -27,6 +27,11 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="description" content="Dashboard administrativo para ferretería El Serrucho" />
 
         {/* PWA Icons & Manifest */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Serrucho GO" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="application-name" content="Serrucho GO" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <link rel="manifest" href="/manifest.json" />
       </head>
