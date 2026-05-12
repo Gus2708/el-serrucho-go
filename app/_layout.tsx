@@ -41,7 +41,7 @@ function AuthGuard({ session, ready }: { session: Session | null; ready: boolean
   useEffect(() => {
     const timer = setTimeout(() => {
       setHardTimeout(true);
-    }, 10000);
+    }, 5000); // Reducido a 5s para mayor rapidez
     return () => clearTimeout(timer);
   }, []);
 
@@ -84,11 +84,21 @@ function AuthGuard({ session, ready }: { session: Session | null; ready: boolean
   }, [session, ready, segments, roleData, roleLoading]);
 
   // Pantalla de carga mientras se decide el destino
-  // El hardTimeout asegura que si el rol tarda más de 10s, pasamos igual
+  // El hardTimeout asegura que si el rol tarda más de 5s, pasamos igual
   if (!ready || (session && roleLoading && !hardTimeout)) {
     return (
-      <View style={{ flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={colors.primary} />
+      <View style={{ flex: 1, backgroundColor: colors?.bg || '#010100', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+        <ActivityIndicator size="large" color={colors?.primary || '#fbbf24'} />
+        {hardTimeout && (
+          <Pressable 
+            onPress={() => {
+              if (Platform.OS === 'web') window.location.reload();
+            }}
+            style={{ marginTop: 20, padding: 10, backgroundColor: colors?.surface || '#111', borderRadius: 8, borderWidth: 1, borderColor: colors?.border || '#333' }}
+          >
+            <Text style={{ color: colors?.primary || '#fbbf24', fontSize: 14 }}>Recargar aplicación</Text>
+          </Pressable>
+        )}
       </View>
     );
   }
@@ -127,12 +137,12 @@ export default function RootLayout() {
 
   useEffect(() => {
     // ── FALLSAFE GLOBAL ──
-    // Si pasados 7 segundos la app no ha cargado (fuentes o auth), 
+    // Si pasados 2.5 segundos la app no ha cargado (fuentes o auth), 
     // forzamos la entrada para que el usuario no quede bloqueado.
     const globalTimeout = setTimeout(() => {
-      // Si pasan 4 segundos y no hay respuesta, forzamos para no bloquear al usuario
       setFailsafeActive(true);
-    }, 4000);
+      setAuthReady(true); // También forzamos authReady
+    }, 2500);
 
     // ── INICIALIZACIÓN AUTH ──
     supabase.auth.getSession()
@@ -173,7 +183,7 @@ export default function RootLayout() {
   // La app está lista si:
   // 1. Auth está listo Y las fuentes están listas.
   // 2. O si el failsafe se activó (evita muerte por splash).
-  const isAppReady = failsafeActive || (authReady && (fontsLoaded || !!fontError));
+  const isAppReady = !!failsafeActive || (!!authReady && (!!fontsLoaded || !!fontError));
 
   useEffect(() => {
     if (!isAppReady) {
@@ -232,6 +242,16 @@ export default function RootLayout() {
       return (
         <View style={{ flex: 1, backgroundColor: '#010100' }}>
           {inner}
+        </View>
+      );
+    }
+
+    // Verificación crítica de variables de entorno en Web
+    if (!process.env.EXPO_PUBLIC_SUPABASE_URL || !process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY) {
+      return (
+        <View style={{ flex: 1, backgroundColor: '#010100', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <Text style={{ color: '#ef4444', textAlign: 'center', fontSize: 16, fontWeight: 'bold' }}>Error de Configuración</Text>
+          <Text style={{ color: '#9ca3af', textAlign: 'center', marginTop: 10 }}>Faltan las variables de entorno de Supabase en el servidor.</Text>
         </View>
       );
     }

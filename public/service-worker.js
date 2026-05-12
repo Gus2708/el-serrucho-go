@@ -1,11 +1,9 @@
 // Nombres de caché con control de versiones
-const CACHE_NAME = 'serrucho-static-v1';
-const DATA_CACHE_NAME = 'serrucho-data-v1';
+const CACHE_NAME = 'serrucho-static-v2';
+const DATA_CACHE_NAME = 'serrucho-data-v2';
 
-// App Shell básico para pre-caché
+// App Shell básico para pre-caché (Assets que no cambian de nombre frecuentemente)
 const PRECACHE_ASSETS = [
-  '/',
-  '/index.html',
   '/manifest.webmanifest',
   '/favicon.ico',
   '/elserruchogo512x512.png',
@@ -79,6 +77,23 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // ESTRATEGIA: Network First para Navegación (HTML)
+  // Siempre queremos la versión más reciente del HTML para evitar bundles viejos.
+  if (event.request.mode === 'navigate' || (event.request.method === 'GET' && event.request.headers.get('accept').includes('text/html'))) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
+          return response;
+        })
+        .catch(() => caches.match(event.request) || caches.match('/'))
+    );
+    return;
+  }
+
   // ESTRATEGIA: Cache First para Assets Estáticos (JS, CSS, Imágenes, Fuentes)
   // Servimos desde el caché para velocidad, y actualizamos en segundo plano si es necesario.
   event.respondWith(
@@ -103,7 +118,7 @@ self.addEventListener('fetch', (event) => {
 
         return response;
       }).catch(() => {
-        // Si falla la red y es una navegación, devolvemos el index.html (App Shell)
+        // Fallback para navegación ya manejado arriba, pero por si acaso:
         if (event.request.mode === 'navigate') {
           return caches.match('/');
         }
