@@ -164,8 +164,21 @@ export function SparklineChart({ data, width, height = 70 }: Props) {
     });
   }
 
+  const isSunday  = new Date().getDay() === 0;
+  const wasSunday = new Date(Date.now() - 86400000).getDay() === 0;
+  const isNonWorking = isSunday || wasSunday;
+
   return (
     <View style={[styles.wrap, { width: w, height }]}>
+      {/* Non-working day overlay */}
+      {isNonWorking && (
+        <View style={styles.nonWorkingOverlay} pointerEvents="none">
+          <Text style={[styles.nonWorkingText, { color: colors.textDim }]}>
+            DÍA NO LABORABLE
+          </Text>
+        </View>
+      )}
+
       {/* SVG: receso (atrás) + subgrid + baseline. */}
       <Svg
         width={w}
@@ -363,5 +376,20 @@ const styles = StyleSheet.create({
     fontFamily:    'JetBrainsMono_500Medium',
     letterSpacing: 0.4,                   // ↑ de 0.3 — un poco más de aire
     opacity:       0.95,                  // ↑ de 0.85 — sigue sutil pero ya no pálido
+  },
+  nonWorkingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 200,
+    top: TOP_PAD,
+    height: 40, // Centered in the drawing area
+  },
+  nonWorkingText: {
+    fontSize: 12,
+    fontFamily: 'JetBrainsMono_700Bold',
+    letterSpacing: 2,
+    opacity: 0.6,
+    textTransform: 'uppercase',
   },
 });

@@ -9,6 +9,7 @@ import {
   TextInput,
   ActivityIndicator,
   Linking,
+  Platform,
 } from 'react-native';
 import { notify, confirm } from '../../src/lib/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,11 +17,14 @@ import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
 import { useOrdenesHistory } from '../../src/hooks/useOrdenesHistory';
 import { supabase } from '../../src/lib/supabase';
+import { buildPdfHtml } from '../../src/utils/pdfGenerator';
 
 type Tab = 'borrador' | 'historial';
 
@@ -67,9 +71,46 @@ function BorradorView({ router }: { router: any }) {
   async function performSubmit() {
     try {
       const userId = await getUserId();
-      const { orderId } = await submit(userId);
+      const { orderId, html } = await submit(userId);
       clear();
-      notify('✓ Orden emitida', `OC-${String(orderId).padStart(4, '0')} generada y PDF compartido.`);
+      
+      const msg = `OC-${String(orderId).padStart(4, '0')} generada.`;
+      
+      if (Platform.OS === 'web' && html) {
+        notify('✓ Orden emitida', msg);
+        try {
+          // Manual iframe print for Web to guarantee ONLY the HTML is printed
+          const iframe = document.createElement('iframe');
+          iframe.style.position = 'fixed';
+          iframe.style.right = '0';
+          iframe.style.bottom = '0';
+          iframe.style.width = '0';
+          iframe.style.height = '0';
+          iframe.style.border = '0';
+          document.body.appendChild(iframe);
+          
+          const doc = iframe.contentWindow?.document;
+          if (doc) {
+            doc.open();
+            doc.write(html);
+            doc.close();
+            
+            // Wait for styles/fonts to load
+            setTimeout(() => {
+              iframe.contentWindow?.focus();
+              iframe.contentWindow?.print();
+              setTimeout(() => document.body.removeChild(iframe), 1000);
+            }, 500);
+          }
+        } catch (e) {
+          console.error('Error printing PDF:', e);
+          const blob = new Blob([html], { type: 'text/html' });
+          const url = URL.createObjectURL(blob);
+          window.open(url, '_blank');
+        }
+      } else {
+        notify('✓ Orden emitida', msg + ' PDF enviado a compartir.');
+      }
     } catch (e: any) {
       notify('Error', e.message ?? 'No se pudo emitir la orden');
     }
@@ -138,30 +179,58 @@ function BorradorView({ router }: { router: any }) {
                   </View>
 
                   <View style={styles.itemBottom}>
-                    <View style={styles.qtyGroup}>
-                      <Text style={[styles.qtyLabel, { color: colors.textMuted }]}>Actual</Text>
-                      <Text style={[styles.qtyVal, { color: colors.text }]}>{item.existencia_actual}</Text>
+                    <View style={styles.qtyColumn}>
+                      <Text style={[styles.qtyLabel, { color: colors.textMuted }]}>ACTUAL</Text>
+                      <View style={styles.qtyValueWrapper}>
+                        <Text style={[styles.qtyVal, { color: colors.text }]}>{item.existencia_actual}</Text>
+                      </View>
                     </View>
-                    <Feather name="arrow-right" size={14} color={colors.textDim} />
-                    <View style={styles.qtyGroup}>
-                      <Text style={[styles.qtyLabel, { color: colors.textMuted }]}>Nueva</Text>
-                      <TextInput
-                        style={[styles.qtyEdit, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
-                        keyboardType="numeric"
-                        value={String(item.nueva_existencia)}
-                        onChangeText={v => {
-                          const n = parseFloat(v);
-                          if (!isNaN(n) && n >= 0) {
-                            updateItem(item.codigo_producto, { nueva_existencia: n });
-                          }
-                        }}
-                        selectTextOnFocus
-                      />
+
+                    <View style={styles.qtySeparator}>
+                      <Feather name="arrow-right" size={14} color={colors.textDim} />
                     </View>
-                    <View style={[styles.deltaBadge, { backgroundColor: deltaColor + '22', borderColor: deltaColor + '55' }]}>
-                      <Text style={[styles.deltaText, { color: deltaColor }]} numberOfLines={1} adjustsFontSizeToFit>
-                        {isNeg ? '' : '+'}{delta}
-                      </Text>
+
+                    <View style={[styles.qtyColumn, { flex: 1 }]}>
+                      <Text style={[styles.qtyLabel, { color: colors.textMuted }]}>NUEVA</Text>
+                      <View style={styles.qtyValueWrapper}>
+                        <Pressable 
+                          onPress={() => updateItem(item.codigo_producto, { nueva_existencia: Math.max(0, item.nueva_existencia - 1) })}
+                          style={({ pressed }) => [styles.qtyBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, pressed && { opacity: 0.7 }]}
+                        >
+                          <Feather name="minus" size={14} color={colors.text} />
+                        </Pressable>
+                        
+                        <TextInput
+                          style={[styles.qtyEdit, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                          keyboardType="numeric"
+                          value={String(item.nueva_existencia)}
+                          onChangeText={v => {
+                            const n = parseFloat(v);
+                            if (!isNaN(n) && n >= 0) {
+                              updateItem(item.codigo_producto, { nueva_existencia: n });
+                            }
+                          }}
+                          selectTextOnFocus
+                        />
+
+                        <Pressable 
+                          onPress={() => updateItem(item.codigo_producto, { nueva_existencia: item.nueva_existencia + 1 })}
+                          style={({ pressed }) => [styles.qtyBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, pressed && { opacity: 0.7 }]}
+                        >
+                          <Feather name="plus" size={14} color={colors.text} />
+                        </Pressable>
+                      </View>
+                    </View>
+
+                    <View style={styles.qtyColumn}>
+                      <Text style={[styles.qtyLabel, { color: colors.textMuted, textAlign: 'right' }]}>AJUSTE</Text>
+                      <View style={[styles.qtyValueWrapper, { justifyContent: 'flex-end' }]}>
+                        <View style={[styles.deltaBadge, { backgroundColor: deltaColor + '22', borderColor: deltaColor + '55' }]}>
+                          <Text style={[styles.deltaText, { color: deltaColor }]} numberOfLines={1} adjustsFontSizeToFit>
+                            {isNeg ? '' : '+'}{delta}
+                          </Text>
+                        </View>
+                      </View>
                     </View>
                   </View>
 
@@ -197,7 +266,11 @@ function BorradorView({ router }: { router: any }) {
 
       {/* Submit bar */}
       {items.length > 0 && (
-        <View style={[styles.submitBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={[
+          styles.submitBar, 
+          { backgroundColor: colors.surface, borderColor: colors.border },
+          Platform.OS === 'web' && styles.submitBarWeb
+        ]}>
           <View style={styles.submitInfo}>
             <Text style={[styles.submitCount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
               {items.length} ítem{items.length > 1 ? 's' : ''}
@@ -232,6 +305,7 @@ function HistorialView({ queryClient }: { queryClient: any }) {
   const { scrollOffsetOrdenes, setScrollOffsetOrdenes } = useInventarioStore();
   const scrollRef = useRef<ScrollView>(null);
   const { data: ordenes = [], isLoading } = useOrdenesHistory();
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState<number | null>(null);
 
   // Restaurar scroll
   useFocusEffect(
@@ -244,6 +318,53 @@ function HistorialView({ queryClient }: { queryClient: any }) {
       }
     }, [scrollOffsetOrdenes])
   );
+
+  const handleViewPDF = async (o: any) => {
+    if (o.pdf_url) {
+      Linking.openURL(o.pdf_url);
+      return;
+    }
+
+    // No PDF URL, re-generate it
+    setIsGeneratingPdf(o.id);
+    try {
+      const { data: items, error } = await supabase
+        .from('ordenes_cambio_items')
+        .select('*')
+        .eq('orden_id', o.id);
+
+      if (error) throw error;
+
+      const html = buildPdfHtml(items as any[], o.nota, o.id);
+      
+      if (Platform.OS === 'web') {
+        try {
+          const iframe = document.createElement('iframe');
+          iframe.style.position = 'fixed'; iframe.style.width = '0'; iframe.style.height = '0'; iframe.style.border = '0';
+          document.body.appendChild(iframe);
+          const doc = iframe.contentWindow?.document;
+          if (doc) {
+            doc.open(); doc.write(html); doc.close();
+            setTimeout(() => {
+              iframe.contentWindow?.focus(); iframe.contentWindow?.print();
+              setTimeout(() => document.body.removeChild(iframe), 1000);
+            }, 500);
+          }
+        } catch (e) {
+          const blob = new Blob([html], { type: 'text/html' });
+          const url = URL.createObjectURL(blob);
+          window.open(url, '_blank');
+        }
+      } else {
+        const { uri } = await Print.printToFileAsync({ html });
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf' });
+      }
+    } catch (err: any) {
+      notify('Error', 'No se pudo generar el PDF: ' + err.message);
+    } finally {
+      setIsGeneratingPdf(null);
+    }
+  };
 
   // Guardar scroll
   const handleScroll = (event: any) => {
@@ -267,7 +388,13 @@ function HistorialView({ queryClient }: { queryClient: any }) {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+    <ScrollView 
+      ref={scrollRef}
+      onScroll={handleScroll}
+      scrollEventThrottle={16}
+      contentContainerStyle={styles.scroll} 
+      showsVerticalScrollIndicator={false}
+    >
       {ordenes.map(o => (
         <View
           key={o.id}
@@ -301,15 +428,26 @@ function HistorialView({ queryClient }: { queryClient: any }) {
             </Text>
           ) : null}
 
-          {o.pdf_url ? (
-            <Pressable
-              style={({ pressed }) => [styles.pdfBtn, { borderColor: colors.primary }, pressed && { opacity: 0.7 }]}
-              onPress={() => Linking.openURL(o.pdf_url!)}
-            >
-              <Feather name="file-text" size={14} color={colors.primary} />
-              <Text style={[styles.pdfBtnText, { color: colors.primary }]}>Ver PDF</Text>
-            </Pressable>
-          ) : null}
+          <Pressable
+            style={({ pressed }) => [
+              styles.pdfBtn, 
+              { borderColor: colors.primary }, 
+              (pressed || isGeneratingPdf === o.id) && { opacity: 0.7 }
+            ]}
+            onPress={() => handleViewPDF(o)}
+            disabled={isGeneratingPdf !== null}
+          >
+            {isGeneratingPdf === o.id ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <>
+                <Feather name="file-text" size={14} color={colors.primary} />
+                <Text style={[styles.pdfBtnText, { color: colors.primary }]}>
+                  {o.pdf_url ? 'Ver PDF' : 'Imprimir PDF'}
+                </Text>
+              </>
+            )}
+          </Pressable>
         </View>
       ))}
       <View style={{ height: 150 }} />
@@ -398,23 +536,44 @@ const styles = StyleSheet.create({
 
   itemBottom: {
     flexDirection: 'row',
-    alignItems:    'center',
-    gap:           8,
+    alignItems:    'flex-start',
+    gap:           10,
+    marginTop:     4,
   },
-  qtyGroup:  { alignItems: 'center', gap: 2 },
+  qtyColumn: {
+    gap: 4,
+  },
+  qtyValueWrapper: {
+    height:         36,
+    flexDirection:  'row',
+    alignItems:     'center',
+    gap:            8,
+  },
+  qtySeparator: {
+    height:         36,
+    justifyContent: 'center',
+    marginTop:      13, // qtyLabel(9) + gap(4)
+  },
   qtyLabel:  { fontSize: 9, fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.3 },
   qtyVal:    { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold' },
   qtyEdit: {
-    fontSize:   16,
+    fontSize:   15,
     fontFamily: 'JetBrainsMono_700Bold',
     textAlign:  'center',
     borderWidth: 0.5,
     borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical:    4,
-    minWidth:    50,
-    flexShrink:  1,
+    paddingHorizontal: 4,
+    height:      36,
+    width:       50,
     fontVariant: ['tabular-nums'],
+  },
+  qtyBtn: {
+    width:          36,
+    height:         36,
+    borderRadius:   8,
+    borderWidth:    0.5,
+    alignItems:     'center',
+    justifyContent: 'center',
   },
   deltaBadge: {
     borderRadius: 999,
@@ -429,7 +588,7 @@ const styles = StyleSheet.create({
   },
 
   notaInput: {
-    fontSize:   12,
+    fontSize:   16,
     fontFamily: 'JetBrainsMono_400Regular',
     borderBottomWidth: 0.5,
     paddingVertical:   6,
@@ -443,7 +602,7 @@ const styles = StyleSheet.create({
     gap:              6,
   },
   ordenNotaLabel: { fontSize: 11, fontFamily: 'JetBrainsMono_700Bold', textTransform: 'uppercase', letterSpacing: 0.3 },
-  ordenNotaInput: { fontSize: 14, fontFamily: 'JetBrainsMono_400Regular', lineHeight: 20, minHeight: 44 },
+  ordenNotaInput: { fontSize: 16, fontFamily: 'JetBrainsMono_400Regular', lineHeight: 22, minHeight: 44 },
 
   submitBar: {
     position:          'absolute',
@@ -470,6 +629,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   submitBtnText: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold' },
+
+  submitBarWeb: {
+    position: 'relative',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    marginTop: 8,
+  },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
 

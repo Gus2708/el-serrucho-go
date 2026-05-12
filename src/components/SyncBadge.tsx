@@ -19,7 +19,7 @@ export function SyncBadge() {
     ).start();
   }, []);
 
-  const { dotColor, line1, line2, tag, tagColor, isClosed, isStuck } = getState(minutesAgo, isLoading, colors, activeCommand);
+  const { dotColor, line1, line2, tag, tagColor, isClosed, isStuck, isRecess } = getState(minutesAgo, isLoading, colors, activeCommand);
 
   const handleSync = () => {
     if (isClosed) {
@@ -67,19 +67,19 @@ export function SyncBadge() {
       <Pressable
         style={({ pressed }) => [
           styles.syncButton,
-          { backgroundColor: isClosed ? colors.border : isStuck ? colors.danger + '15' : colors.primary + '15' },
-          pressed && !isClosed && { opacity: 0.7 },
+          { backgroundColor: (isClosed || isRecess) ? colors.border : isStuck ? colors.danger + '15' : colors.primary + '15' },
+          pressed && !isClosed && !isRecess && { opacity: 0.7 },
         ]}
         onPress={handleSync}
-        disabled={isSyncing && !isStuck}
+        disabled={(isSyncing && !isStuck) || isRecess}
       >
         {isSyncing && !isStuck ? (
           <ActivityIndicator size="small" color={colors.primary} />
         ) : (
           <Feather 
-            name={isClosed ? 'moon' : isStuck ? 'alert-triangle' : 'refresh-cw'} 
+            name={isClosed ? 'moon' : isRecess ? 'coffee' : isStuck ? 'alert-triangle' : 'refresh-cw'} 
             size={14} 
-            color={isClosed ? colors.textDim : isStuck ? colors.danger : colors.primary} 
+            color={isClosed ? colors.textDim : isRecess ? colors.warning : isStuck ? colors.danger : colors.primary} 
           />
         )}
       </Pressable>
@@ -97,6 +97,7 @@ function getState(
   const now = new Date();
   const hour = now.getHours();
   const isClosed = hour >= 18 || hour < 8;
+  const isRecess = hour === 13; // 1:00 PM - 1:59 PM
 
   if (activeCommand) {
     const isProcessing = activeCommand.status === 'ejecutando' || activeCommand.status === 'procesando';
@@ -110,6 +111,7 @@ function getState(
       tagColor: isStuck ? colors.danger : (isProcessing ? colors.primary : colors.warning),
       isClosed: false,
       isStuck,
+      isRecess: false,
     };
   }
 
@@ -121,6 +123,19 @@ function getState(
       tag:      'Cerrado',
       tagColor: colors.textMuted,
       isClosed: true,
+      isRecess: false,
+    };
+  }
+
+  if (isRecess) {
+    return {
+      dotColor: colors.warning,
+      line1:    'Tienda en Receso',
+      line2:    'Retomamos actividad a las 2:00 PM',
+      tag:      'Receso',
+      tagColor: colors.warning,
+      isClosed: false,
+      isRecess: true,
     };
   }
 
@@ -131,6 +146,7 @@ function getState(
       line2:    'Conectando con Supabase',
       tag:      '…',
       tagColor: colors.textMuted,
+      isRecess: false,
     };
   }
   if (minutesAgo === null) {
@@ -140,6 +156,7 @@ function getState(
       line2:    'No hay datos de sincronización',
       tag:      'Offline',
       tagColor: colors.danger,
+      isRecess: false,
     };
   }
   if (minutesAgo < 1) {
@@ -149,6 +166,7 @@ function getState(
       line2:    'Último cambio detectado · ahora mismo',
       tag:      'En sync',
       tagColor: colors.success,
+      isRecess: false,
     };
   }
   if (minutesAgo < 30) {
@@ -158,6 +176,7 @@ function getState(
       line2:    `Último cambio detectado · ${minutesAgo} min`,
       tag:      'En sync',
       tagColor: colors.success,
+      isRecess: false,
     };
   }
   if (minutesAgo < 120) {
@@ -170,6 +189,7 @@ function getState(
       line2:    `Sin actividad hace ${ago}`,
       tag:      'Demorada',
       tagColor: colors.warning,
+      isRecess: false,
     };
   }
   const hours = Math.floor(minutesAgo / 60);
@@ -179,6 +199,7 @@ function getState(
     line2:    `Sin cambios desde hace ${hours}h`,
     tag:      'Sin sync',
     tagColor: colors.danger,
+    isRecess: false,
   };
 }
 

@@ -839,7 +839,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: '100%',
     fontFamily: 'JetBrainsMono_400Regular',
-    fontSize: 14,
+    fontSize: 16, // Prevents auto-zoom on mobile web
     paddingVertical: 0,
   },
   searchClear: { padding: 4 },

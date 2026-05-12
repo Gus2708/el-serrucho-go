@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Modal, TextInput, Animated, PanResponder, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Modal, TextInput, Animated, PanResponder, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
 import { notify } from '../../src/lib/notify';
 
 const screenHeight = Dimensions.get('window').height;
@@ -24,6 +24,8 @@ export default function ProductoDetail() {
 
   const [showAddSheet, setShowAddSheet] = useState(false);
   const [newQty,       setNewQty]       = useState('');
+  const [adjMode,      setAdjMode]      = useState<'fixed' | 'relative'>('fixed');
+  const [adjOp,        setAdjOp]        = useState<'+' | '-'>('+');
 
   const panY = useRef(new Animated.Value(screenHeight)).current;
 
@@ -181,8 +183,8 @@ export default function ProductoDetail() {
               <Pressable
                 style={({ pressed }) => [styles.addBtn, { marginHorizontal: 0, marginTop: 0, backgroundColor: colors.primaryFaded, borderColor: colors.primary }, pressed && { opacity: 0.75 }]}
                 onPress={() => {
-                  const existingItem = items.find(i => i.codigo_producto === producto.codigo_interno);
-                  setNewQty(String(existingItem?.nueva_existencia ?? producto.existencia));
+                const existingItem = items.find(i => i.codigo_producto === producto.codigo_interno);
+                  setNewQty(existingItem ? String(existingItem.nueva_existencia) : '');
                   setShowAddSheet(true);
                 }}
               >
@@ -206,7 +208,7 @@ export default function ProductoDetail() {
             <Pressable
               style={({ pressed }) => [styles.addBtn, { backgroundColor: colors.primaryFaded, borderColor: colors.primary }, pressed && { opacity: 0.75 }]}
               onPress={() => {
-                setNewQty(String(producto.existencia));
+                setNewQty('');
                 setShowAddSheet(true);
               }}
             >
@@ -230,15 +232,19 @@ export default function ProductoDetail() {
               style={StyleSheet.absoluteFill}
               onPress={() => setShowAddSheet(false)}
             />
-            <Animated.View 
-              style={[
-                styles.sheet, 
-                { 
-                  backgroundColor: colors.surface, 
-                  transform: [{ translateY: panY }] 
-                }
-              ]}
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              style={{ width: '100%' }}
             >
+              <Animated.View 
+                style={[
+                  styles.sheet, 
+                  { 
+                    backgroundColor: colors.surface, 
+                    transform: [{ translateY: panY }] 
+                  }
+                ]}
+              >
               <View 
                 {...panResponder.panHandlers}
                 style={styles.modalHandleArea}
@@ -255,32 +261,93 @@ export default function ProductoDetail() {
               <Text style={[styles.sheetSub, { color: colors.textMuted }]} numberOfLines={1}>
                 {producto.descripcion}
               </Text>
-              <Text style={[styles.sheetLabel, { color: colors.textMuted }]}>
-                Actual: {producto.existencia} uds  ·  Nueva existencia:
-              </Text>
-              <View style={[styles.qtyWrap, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
-                <TextInput
-                  style={[styles.qtyInput, { color: colors.text }]}
-                  keyboardType="numeric"
-                  value={newQty}
-                  onChangeText={setNewQty}
-                  selectTextOnFocus
-                  autoFocus
-                />
+
+              {/* Mode Selector */}
+              <View style={[styles.modeSelector, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+                <Pressable 
+                  onPress={() => {
+                    setAdjMode('fixed');
+                    setNewQty('');
+                  }}
+                  style={[styles.modeBtn, adjMode === 'fixed' && { backgroundColor: colors.primaryFaded, borderColor: colors.primary }]}
+                >
+                  <Text style={[styles.modeBtnText, { color: adjMode === 'fixed' ? colors.primary : colors.textMuted }]}>Nueva Total</Text>
+                </Pressable>
+                <Pressable 
+                  onPress={() => {
+                    setAdjMode('relative');
+                    setNewQty('');
+                  }}
+                  style={[styles.modeBtn, adjMode === 'relative' && { backgroundColor: colors.primaryFaded, borderColor: colors.primary }]}
+                >
+                  <Text style={[styles.modeBtnText, { color: adjMode === 'relative' ? colors.primary : colors.textMuted }]}>Sumar/Restar</Text>
+                </Pressable>
               </View>
+
+              <Text style={[styles.sheetLabel, { color: colors.textMuted }]}>
+                {adjMode === 'fixed' ? 'Actual: ' + producto.existencia + ' uds  ·  Nueva existencia:' : 'Ingresa la cantidad a ajustar:'}
+              </Text>
+
+              <View style={styles.inputContainer}>
+                {adjMode === 'relative' && (
+                  <Pressable 
+                    onPress={() => setAdjOp(adjOp === '+' ? '-' : '+')}
+                    style={[styles.opBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+                  >
+                    <Text style={[styles.opText, { color: adjOp === '+' ? colors.success : colors.danger }]}>{adjOp}</Text>
+                  </Pressable>
+                )}
+                
+                <View style={[styles.qtyWrap, { flex: 1, backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+                  <TextInput
+                    style={[styles.qtyInput, { color: colors.text }]}
+                    keyboardType="numeric"
+                    value={newQty}
+                    onChangeText={setNewQty}
+                    placeholder="0"
+                    placeholderTextColor={colors.textDim}
+                    selectTextOnFocus
+                    autoFocus
+                  />
+                </View>
+              </View>
+
+              {adjMode === 'relative' && (
+                <View style={styles.previewContainer}>
+                  <Text style={[styles.previewLabel, { color: colors.textMuted }]}>Resultado final: </Text>
+                  <Text style={[styles.previewValue, { color: colors.primary }]}>
+                    {adjOp === '+' 
+                      ? (producto.existencia + (parseFloat(newQty) || 0)) 
+                      : (producto.existencia - (parseFloat(newQty) || 0))
+                    } uds
+                  </Text>
+                </View>
+              )}
+
               <Pressable
                 style={({ pressed }) => [styles.sheetBtn, { backgroundColor: colors.primary }, pressed && { opacity: 0.75 }]}
                 onPress={() => {
-                  const qty = parseFloat(newQty);
-                  if (isNaN(qty) || qty < 0) {
-                    notify('Cantidad inválida', 'Ingresa un número mayor o igual a 0');
+                  const inputVal = parseFloat(newQty);
+                  if (isNaN(inputVal)) {
+                    notify('Cantidad inválida', 'Ingresa un número válido');
                     return;
                   }
+
+                  let finalQty = inputVal;
+                  if (adjMode === 'relative') {
+                    finalQty = adjOp === '+' ? producto.existencia + inputVal : producto.existencia - inputVal;
+                  }
+
+                  if (finalQty < 0) {
+                    notify('Error', 'La existencia no puede ser negativa');
+                    return;
+                  }
+
                   addItem({
                     codigo_producto:   producto.codigo_interno,
                     descripcion:       producto.descripcion,
                     existencia_actual: producto.existencia,
-                    nueva_existencia:  qty,
+                    nueva_existencia:  finalQty,
                     nota:              '',
                   });
                   setShowAddSheet(false);
@@ -290,7 +357,8 @@ export default function ProductoDetail() {
                   Confirmar
                 </Text>
               </Pressable>
-            </Animated.View>
+              </Animated.View>
+            </KeyboardAvoidingView>
           </View>
         </Modal>
         </>
@@ -523,7 +591,60 @@ const styles = StyleSheet.create({
     borderRadius:   12,
     alignItems:     'center',
     justifyContent: 'center',
-    marginTop:      4,
+    marginTop:      12,
   },
   sheetBtnText: { fontSize: 15, fontFamily: 'JetBrainsMono_700Bold' },
+
+  modeSelector: {
+    flexDirection: 'row',
+    padding: 4,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  modeBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  modeBtnText: {
+    fontSize: 13,
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  opBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    borderWidth: 0.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  opText: {
+    fontSize: 28,
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
+  previewContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  previewLabel: {
+    fontSize: 14,
+    fontFamily: 'JetBrainsMono_400Regular',
+  },
+  previewValue: {
+    fontSize: 16,
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
 });

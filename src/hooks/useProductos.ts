@@ -63,17 +63,12 @@ async function fetchProductos(
   const trimmed = search.trim();
   if (trimmed) {
     if (trimmed.includes('*')) {
-      const words = trimmed.split(/\s+/).filter(w => w.endsWith('*') && w.length > 1);
-      if (words.length > 0) {
-        for (const word of words) {
-          const term = `%${word.slice(0, -1)}%`;
-          query = query.or(`descripcion.ilike.${term},codigo_interno.ilike.${term}`);
-        }
-      } else {
-        const term = `%${trimmed.replace(/\*/g, '')}%`;
-        query = query.or(`descripcion.ilike.${term},codigo_interno.ilike.${term}`);
-      }
+      // If user uses *, we enforce strict order for all words
+      const words = trimmed.split(/\s+/).filter(w => w.length > 0);
+      const pattern = `%${words.map(w => w.replace(/\*/g, '')).join('%')}%`;
+      query = query.or(`descripcion.ilike.${pattern},codigo_interno.ilike.${pattern}`);
     } else {
+      // Standard search: contains the whole string in order
       const term = `%${trimmed}%`;
       query = query.or(`descripcion.ilike.${term},codigo_interno.ilike.${term}`);
     }

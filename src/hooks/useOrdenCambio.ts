@@ -3,15 +3,7 @@ import { supabase } from '../lib/supabase';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
-import { SERRUCHO_LOGO } from '../constants/pdfAssets';
-
-export interface DraftItem {
-  codigo_producto:   string;
-  descripcion:       string;
-  existencia_actual: number;
-  nueva_existencia:  number;
-  nota:              string;
-}
+import { buildPdfHtml, DraftItem } from '../utils/pdfGenerator';
 
 interface OrdenStore {
   items:     DraftItem[];
@@ -22,7 +14,7 @@ interface OrdenStore {
   updateItem:    (codigo: string, updates: Partial<DraftItem>) => void;
   setNota:       (nota: string) => void;
   clear:         () => void;
-  submit:        (userId: string) => Promise<{ orderId: number }>;
+  submit:        (userId: string) => Promise<{ orderId: number; html?: string }>;
 }
 
 export const useOrdenCambio = create<OrdenStore>((set, get) => ({
@@ -30,27 +22,27 @@ export const useOrdenCambio = create<OrdenStore>((set, get) => ({
   nota:      '',
   isLoading: false,
 
-  addItem: (item) =>
-    set(s => ({
-      items: s.items.find(i => i.codigo_producto === item.codigo_producto)
-        ? s.items.map(i => i.codigo_producto === item.codigo_producto ? item : i)
-        : [...s.items, item],
-    })),
+  addItem: (item) => {
+    const { items } = get();
+    const existing = items.find(i => i.codigo_producto === item.codigo_producto);
+    if (existing) {
+      set({ items: items.map(i => i.codigo_producto === item.codigo_producto ? item : i) });
+    } else {
+      set({ items: [...items, item] });
+    }
+  },
 
-  removeItem: (codigo) =>
-    set(s => ({ items: s.items.filter(i => i.codigo_producto !== codigo) })),
+  removeItem: (codigo) => {
+    set({ items: get().items.filter(i => i.codigo_producto !== codigo) });
+  },
 
-  updateItem: (codigo, updates) =>
-    set(s => ({
-      items: s.items.map(i =>
-        i.codigo_producto === codigo ? { ...i, ...updates } : i
-      ),
-    })),
+  updateItem: (codigo, updates) => {
+    set({ items: get().items.map(i => i.codigo_producto === codigo ? { ...i, ...updates } : i) });
+  },
 
   setNota: (nota) => set({ nota }),
 
   clear: () => set({ items: [], nota: '' }),
-
   submit: async (userId: string) => {
     const { items, nota } = get();
     set({ isLoading: true });
@@ -65,7 +57,7 @@ export const useOrdenCambio = create<OrdenStore>((set, get) => ({
 
       if (ordenError || !orden) throw ordenError ?? new Error('No orden id');
 
-      // 2. Insert all items (delta computed explicitly for DB compatibility)
+      // 2. Insert all items
       const { error: itemsError } = await supabase
         .from('ordenes_cambio_items')
         .insert(
@@ -81,16 +73,21 @@ export const useOrdenCambio = create<OrdenStore>((set, get) => ({
 
       if (itemsError) throw itemsError;
 
-      // 3. Generate and share PDF
+      // 3. Generate HTML
       const html = buildPdfHtml(items, nota, orden.id);
 
       if (Platform.OS === 'web') {
-        // Web: open the HTML in a new tab so the user can print/save as PDF
-        const blob = new Blob([html], { type: 'text/html' });
-        const url  = URL.createObjectURL(blob);
-        window.open(url, '_blank');
-        // Revoke after a short delay to allow the tab to load
-        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+        // Web: return the html so the UI can decide how to handle the print/delivery
+        // Update status to emitted even on web
+        
+        // Update status to emitted even on web
+        await supabase
+          .from('ordenes_cambio')
+          .update({ status: 'emitido' })
+          .eq('id', orden.id);
+
+        set({ isLoading: false });
+        return { orderId: orden.id, html };
       } else {
         // Native: generate a real PDF file and share it
         const { uri } = await Print.printToFileAsync({ html });
@@ -125,244 +122,3 @@ export const useOrdenCambio = create<OrdenStore>((set, get) => ({
     }
   },
 }));
-
-// ── PDF HTML Template ─────────────────────────────────────────────────────────
-function buildPdfHtml(items: DraftItem[], nota: string, orderId: number): string {
-  const now  = new Date().toLocaleString('es-VE');
-  const rows = items.map(item => {
-    const delta  = item.nueva_existencia - item.existencia_actual;
-    const sign   = delta >= 0 ? '+' : '';
-    const color  = delta >= 0 ? '#10b981' : '#ef4444'; // Tailwind colors for better look
-    const bg     = delta >= 0 ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)';
-    
-    return `
-      <tr>
-        <td style="font-weight: 600; color: #666;">${item.codigo_producto}</td>
-        <td style="font-weight: 500;">${item.descripcion}</td>
-        <td style="text-align:center;">${item.existencia_actual}</td>
-        <td style="text-align:center;">${item.nueva_existencia}</td>
-        <td style="text-align:center; color:${color}; font-weight:700; background: ${bg};">${sign}${delta}</td>
-        <td style="font-size: 10px; color: #888;">${item.nota || ''}</td>
-      </tr>`;
-  }).join('');
-
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap');
-  
-  body { 
-    font-family: 'JetBrains Mono', monospace; 
-    font-size: 11px; 
-    color: #1a1a1a; 
-    margin: 40px; 
-    line-height: 1.5;
-  }
-  
-  .header { 
-    display: flex; 
-    align-items: center; 
-    justify-content: space-between;
-    border-bottom: 2px solid #010100; 
-    padding-bottom: 20px; 
-    margin-bottom: 30px; 
-  }
-  
-  .logo-container {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  
-  .logo-img {
-    width: 50px;
-    height: 50px;
-    object-fit: contain;
-  }
-  
-  .logo-text-group {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .logo-text { 
-    font-size: 24px; 
-    font-weight: 900; 
-    color: #010100; 
-    letter-spacing: -1px;
-    text-transform: uppercase;
-  }
-  
-  .logo-sub { 
-    font-size: 10px; 
-    color: #666; 
-    font-weight: 500;
-    letter-spacing: 1px;
-  }
-  
-  .order-badge { 
-    text-align: right;
-  }
-  
-  .badge-label {
-    font-size: 9px;
-    color: #888;
-    text-transform: uppercase;
-    font-weight: 700;
-    margin-bottom: 4px;
-  }
-
-  .badge-value { 
-    background: #010100; 
-    color: #fff; 
-    padding: 6px 14px; 
-    border-radius: 4px; 
-    font-size: 14px; 
-    font-weight: 800; 
-  }
-  
-  .meta-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    margin-bottom: 25px;
-  }
-
-  .meta-item {
-    color: #444;
-  }
-
-  .meta-item strong {
-    color: #010100;
-    font-size: 10px;
-    text-transform: uppercase;
-    margin-right: 6px;
-  }
-  
-  .nota-box { 
-    background: #f8f9fa; 
-    border-left: 4px solid #010100; 
-    padding: 12px 16px; 
-    margin-bottom: 30px; 
-    border-radius: 0 4px 4px 0; 
-  }
-  
-  table { 
-    width: 100%; 
-    border-collapse: collapse; 
-    margin-bottom: 40px;
-  }
-  
-  th { 
-    background: #f1f5f9; 
-    color: #475569; 
-    padding: 10px 12px; 
-    text-align: left; 
-    font-size: 10px; 
-    font-weight: 700;
-    text-transform: uppercase;
-    border-bottom: 1px solid #e2e8f0;
-  }
-  
-  td { 
-    padding: 10px 12px; 
-    border-bottom: 1px solid #f1f5f9; 
-  }
-  
-  tr:nth-child(even) { 
-    background: #fafafa; 
-  }
-  
-  .signature-section { 
-    margin-top: 60px;
-    display: flex;
-    justify-content: space-between;
-    gap: 40px;
-  }
-  
-  .signature-box {
-    flex: 1;
-    border-top: 1px solid #010100;
-    padding-top: 8px;
-  }
-  
-  .signature-box p {
-    margin: 0;
-    font-size: 10px;
-    font-weight: 600;
-    color: #010100;
-  }
-
-  .signature-box span {
-    font-size: 9px;
-    color: #888;
-  }
-  
-  .footer { 
-    margin-top: 50px; 
-    border-top: 1px solid #eee; 
-    padding-top: 20px; 
-    display: flex; 
-    justify-content: space-between; 
-    color: #94a3b8; 
-    font-size: 9px; 
-  }
-</style>
-</head>
-<body>
-  <div class="header">
-    <div class="logo-container">
-      <img src="${SERRUCHO_LOGO}" class="logo-img" />
-      <div class="logo-text-group">
-        <span class="logo-text">EL SERRUCHO</span>
-        <span class="logo-sub">ORDEN DE CAMBIO</span>
-      </div>
-    </div>
-    <div class="order-badge">
-      <div class="badge-label">Referencia</div>
-      <div class="badge-value">#${String(orderId).padStart(4,'0')}</div>
-    </div>
-  </div>
-
-  <div class="meta-grid">
-    <div class="meta-item"><strong>Fecha Emisión:</strong> ${now}</div>
-    <div class="meta-item"><strong>Total Productos:</strong> ${items.length}</div>
-  </div>
-
-  ${nota ? `<div class="nota-box"><strong>Observaciones:</strong><br/>${nota}</div>` : ''}
-
-  <table>
-    <thead>
-      <tr>
-        <th>SKU</th>
-        <th>Descripción</th>
-        <th style="text-align:center;">Stock Anterior</th>
-        <th style="text-align:center;">Stock Nuevo</th>
-        <th style="text-align:center;">Ajuste</th>
-        <th>Comentario</th>
-      </tr>
-    </thead>
-    <tbody>${rows}</tbody>
-  </table>
-
-  <div class="signature-section">
-    <div class="signature-box">
-      <p>Firma Responsable</p>
-      <span>Nombre y Cédula</span>
-    </div>
-    <div class="signature-box">
-      <p>Validación Sistema (Hybrid)</p>
-      <span>Firma y Sello</span>
-    </div>
-  </div>
-
-  <div class="footer">
-    <span>Generado via El Serrucho GO v1.0</span>
-    <span>ID Documento: ${orderId}-${Date.now()}</span>
-  </div>
-</body>
-</html>`;
-}

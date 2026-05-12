@@ -26,7 +26,12 @@
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "pwa": {
+        "appleMobileWebAppCapable": "yes",
+        "appleMobileWebAppStatusBarStyle": "black-translucent",
+        "icon": "./assets/icon.png"
+      }
     },
     "plugins": [
       "expo-router",

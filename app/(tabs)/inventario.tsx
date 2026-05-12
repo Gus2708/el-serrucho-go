@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex:     1,
-    fontSize: 14,
+    fontSize: 16, // Prevents auto-zoom on mobile web
     fontFamily: 'JetBrainsMono_400Regular',
   },
 
