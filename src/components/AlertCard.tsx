@@ -67,7 +67,7 @@ function getStockAlertMeta(
         icon:        'trending-down' as const,
         accentColor: colors.danger,
         titulo:      'Margen negativo',
-        detalle:     'Costo > precio venta',
+        detalle:     'Costo > Precio venta',
       };
     default: // stock_muerto
       return {
