@@ -576,7 +576,7 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
     Animated.timing(animProgress, {
       toValue: 0,
       duration: 250,
-      useNativeDriver: true,
+      useNativeDriver: Platform.OS !== 'web',
     }).start(onClose);
   };
 
@@ -584,7 +584,7 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
     animProgress.setValue(0);
     Animated.spring(animProgress, {
       toValue: 1,
-      useNativeDriver: true,
+      useNativeDriver: Platform.OS !== 'web',
       tension: 65,
       friction: 11
     }).start();

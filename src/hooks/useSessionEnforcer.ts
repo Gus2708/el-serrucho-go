@@ -55,9 +55,13 @@ export function useSessionEnforcer(session: Session | null) {
       if (claimedSidRef.current !== mySid) {
         const { error } = await supabase.rpc('sync_session');
         if (!cancelled && !error) claimedSidRef.current = mySid;
+        // Silence all sync_session warnings in console to avoid noise
+        // as this is a non-critical background enforcement task.
+        /* 
         if (error && !error.message.includes('No session found in JWT')) {
           console.warn('[session-enforcer] sync_session error:', error.message);
         }
+        */
       }
 
       // 2. Verificación inicial: ¿seguimos siendo el dispositivo permitido?

@@ -120,9 +120,9 @@ export default function RootLayout() {
     // Si pasados 7 segundos la app no ha cargado (fuentes o auth), 
     // forzamos la entrada para que el usuario no quede bloqueado.
     const globalTimeout = setTimeout(() => {
-      console.warn('App loading timeout reached (7s). Forcing ready state.');
+      // Si pasan 4 segundos y no hay respuesta, forzamos para no bloquear al usuario
       setFailsafeActive(true);
-    }, 7000);
+    }, 4000);
 
     // ── INICIALIZACIÓN AUTH ──
     supabase.auth.getSession()
@@ -177,9 +177,8 @@ export default function RootLayout() {
     if (isAppReady) {
       // Pequeño delay para asegurar que el frame se renderice antes de ocultar
       const h = setTimeout(() => {
-        if (Platform.OS !== 'web') {
-          SplashScreen.hideAsync().catch(() => {});
-        } else {
+        SplashScreen.hideAsync().catch(() => {});
+        if (Platform.OS === 'web') {
           // Registro de Service Worker para PWA
           // Registro de Service Worker para PWA
           if ('serviceWorker' in navigator) {

@@ -33,7 +33,7 @@ export default function ProductoDetail() {
     Animated.timing(panY, {
       toValue: screenHeight,
       duration: 200,
-      useNativeDriver: true,
+      useNativeDriver: Platform.OS !== 'web',
     }).start(() => setShowAddSheet(false));
   };
 
@@ -42,7 +42,7 @@ export default function ProductoDetail() {
     if (showAddSheet) {
       Animated.spring(panY, {
         toValue: 0,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== 'web',
         tension: 40,
         friction: 8,
       }).start();
@@ -64,7 +64,7 @@ export default function ProductoDetail() {
         } else {
           Animated.spring(panY, {
             toValue: 0,
-            useNativeDriver: true,
+            useNativeDriver: Platform.OS !== 'web',
             tension: 40,
             friction: 8,
           }).start();

@@ -31,4 +31,13 @@ function copyRecursiveSync(src, dest) {
 
 console.log(`Copying ${src} to ${dest}...`);
 copyRecursiveSync(src, dest);
+
+// También copiamos el icono principal para que tenga una ruta estable
+const iconSrc = path.join(__dirname, 'assets', 'icon.png');
+const iconDest = path.join(__dirname, 'dist', 'icon.png');
+if (fs.existsSync(iconSrc)) {
+  fs.copyFileSync(iconSrc, iconDest);
+  console.log('Icon copied to dist/icon.png');
+}
+
 console.log('Files copied successfully');

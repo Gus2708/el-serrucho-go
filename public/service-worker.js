@@ -8,6 +8,7 @@ const PRECACHE_ASSETS = [
   '/index.html',
   '/manifest.json',
   '/favicon.ico',
+  '/icon.png',
 ];
 
 // Instalación: Pre-caché del App Shell y salto de espera
