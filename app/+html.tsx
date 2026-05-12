@@ -41,5 +41,18 @@ const expoRootStyles = `
 html, body, #root {
   background-color: #010100;
   height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Fix for iOS PWA to use full height and avoid scrolling bounce */
+@media (display-mode: standalone) {
+  body {
+    position: fixed;
+    height: 100dvh;
+    width: 100vw;
+  }
 }
 `;

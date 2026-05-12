@@ -218,7 +218,7 @@ export default function RootLayout() {
     // CONTENT_MAX_WIDTH does not flash white
     if (isDesktop) {
       return (
-        <View style={{ flex: 1, backgroundColor: '#0C0C0C' }}>
+        <View style={{ flex: 1, backgroundColor: '#010100' }}>
           {inner}
         </View>
       );
@@ -226,7 +226,7 @@ export default function RootLayout() {
 
     // Mobile browser: center a 480px column (looks like the native app)
     return (
-      <View style={{ flex: 1, backgroundColor: '#0C0C0C', alignItems: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: '#010100', alignItems: 'center' }}>
         <View style={{ flex: 1, width: '100%', maxWidth: 480 }}>
           {inner}
         </View>
