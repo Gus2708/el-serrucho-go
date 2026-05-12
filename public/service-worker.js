@@ -6,7 +6,7 @@ const DATA_CACHE_NAME = 'serrucho-data-v1';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
-  '/manifest.json',
+  '/manifest.webmanifest',
   '/favicon.ico',
   '/icon.png',
 ];

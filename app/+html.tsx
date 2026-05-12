@@ -19,7 +19,7 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="theme-color" content="#010100" />
         <meta name="description" content="Dashboard administrativo ferretería El Serrucho" />
         
-        <link rel="manifest" href="/manifest.json" />
+        <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
         {/* iOS / Safari specific */}
