@@ -15,25 +15,22 @@ export default function Root({ children }: PropsWithChildren) {
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, maximum-scale=1, user-scalable=0, viewport-fit=cover" />
 
-        {/* 
-          Disable body scrolling on web. This makes stack navigation feel more native.
-          In order to enable scrolling on a per-page basis, you should use the 
-          `expo-router/html` component `ScrollViewStyleReset`.
-        */}
-        <ScrollViewStyleReset />
-
-        <style dangerouslySetInnerHTML={{ __html: expoRootStyles }} />
+        {/* PWA Primary Meta Tags */}
         <meta name="theme-color" content="#010100" />
-        <meta name="description" content="Dashboard administrativo para ferretería El Serrucho" />
+        <meta name="description" content="Dashboard administrativo ferretería El Serrucho" />
+        
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
-        {/* PWA Icons & Manifest */}
+        {/* iOS / Safari specific */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Serrucho GO" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="application-name" content="Serrucho GO" />
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-        <link rel="manifest" href="/manifest.json" />
+
+        <ScrollViewStyleReset />
+        <style dangerouslySetInnerHTML={{ __html: expoRootStyles }} />
       </head>
       <body>{children}</body>
     </html>
