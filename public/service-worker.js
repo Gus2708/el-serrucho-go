@@ -8,7 +8,9 @@ const PRECACHE_ASSETS = [
   '/index.html',
   '/manifest.webmanifest',
   '/favicon.ico',
-  '/icon.png',
+  '/elserruchogo512x512.png',
+  '/screenshot-desktop.png',
+  '/screenshot-mobile.png',
 ];
 
 // Instalación: Pre-caché del App Shell y salto de espera
