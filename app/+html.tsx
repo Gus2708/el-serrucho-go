@@ -50,31 +50,22 @@ body, #root {
   padding: 0;
   height: 100%;
   width: 100%;
+  min-height: 100%;
+  min-height: -webkit-fill-available;
   overflow: hidden;
   overscroll-behavior: none;
-  /* Reset focus outlines */
-  outline: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #root {
   display: flex;
   flex-direction: column;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
 }
 
 @media (display-mode: standalone) {
   html, body, #root {
     height: 100dvh;
     height: -webkit-fill-available;
-    position: fixed;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;
   }
 }
 `;
