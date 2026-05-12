@@ -20,7 +20,7 @@ import { useTopProductos } from '../../src/hooks/useTopProductos';
 import { useVelocidad } from '../../src/hooks/useVelocidad';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 import { GananciaChart } from '../../src/components/GananciaChart';
-import { DonutChart } from '../../src/components/DonutChart';
+import { TopProductsDonut } from '../../src/components/TopProductsDonut';
 import { CurrencyText } from '../../src/components/CurrencyText';
 
 type Period = 7 | 30 | 90;
@@ -165,27 +165,24 @@ export default function Reportes() {
           </View>
         )}
 
-        {/* Charts row: bar (60%) + donut (40%) on desktop, stacked on mobile */}
+        {/* Top 4 Products High-Impact Chart */}
+        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
+          Productos Estrella (Top 4)
+        </Text>
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border, padding: 0 }]}>
+          <TopProductsDonut data={topProductos} loading={loadingTop} />
+        </View>
+
+        {/* Main Trends Chart */}
+        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
+          Tendencia de {chartMode === 'ganancia' ? 'Ganancia' : 'Ingresos'}
+        </Text>
         <View style={isDesktop ? styles.chartsRowDesktop : undefined}>
-          <View style={isDesktop ? { flex: 6 } : undefined}>
+          <View style={isDesktop ? { flex: 1 } : undefined}>
             {loadingDaily
               ? <View style={styles.loadingRow}><ActivityIndicator color={colors.primary} /></View>
               : <GananciaChart data={daily} mode={chartMode} />
             }
-          </View>
-
-          <View style={isDesktop ? { flex: 4 } : undefined}>
-            <Text style={[styles.sectionLabel, { color: colors.textMuted }, isDesktop && { marginTop: 0 }]}>
-              Velocidad de productos · 30 días
-            </Text>
-            <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              {loadingVel
-                ? <ActivityIndicator color={colors.primary} />
-                : velocidad
-                ? <DonutChart counts={velocidad} />
-                : <Text style={[styles.emptyText, { color: colors.textMuted }]}>Sin datos</Text>
-              }
-            </View>
           </View>
         </View>
 
@@ -244,7 +241,7 @@ function SummaryPill({ label, value, color }: { label: string; value: string; co
 
 const styles = StyleSheet.create({
   root:   { flex: 1 },
-  scroll: { gap: 10 },
+  scroll: { gap: 16, paddingBottom: 20 },
 
   header: {
     paddingHorizontal: 16,
@@ -277,30 +274,32 @@ const styles = StyleSheet.create({
   },
   pill: {
     flex:          1,
-    borderRadius:  12,
+    borderRadius:  16,
     borderWidth:   0.5,
-    padding:       12,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
     alignItems:    'center',
-    gap:           3,
+    gap:           6,
   },
-  pillLabel: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.3 },
-  pillValue: { fontSize: 13, fontFamily: 'JetBrainsMono_700Bold' },
+  pillLabel: { fontSize: 9, fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.5 },
+  pillValue: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold' },
 
   sectionLabel: {
     fontSize:          11,
     fontFamily:        'JetBrainsMono_500Medium',
     textTransform:     'uppercase',
-    letterSpacing:     0.5,
+    letterSpacing:     0.8,
     paddingHorizontal: 16,
-    marginTop:         4,
+    marginTop:         12,
+    marginBottom:      4,
   },
 
   card: {
     marginHorizontal: 16,
-    borderRadius:     14,
+    borderRadius:     24,
     borderWidth:      0.5,
-    padding:          16,
-    alignItems:       'center',
+    padding:          20,
+    overflow:         'hidden',
   },
   emptyText: { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular' },
 

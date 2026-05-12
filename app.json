@@ -28,6 +28,13 @@
       "output": "single",
       "favicon": "./assets/favicon.png",
       "pwa": {
+        "name": "El Serrucho GO",
+        "shortName": "Serrucho GO",
+        "description": "Dashboard administrativo para ferretería El Serrucho",
+        "themeColor": "#010100",
+        "backgroundColor": "#010100",
+        "display": "standalone",
+        "orientation": "portrait",
         "appleMobileWebAppCapable": "yes",
         "appleMobileWebAppStatusBarStyle": "black-translucent",
         "icon": "./assets/icon.png"

@@ -1,57 +1,56 @@
 import * as React from 'react';
-import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { supabase, AlertaStockRow, Anomalia } from '../lib/supabase';
+import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
+import { supabase, AlertaStockRow } from '../lib/supabase';
 
-export function useAlertas() {
-  const stockAlertas = useQuery({
-    queryKey: ['alertas-stock'],
-    queryFn:  fetchAlertasStock,
+const PAGE_SIZE = 40;
+
+export type StockFilter = 'todos' | 'sin_stock' | 'stock_negativo' | 'margen_negativo' | 'stock_muerto';
+
+export function useAlertasCount(filter: StockFilter) {
+  return useQuery({
+    queryKey: ['alertas-count', filter],
+    queryFn: async () => {
+      let query = supabase
+        .from('vw_alertas_stock')
+        .select('*', { count: 'exact', head: true });
+
+      if (filter !== 'todos') {
+        query = query.eq('tipo_alerta', filter);
+      }
+
+      const { count, error } = await query;
+      if (error) throw error;
+      return count || 0;
+    },
     staleTime: 5 * 60_000,
   });
+}
 
-  const anomalias = useQuery({
-    queryKey: ['anomalias'],
-    queryFn:  fetchAnomalias,
-    staleTime: 10 * 60_000,
+export function useAlertasInfinite(filter: StockFilter) {
+  return useInfiniteQuery({
+    queryKey: ['alertas-stock-infinite', filter],
+    queryFn: async ({ pageParam = 0 }) => {
+      const from = pageParam * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+
+      let query = supabase
+        .from('vw_alertas_stock')
+        .select('*')
+        .order('tipo_alerta')
+        .range(from, to);
+
+      if (filter !== 'todos') {
+        query = query.eq('tipo_alerta', filter);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data ?? []) as AlertaStockRow[];
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      return lastPage.length === PAGE_SIZE ? allPages.length : undefined;
+    },
+    staleTime: 5 * 60_000,
+    initialPageParam: 0,
   });
-
-  const totalCount =
-    (stockAlertas.data?.length ?? 0) +
-    (anomalias.data?.length ?? 0);
-
-  return React.useMemo(() => ({
-    stockAlertas: stockAlertas.data ?? [],
-    anomalias:    anomalias.data ?? [],
-    totalCount,
-    isLoading:    stockAlertas.isLoading || anomalias.isLoading,
-  }), [stockAlertas.data, anomalias.data, stockAlertas.isLoading, anomalias.isLoading, totalCount]);
-}
-
-async function fetchAlertasStock(): Promise<AlertaStockRow[]> {
-  const { data, error } = await supabase
-    .from('vw_alertas_stock')
-    .select('*')
-    .order('tipo_alerta');
-  if (error) throw error;
-  return (data ?? []) as AlertaStockRow[];
-}
-
-async function fetchAnomalias(): Promise<Anomalia[]> {
-  const { data, error } = await supabase
-    .from('anomalias')
-    .select('*')
-    .eq('resuelto', false)
-    .order('detectado_en', { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as Anomalia[];
-}
-
-// Mark an AI anomaly as resolved
-export async function resolverAnomalia(id: number) {
-  const { error } = await supabase
-    .from('anomalias')
-    .update({ resuelto: true })
-    .eq('id', id);
-  if (error) throw error;
 }

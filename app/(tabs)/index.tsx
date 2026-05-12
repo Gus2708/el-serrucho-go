@@ -331,7 +331,7 @@ export default function Index() {
                   marginHorizontal: -BIG_CARD_PADDING,
                   marginBottom:     -BIG_CARD_PADDING,
                 }}>
-                  <SparklineChart data={chartData} width={BIG_CARD_OUTER_W} height={140} />
+                  <SparklineChart data={chartData} width={BIG_CARD_OUTER_W} height={140} viewMode={period} />
                 </View>
               )
             }

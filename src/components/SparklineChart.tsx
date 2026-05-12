@@ -1,3 +1,4 @@
+import React from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { LineChart, CurveType } from 'react-native-gifted-charts';
 import Svg, { Line as SvgLine, Rect as SvgRect } from 'react-native-svg';
@@ -10,6 +11,7 @@ interface Props {
   data:    ProfitMonthlyRow[] | ProfitDailyRow[] | ProfitHourlyRow[];
   width?:  number;
   height?: number;
+  viewMode?: 'dia' | 'ayer' | 'semana' | 'mes';
 }
 
 const SCREEN_W     = Dimensions.get('window').width;
@@ -51,11 +53,38 @@ function formatDay(diaStr: string, totalPoints: number): string {
   // Vista mes → "4 May"
   return `${d} ${MONTHS_ES[m - 1]}`;
 }
-export function SparklineChart({ data, width, height = 70 }: Props) {
+export function SparklineChart({ data, width, height = 70, viewMode }: Props) {
   const { colors, formatUSD } = useTheme();
   const w = width ?? SCREEN_W - 32;
 
-  if (!data || !data.length) return <View style={{ height }} />;
+  // ── Detección de Día No Laborable (Domingo) ──
+  // Intentamos detectarlo por datos primero, y si no hay datos, por el viewMode
+  const isNonWorking = React.useMemo(() => {
+    if (data && data.length > 0 && 'hora' in data[0]) {
+      return new Date((data[0] as any).hora).getDay() === 0;
+    }
+    if (viewMode === 'dia') return new Date().getDay() === 0;
+    if (viewMode === 'ayer') {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      return yesterday.getDay() === 0;
+    }
+    return false;
+  }, [data, viewMode]);
+
+  if (!data || !data.length) {
+    return (
+      <View style={[styles.wrap, { width: w, height }]}>
+        {isNonWorking && (
+          <View style={styles.nonWorkingOverlay} pointerEvents="none">
+            <Text style={[styles.nonWorkingText, { color: colors.textDim }]}>
+              DÍA NO LABORABLE
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  }
 
   // Chart drawing: el wrap mide `height` pero reservamos PAD arriba y abajo
   // para que la curva no toque ni el borde superior (label) ni el inferior
@@ -164,10 +193,7 @@ export function SparklineChart({ data, width, height = 70 }: Props) {
     });
   }
 
-  // ── Detección de Día No Laborable (Domingo) ──
-  // Solo se muestra el overlay si estamos en una vista de UN día (isHourly)
-  // y ese día es efectivamente Domingo. No lo mostramos en semana/mes.
-  const isNonWorking = isHourly && data.length > 0 && new Date((data[0] as any).hora).getDay() === 0;
+  // El overlay ya se calculó arriba en el useMemo
 
   return (
     <View style={[styles.wrap, { width: w, height }]}>

@@ -17,10 +17,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { FlashList } from '@shopify/flash-list';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
-import { useAlertas, resolverAnomalia } from '../../src/hooks/useAlertas';
-import { StockAlertCard, AnomaliaCard } from '../../src/components/AlertCard';
+import { useAlertasInfinite, useAlertasCount, StockFilter } from '../../src/hooks/useAlertas';
+import { StockAlertCard } from '../../src/components/AlertCard';
 import { supabase } from '../../src/lib/supabase';
-import type { AlertaStockRow, Anomalia } from '../../src/lib/supabase';
+import type { AlertaStockRow } from '../../src/lib/supabase';
 
 type StockFilter = 'todos' | 'sin_stock' | 'stock_negativo' | 'margen_negativo' | 'stock_muerto';
 
@@ -34,8 +34,6 @@ const STOCK_FILTERS: { key: StockFilter; label: string }[] = [
 
 type ListItem = 
   | { type: 'header', title: string, count: number }
-  | { type: 'anomalia', data: Anomalia }
-  | { type: 'empty-anomalias' }
   | { type: 'filters' }
   | { type: 'stock-alert', data: AlertaStockRow }
   | { type: 'empty-stock' }
@@ -49,8 +47,6 @@ export default function Alertas() {
 
   const [stockFilter,   setStockFilter]   = useState<StockFilter>('todos');
   const [refreshing,    setRefreshing]    = useState(false);
-  const [analyzing,     setAnalyzing]     = useState(false);
-  const [analyzeResult, setAnalyzeResult] = useState<string | null>(null);
   const [isReady,       setIsReady]       = useState(false);
 
   // Restaurar scroll
@@ -80,76 +76,47 @@ export default function Alertas() {
     return () => task.cancel();
   }, []);
 
-  const { stockAlertas, anomalias, isLoading } = useAlertas();
+  const { 
+    data, 
+    isLoading, 
+    fetchNextPage, 
+    hasNextPage, 
+    isFetchingNextPage,
+    refetch 
+  } = useAlertasInfinite(stockFilter);
+
+  const { data: totalCount = 0 } = useAlertasCount(stockFilter);
 
   const listData = useMemo(() => {
     if (!isReady) return [];
 
     const items: ListItem[] = [];
+    const stockAlertas = data?.pages.flat() ?? [];
     
-    // ── AI Anomalies ──
-    items.push({ type: 'header', title: 'Anomalías IA', count: anomalias.length });
-    
-    if (isLoading) {
-      // Show loading placeholder if initial load
-    } else if (anomalias.length === 0) {
-      items.push({ type: 'empty-anomalias' });
-    } else {
-      anomalias.forEach(a => items.push({ type: 'anomalia', data: a }));
-    }
-
     // ── Stock Alerts ──
-    items.push({ type: 'header', title: 'Alertas de stock', count: stockAlertas.length });
+    items.push({ type: 'header', title: 'Alertas de stock', count: totalCount });
     items.push({ type: 'filters' });
 
-    const filtered = stockFilter === 'todos'
-      ? stockAlertas
-      : stockAlertas.filter(a => a.tipo_alerta === stockFilter);
-
-    if (isLoading) {
-      // Spinner handled by FlashList footer or similar if needed, 
-      // but here we use the isLoading flag globally for simplicity
-    } else if (filtered.length === 0) {
+    if (isLoading && stockAlertas.length === 0) {
+      // Loading state
+    } else if (stockAlertas.length === 0) {
       items.push({ type: 'empty-stock' });
     } else {
-      filtered.forEach(a => items.push({ type: 'stock-alert', data: a }));
+      stockAlertas.forEach(a => items.push({ type: 'stock-alert', data: a }));
     }
 
     items.push({ type: 'spacer', height: 110 });
     return items;
-  }, [isReady, anomalias, stockAlertas, isLoading, stockFilter]);
+  }, [isReady, data, isLoading, stockFilter, totalCount]);
 
   async function handleRefresh() {
     setRefreshing(true);
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['alertas-stock'] }),
-      queryClient.invalidateQueries({ queryKey: ['anomalias'] }),
+      refetch(),
+      queryClient.invalidateQueries({ queryKey: ['alertas-count'] }),
     ]);
     setRefreshing(false);
   }
-
-  async function handleResolve(id: number) {
-    await resolverAnomalia(id);
-    queryClient.invalidateQueries({ queryKey: ['anomalias'] });
-  }
-
-  async function handleAnalyze() {
-    setAnalyzing(true);
-    setAnalyzeResult(null);
-    try {
-      const { data, error } = await supabase.functions.invoke('detect-anomalies');
-      if (error) throw error;
-      const { checked = 0, flagged = 0 } = data ?? {};
-      setAnalyzeResult(`Revisados ${checked} productos · ${flagged} sospechosos detectados`);
-      await queryClient.invalidateQueries({ queryKey: ['anomalias'] });
-    } catch (e: any) {
-      setAnalyzeResult('Error al contactar Gemini · intenta de nuevo');
-    } finally {
-      setAnalyzing(false);
-    }
-  }
-
-  const totalCount = stockAlertas.length + anomalias.length;
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
@@ -163,32 +130,7 @@ export default function Alertas() {
             <Text style={[styles.badgeText, { color: colors.danger }]}>{totalCount}</Text>
           </View>
         )}
-        <View style={{ flex: 1 }} />
-        <Pressable
-          style={({ pressed }) => [
-            styles.analyzeBtn,
-            { backgroundColor: analyzing ? colors.surfaceAlt : colors.primaryFaded, borderColor: colors.primary + '55' },
-            pressed && { opacity: 0.75 },
-          ]}
-          onPress={handleAnalyze}
-          disabled={analyzing}
-        >
-          {analyzing
-            ? <ActivityIndicator size={13} color={colors.primary} />
-            : <Feather name="cpu" size={13} color={colors.primary} />
-          }
-          <Text style={[styles.analyzeBtnText, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
-            {analyzing ? 'Analizando…' : 'Analizar con IA'}
-          </Text>
-        </Pressable>
       </View>
-
-      {analyzeResult && (
-        <View style={[styles.resultBanner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Feather name="zap" size={12} color={colors.primary} />
-          <Text style={[styles.resultText, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>{analyzeResult}</Text>
-        </View>
-      )}
 
       {isLoading && isReady && listData.length === 0 && (
         <View style={styles.fullLoading}>
@@ -205,28 +147,29 @@ export default function Alertas() {
           ref={listRef}
           data={listData}
           keyExtractor={(item, index) => {
-             if (item.type === 'anomalia') return `anom-${item.data.id}`;
              if (item.type === 'stock-alert') return `stock-${item.data.codigo_interno}`;
              return `item-${item.type}-${index}`;
           }}
           estimatedItemSize={80}
           onScroll={handleScroll}
           scrollEventThrottle={16}
+          onEndReached={() => {
+            if (hasNextPage && !isFetchingNextPage) {
+              fetchNextPage();
+            }
+          }}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={() => (
+            isFetchingNextPage ? (
+              <View style={{ paddingVertical: 20 }}>
+                <ActivityIndicator color={colors.primary} />
+              </View>
+            ) : null
+          )}
           renderItem={({ item }) => {
             switch (item.type) {
               case 'header':
                 return <SectionHeader title={item.title} count={item.count} />;
-              case 'anomalia':
-                return <AnomaliaCard anomalia={item.data} onResolve={handleResolve} />;
-              case 'empty-anomalias':
-                return (
-                  <View style={styles.emptyRow}>
-                    <Feather name="check-circle" size={16} color={colors.success} />
-                    <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-                      Sin anomalías activas
-                    </Text>
-                  </View>
-                );
               case 'filters':
                 return (
                   <View style={styles.chips}>

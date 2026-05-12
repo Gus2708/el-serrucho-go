@@ -79,51 +79,6 @@ function getStockAlertMeta(
   }
 }
 
-// ── AI anomaly card (from anomalias table) ────────────────────────────────────
-
-interface AnomaliaProps {
-  anomalia:  Anomalia;
-  onResolve: (id: number) => void;
-}
-
-export function AnomaliaCard({ anomalia, onResolve }: AnomaliaProps) {
-  const { colors } = useTheme();
-
-  const severityColor = getSeverityColor(anomalia.severidad, colors);
-
-  return (
-    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: severityColor + '55' }]}>
-      <View style={[styles.iconBox, { backgroundColor: severityColor + '22' }]}>
-        <Feather name="cpu" size={18} color={severityColor} />
-      </View>
-      <View style={styles.body}>
-        <Text style={[styles.titulo, { color: colors.text }]} numberOfLines={1}>
-          {anomalia.codigo_producto ?? '—'}
-        </Text>
-        <Text style={[styles.explicacion, { color: colors.textMuted }]} numberOfLines={3}>
-          {anomalia.explicacion ?? 'Sin descripción'}
-        </Text>
-        <View style={styles.metaRow}>
-          <TypeChip
-            label={`IA · ${anomalia.severidad}`}
-            color={severityColor}
-          />
-          <Text style={[styles.detalle, { color: colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>
-            {formatRelative(anomalia.detectado_en)}
-          </Text>
-        </View>
-      </View>
-      <Pressable
-        style={({ pressed }) => [styles.resolveBtn, { borderColor: colors.border }, pressed && { opacity: 0.6 }]}
-        onPress={() => onResolve(anomalia.id)}
-        hitSlop={8}
-      >
-        <Feather name="check" size={16} color={colors.success} />
-      </Pressable>
-    </View>
-  );
-}
-
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 function TypeChip({ label, color }: { label: string; color: string }) {
@@ -132,24 +87,6 @@ function TypeChip({ label, color }: { label: string; color: string }) {
       <Text style={[styles.chipText, { color }]} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
     </View>
   );
-}
-
-function getSeverityColor(
-  sev: 'alta' | 'media' | 'baja',
-  colors: { danger: string; warning: string; success: string }
-) {
-  if (sev === 'alta')  return colors.danger;
-  if (sev === 'media') return colors.warning;
-  return colors.success;
-}
-
-function formatRelative(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins  = Math.floor(diff / 60_000);
-  if (mins < 60)    return `hace ${mins}m`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24)   return `hace ${hours}h`;
-  return `hace ${Math.floor(hours / 24)}d`;
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
