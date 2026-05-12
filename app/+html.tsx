@@ -39,21 +39,42 @@ export default function Root({ children }: PropsWithChildren) {
 }
 
 const expoRootStyles = `
-html, body, #root {
-  background-color: #010100;
+html {
   height: 100%;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
+  height: -webkit-fill-available;
 }
 
-/* Fix for iOS PWA to use full height and avoid scrolling bounce */
+body, #root {
+  background-color: #010100;
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  /* Reset focus outlines */
+  outline: none;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
 @media (display-mode: standalone) {
-  body {
-    position: fixed;
+  html, body, #root {
     height: 100dvh;
-    width: 100vw;
+    height: -webkit-fill-available;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
   }
 }
 `;

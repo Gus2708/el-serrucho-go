@@ -1,6 +1,6 @@
 /* Match app theme so the area beyond max-width never flashes white */
 html, body, #root {
-  background-color: #0C0C0C;
+  background-color: #010100;
 }
 
 /* Remove default browser focus outline/rings on inputs (Web) */

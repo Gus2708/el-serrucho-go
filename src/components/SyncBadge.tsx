@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Animated, Pressable, ActivityIndicator, Platform } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 import { useSyncStatus } from '../hooks/useSyncStatus';
 import { notify, confirm } from '../lib/notify';

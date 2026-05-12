@@ -13,6 +13,7 @@ import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
 import * as Font from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { ActivityIndicator, Platform, View, useWindowDimensions } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 // SplashScreen is a no-op on web
 if (Platform.OS !== 'web') {
   SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -202,15 +203,17 @@ export default function RootLayout() {
   }, [isAppReady]);
 
   const inner = (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <QueryClientProvider client={queryClient}>
-        <RealtimeInitializer>
-          <ThemeProvider>
-            <AuthGuard session={session} ready={isAppReady} />
-          </ThemeProvider>
-        </RealtimeInitializer>
-      </QueryClientProvider>
-    </GestureHandlerRootView>
+    <SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <QueryClientProvider client={queryClient}>
+          <RealtimeInitializer>
+            <ThemeProvider>
+              <AuthGuard session={session} ready={isAppReady} />
+            </ThemeProvider>
+          </RealtimeInitializer>
+        </QueryClientProvider>
+      </GestureHandlerRootView>
+    </SafeAreaProvider>
   );
 
   if (Platform.OS === 'web') {
@@ -224,12 +227,10 @@ export default function RootLayout() {
       );
     }
 
-    // Mobile browser: center a 480px column (looks like the native app)
+    // Mobile/PWA: full screen
     return (
-      <View style={{ flex: 1, backgroundColor: '#010100', alignItems: 'center' }}>
-        <View style={{ flex: 1, width: '100%', maxWidth: 480 }}>
-          {inner}
-        </View>
+      <View style={{ flex: 1, backgroundColor: '#010100' }}>
+        {inner}
       </View>
     );
   }
