@@ -274,7 +274,7 @@ function BorradorView({ router }: { router: any }) {
           { 
             backgroundColor: colors.surface, 
             borderColor: colors.border,
-            bottom: isDesktop ? undefined : insets.bottom + 82,
+            bottom: isDesktop ? undefined : (Platform.OS === 'web' ? 82 : insets.bottom + 82),
             position: isDesktop ? 'relative' : 'absolute',
           },
           isDesktop && styles.submitBarWeb

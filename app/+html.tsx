@@ -44,33 +44,26 @@ export default function Root({ children }: PropsWithChildren) {
 }
 
 const expoRootStyles = `
-html {
-  height: 100%;
-  height: -webkit-fill-available;
-}
-
-body, #root {
-  background-color: #010100;
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  width: 100%;
-  min-height: 100%;
-  min-height: -webkit-fill-available;
-  overflow: hidden;
-  overscroll-behavior: none;
-  -webkit-tap-highlight-color: transparent;
+#root, body, html {
+  height: 100% !important;
+  height: 100dvh !important;
+  width: 100vw !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  position: fixed !important;
+  inset: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background-color: #010100 !important;
+  -webkit-overflow-scrolling: touch !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  touch-action: none !important;
 }
 
 #root {
   display: flex;
   flex-direction: column;
-}
-
-@media (display-mode: standalone) {
-  html, body, #root {
-    height: 100dvh;
-    height: -webkit-fill-available;
-  }
 }
 `;

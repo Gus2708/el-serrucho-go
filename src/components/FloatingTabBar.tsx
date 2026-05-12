@@ -32,7 +32,7 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
           backgroundColor: '#141414',
           borderColor:      colors.border,
           bottom: Platform.OS === 'web' 
-            ? 10 // Consistent positioning on web/PWA
+            ? 20 // Adjusted for better PWA ergonomics
             : Math.max(insets.bottom + 8, 18),
         },
       ]}

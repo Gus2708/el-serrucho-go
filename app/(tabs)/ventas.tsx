@@ -923,7 +923,7 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     gap: 12,
   },
-  bottomPad: { height: 40 },
+  bottomPad: { height: 110 },
   cardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
