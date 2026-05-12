@@ -96,8 +96,9 @@ function getState(
   // 0. Verificar Horario de Atención (6 PM - 8 AM = Cerrado)
   const now = new Date();
   const hour = now.getHours();
-  const isClosed = hour >= 18 || hour < 8;
-  const isRecess = hour === 13; // 1:00 PM - 1:59 PM
+  const isSunday = now.getDay() === 0;
+  const isClosed = (hour >= 18 || hour < 8) || isSunday;
+  const isRecess = hour === 13 && !isSunday; // 1:00 PM - 1:59 PM (Solo días laborables)
 
   if (activeCommand) {
     const isProcessing = activeCommand.status === 'ejecutando' || activeCommand.status === 'procesando';

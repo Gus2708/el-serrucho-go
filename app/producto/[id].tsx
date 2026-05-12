@@ -227,23 +227,30 @@ export default function ProductoDetail() {
           animationType="fade"
           onRequestClose={() => setShowAddSheet(false)}
         >
-          <View style={styles.sheetOverlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={[
+              styles.sheetOverlay,
+              Platform.OS === 'web' && { justifyContent: 'center', padding: 16 }
+            ]}
+          >
             <Pressable
               style={StyleSheet.absoluteFill}
               onPress={() => setShowAddSheet(false)}
             />
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              style={{ width: '100%' }}
+            <Animated.View 
+              style={[
+                styles.sheet, 
+                { 
+                  backgroundColor: colors.surface, 
+                  transform: [{ translateY: panY }] 
+                }
+              ]}
             >
-              <Animated.View 
-                style={[
-                  styles.sheet, 
-                  { 
-                    backgroundColor: colors.surface, 
-                    transform: [{ translateY: panY }] 
-                  }
-                ]}
+              <ScrollView 
+                bounces={false} 
+                contentContainerStyle={{ paddingBottom: 24 }}
+                showsVerticalScrollIndicator={false}
               >
               <View 
                 {...panResponder.panHandlers}
@@ -251,9 +258,6 @@ export default function ProductoDetail() {
               >
                 <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
               </View>
-
-
-
 
               <Text style={[styles.sheetTitle, { color: colors.text }]}>
                 Ajustar existencia
@@ -357,9 +361,9 @@ export default function ProductoDetail() {
                   Confirmar
                 </Text>
               </Pressable>
-              </Animated.View>
-            </KeyboardAvoidingView>
-          </View>
+              </ScrollView>
+            </Animated.View>
+          </KeyboardAvoidingView>
         </Modal>
         </>
       )}
@@ -552,10 +556,12 @@ const styles = StyleSheet.create({
   sheet: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+    borderRadius: Platform.OS === 'web' ? 24 : undefined,
     width: '100%',
+    maxWidth: Platform.OS === 'web' ? 500 : '100%',
+    alignSelf: 'center',
     overflow: 'hidden',
     paddingHorizontal: 24,
-    paddingBottom: 40,
     gap: 12,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -10 },

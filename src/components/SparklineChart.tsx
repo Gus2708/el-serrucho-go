@@ -164,9 +164,10 @@ export function SparklineChart({ data, width, height = 70 }: Props) {
     });
   }
 
-  const isSunday  = new Date().getDay() === 0;
-  const wasSunday = new Date(Date.now() - 86400000).getDay() === 0;
-  const isNonWorking = isSunday || wasSunday;
+  // ── Detección de Día No Laborable (Domingo) ──
+  // Solo se muestra el overlay si estamos en una vista de UN día (isHourly)
+  // y ese día es efectivamente Domingo. No lo mostramos en semana/mes.
+  const isNonWorking = isHourly && data.length > 0 && new Date((data[0] as any).hora).getDay() === 0;
 
   return (
     <View style={[styles.wrap, { width: w, height }]}>
