@@ -7,15 +7,25 @@ const PRECACHE_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/favicon.png',
+  '/favicon.ico',
 ];
 
 // Instalación: Pre-caché del App Shell y salto de espera
 self.addEventListener('install', (event) => {
+  console.log('SW: Instalando...');
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(PRECACHE_ASSETS))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) => {
+      console.log('SW: Pre-cacheando assets...');
+      // Intentamos cachear cada uno por separado para que si uno falla el resto siga
+      return Promise.allSettled(
+        PRECACHE_ASSETS.map(asset => 
+          cache.add(asset).catch(err => console.error(`SW: Error cacheando ${asset}:`, err))
+        )
+      );
+    }).then(() => {
+      console.log('SW: Pre-caché finalizado');
+      return self.skipWaiting();
+    })
   );
 });
 
