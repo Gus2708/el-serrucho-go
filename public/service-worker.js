@@ -87,8 +87,10 @@ self.addEventListener('fetch', (event) => {
 
       // Si no está en caché, vamos a la red
       return fetch(event.request).then((response) => {
-        // Validamos que la respuesta sea correcta antes de cachear
-        if (!response || response.status !== 200 || response.type !== 'basic') {
+        // Ignorar esquemas no soportados (como chrome-extension://) y respuestas no exitosas
+        const isSupportedScheme = event.request.url.startsWith('http');
+        
+        if (!isSupportedScheme || !response || response.status !== 200 || response.type !== 'basic') {
           return response;
         }
 
