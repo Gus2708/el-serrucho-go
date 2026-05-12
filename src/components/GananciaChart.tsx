@@ -6,7 +6,7 @@ import type { ProfitDailyRow } from '../lib/supabase';
 
 interface Props {
   data:  ProfitDailyRow[];
-  mode?: 'ganancia' | 'ingreso';
+  mode?: 'ganancia' | 'ingreso' | 'items';
 }
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -25,11 +25,25 @@ function formatCompactUSD(val: number | string): string {
   return `${sign}$${Math.round(abs)}`;
 }
 
+/** Número compacto para unidades */
+function formatCompactNumber(val: number | string): string {
+  const num  = typeof val === 'string' ? parseFloat(val) : val;
+  if (!num)  return '0';
+  const abs  = Math.abs(num);
+  if (abs >= 1000) return `${(abs / 1000).toFixed(abs >= 10000 ? 0 : 1)}K`;
+  return `${Math.round(abs)}`;
+}
+
 /** USD legible para stats: $1,149 / $245 / -$50 */
 function formatFullUSD(val: number): string {
   const sign = val < 0 ? '-' : '';
   const abs  = Math.abs(val);
   return `${sign}$${abs.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+}
+
+/** Número legible para unidades */
+function formatFullNumber(val: number): string {
+  return val.toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
 
 function formatBarDate(iso: string, totalPoints: number): string {
@@ -52,7 +66,9 @@ export function GananciaChart({ data, mode = 'ganancia' }: Props) {
   }
 
   const slice  = data.slice(-30);
-  const values = slice.map(d => (mode === 'ganancia' ? d.ganancia : d.ingreso_bruto));
+  const values = slice.map(d => (
+    mode === 'items' ? d.num_items : (mode === 'ganancia' ? d.ganancia : d.ingreso_bruto)
+  ));
   const maxAbs = Math.max(...values.map(Math.abs), 1);
 
   // Promedio sobre días con actividad (no infla con domingos cerrados)
@@ -70,7 +86,7 @@ export function GananciaChart({ data, mode = 'ganancia' }: Props) {
   const peakDate = formatBarDate(slice[peakIdx].dia, slice.length);
 
   const barData = slice.map(d => {
-    const raw   = mode === 'ganancia' ? d.ganancia : d.ingreso_bruto;
+    const raw   = mode === 'items' ? d.num_items : (mode === 'ganancia' ? d.ganancia : d.ingreso_bruto);
     const isNeg = raw < 0;
     return {
       value:      Math.abs(raw),
@@ -94,9 +110,9 @@ export function GananciaChart({ data, mode = 'ganancia' }: Props) {
           </Text>
           <View style={styles.statRow}>
             <Text style={[styles.statValue, { color: colors.primary }]} numberOfLines={1}>
-              {formatFullUSD(peakVal)}
+              {mode === 'items' ? formatFullNumber(peakVal) : formatFullUSD(peakVal)}
             </Text>
-            <Text style={[styles.statContext, { color: colors.textDim }]} numberOfLines={1}>
+            <Text style={[styles.statContext, { color: colors.textMuted }]} numberOfLines={1}>
               · {peakDate}
             </Text>
           </View>
@@ -106,7 +122,7 @@ export function GananciaChart({ data, mode = 'ganancia' }: Props) {
             Promedio
           </Text>
           <Text style={[styles.statValue, { color: colors.text }]} numberOfLines={1}>
-            {formatFullUSD(avg)}
+            {mode === 'items' ? formatFullNumber(avg) : formatFullUSD(avg)}
           </Text>
         </View>
       </View>
@@ -132,12 +148,12 @@ export function GananciaChart({ data, mode = 'ganancia' }: Props) {
           opacity:    0.85,
         }}
         xAxisLabelTextStyle={{
-          color:      colors.textDim,
+          color:      colors.textMuted,
           fontSize:   10,
           fontFamily: 'JetBrainsMono_500Medium',
           opacity:    0.95,
         }}
-        formatYLabel={formatCompactUSD}
+        formatYLabel={mode === 'items' ? formatCompactNumber : formatCompactUSD}
 
         isAnimated={false}
         frontColor={colors.primary}

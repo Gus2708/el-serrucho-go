@@ -221,17 +221,17 @@ export default function Ventas() {
               <Text style={[styles.title, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{PERIOD_LABELS[period]}</Text>
               <View style={styles.headerSub}>
                 <Text style={[styles.subtitle, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>Listado detallado de facturación</Text>
-                <Text style={[styles.dateContext, { color: colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>{dateRangeLabel}</Text>
+                <Text style={[styles.dateContext, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>{dateRangeLabel}</Text>
               </View>
             </View>
 
             {/* Search Input */}
             <View style={{ paddingHorizontal: 16, marginBottom: 16 }}>
               <View style={[styles.searchContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Feather name="search" size={16} color={colors.textDim} style={styles.searchIcon} />
+                <Feather name="search" size={16} color={colors.textMuted} style={styles.searchIcon} />
                 <TextInput
                   placeholder="Buscar cliente o factura..."
-                  placeholderTextColor={colors.textDim}
+                  placeholderTextColor={colors.textMuted}
                   value={search}
                   onChangeText={setSearch}
                   style={[styles.searchInput, { color: colors.text }]}
@@ -240,7 +240,7 @@ export default function Ventas() {
                 />
                 {search.length > 0 && (
                   <Pressable onPress={() => setSearch('')} style={styles.searchClear}>
-                    <Feather name="x-circle" size={16} color={colors.textDim} />
+                    <Feather name="x-circle" size={16} color={colors.textMuted} />
                   </Pressable>
                 )}
               </View>
@@ -275,7 +275,7 @@ export default function Ventas() {
             {period !== 'todo' && (
               <View style={[styles.kpiRow, isDesktop && styles.kpiRowDesktop]}>
                 <View style={[styles.kpiCard, isDesktop && styles.kpiCardDesktop, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  <Text style={[styles.kpiLabel, { color: colors.textDim }]}>
+                  <Text style={[styles.kpiLabel, { color: colors.textMuted }]}>
                     {isAdmin ? KPI_LABELS[period] : 'Ticket promedio'}
                   </Text>
                   {loadingStats ? (
@@ -287,7 +287,7 @@ export default function Ventas() {
                   )}
                 </View>
                 <View style={[styles.kpiCard, isDesktop && styles.kpiCardDesktop, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  <Text style={[styles.kpiLabel, { color: colors.textDim }]}>Facturas</Text>
+                  <Text style={[styles.kpiLabel, { color: colors.textMuted }]}>Facturas</Text>
                   {loadingStats ? (
                     <ActivityIndicator size="small" color={colors.primary} style={{ alignSelf: 'flex-start' }} />
                   ) : (
@@ -316,12 +316,12 @@ export default function Ventas() {
           ) : (
             <View style={styles.center}>
               <View style={[styles.emptyIcon, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Feather name={debouncedSearch ? "search" : "shopping-bag"} size={32} color={colors.textDim} />
+                <Feather name={debouncedSearch ? "search" : "shopping-bag"} size={32} color={colors.textMuted} />
               </View>
               <Text style={[styles.emptyTitle, { color: colors.textMuted }]}>
                 {debouncedSearch ? 'Sin resultados' : 'Sin ventas registradas'}
               </Text>
-              <Text style={[styles.emptySub, { color: colors.textDim }]}>
+              <Text style={[styles.emptySub, { color: colors.textMuted }]}>
                 {debouncedSearch 
                   ? `No encontramos nada para "${debouncedSearch}" ${period === 'hoy' ? 'hoy' : 'en este periodo'}`
                   : 'No hay facturas para este período.'
@@ -382,7 +382,7 @@ export default function Ventas() {
           isFetchingNextPage ? (
             <View style={{ paddingVertical: 32, alignItems: 'center', gap: 10 }}>
               <ActivityIndicator color={colors.primary} />
-              <Text style={{ color: colors.textDim, fontSize: 11, fontFamily: 'JetBrainsMono_400Regular' }}>
+              <Text style={{ color: colors.textMuted, fontSize: 11, fontFamily: 'JetBrainsMono_400Regular' }}>
                 Cargando más facturas...
               </Text>
             </View>
@@ -423,8 +423,8 @@ function VentaCard({ venta, onPress }: { venta: VentaHoy; onPress: () => void })
             {venta.documento || `Factura #${venta.id}`}
           </Text>
           <View style={styles.timeRow}>
-            <Feather name="clock" size={10} color={colors.textDim} />
-            <Text style={[styles.docTime, { color: colors.textDim }]}>{time}</Text>
+            <Feather name="clock" size={10} color={colors.textMuted} />
+            <Text style={[styles.docTime, { color: colors.textMuted }]}>{time}</Text>
           </View>
         </View>
         <Text style={[styles.docAmount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
@@ -451,7 +451,7 @@ function VentaCard({ venta, onPress }: { venta: VentaHoy; onPress: () => void })
             </Text>
           </View>
         )}
-        <Feather name="chevron-right" size={14} color={colors.textDim} />
+        <Feather name="chevron-right" size={14} color={colors.textMuted} />
       </View>
     </Pressable>
   );

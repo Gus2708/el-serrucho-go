@@ -79,7 +79,7 @@ export function SyncBadge() {
           <Feather 
             name={isClosed ? 'moon' : isRecess ? 'coffee' : isStuck ? 'alert-triangle' : 'refresh-cw'} 
             size={14} 
-            color={isClosed ? colors.textDim : isRecess ? colors.warning : isStuck ? colors.danger : colors.primary} 
+            color={isClosed ? colors.textMuted : isRecess ? colors.warning : isStuck ? colors.danger : colors.primary} 
           />
         )}
       </Pressable>

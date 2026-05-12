@@ -9,7 +9,7 @@ export function useUserRole() {
       const { data: { user } } = await supabase.auth.getUser();
       return user;
     },
-    staleTime: 1000 * 60 * 60, // Session is stable
+    staleTime: 5 * 60_000, // Reduced from 1h to 5min for better responsiveness
   });
 
   return useQuery({

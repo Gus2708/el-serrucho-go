@@ -30,7 +30,7 @@ export function DonutChart({ counts }: Props) {
   const pieData = [
     { value: rapido,          color: colors.success, text: rapido > 0 ? `${rapido}` : '' },
     { value: lento,           color: colors.warning, text: lento  > 0 ? `${lento}`  : '' },
-    { value: sin_movimiento,  color: colors.textDim, text: sin_movimiento > 0 ? `${sin_movimiento}` : '' },
+    { value: sin_movimiento,  color: colors.textMuted, text: sin_movimiento > 0 ? `${sin_movimiento}` : '' },
   ].filter(d => d.value > 0);
 
   return (
@@ -55,7 +55,7 @@ export function DonutChart({ counts }: Props) {
       <View style={styles.legend}>
         <LegendItem color={colors.success} label="Rápido" count={rapido} total={total} />
         <LegendItem color={colors.warning} label="Lento"  count={lento}  total={total} />
-        <LegendItem color={colors.textDim} label="Sin mov." count={sin_movimiento} total={total} />
+        <LegendItem color={colors.textMuted} label="Sin mov." count={sin_movimiento} total={total} />
       </View>
     </View>
   );

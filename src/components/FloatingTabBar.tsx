@@ -22,10 +22,7 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
   const isAdmin = userAuth?.role === 'admin';
 
   // Filter tabs based on role
-  const filteredTabs = TABS.filter(tab => {
-    if (tab.name === 'reportes' && !isAdmin) return false;
-    return true;
-  });
+  const filteredTabs = TABS; // Reportes ya está adaptado para empleados
 
   return (
     <View

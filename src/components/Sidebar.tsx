@@ -29,10 +29,7 @@ export function Sidebar() {
   const { data: userAuth } = useUserRole();
   const isAdmin = userAuth?.role === 'admin';
 
-  const visibleTabs = TABS.filter(tab => {
-    if (tab.name === 'reportes' && !isAdmin) return false;
-    return true;
-  });
+  const visibleTabs = TABS; // Reportes ya está adaptado para empleados
 
   return (
     <View style={[styles.sidebar, { backgroundColor: colors.surface, borderRightColor: colors.border }]}>
@@ -41,7 +38,7 @@ export function Sidebar() {
         <Image source={logo} style={styles.logo} contentFit="contain" />
         <View style={styles.logoTexts}>
           <Text style={[styles.logoName, { color: colors.primary }]}>El Serrucho</Text>
-          <Text style={[styles.logoSub,  { color: colors.textDim  }]}>to GO</Text>
+          <Text style={[styles.logoSub,  { color: colors.textMuted }]}>to GO</Text>
         </View>
       </View>
 

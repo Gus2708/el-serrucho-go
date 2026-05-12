@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
   View,
@@ -19,12 +19,13 @@ import { useProfitDaily } from '../../src/hooks/useProfitSummary';
 import { useTopProductos } from '../../src/hooks/useTopProductos';
 import { useVelocidad } from '../../src/hooks/useVelocidad';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
+import { useUserRole } from '../../src/hooks/useUserRole';
 import { GananciaChart } from '../../src/components/GananciaChart';
 import { TopProductsDonut } from '../../src/components/TopProductsDonut';
 import { CurrencyText } from '../../src/components/CurrencyText';
 
 type Period = 7 | 30 | 90;
-type ChartMode = 'ganancia' | 'ingreso';
+type ChartMode = 'ganancia' | 'ingreso' | 'items';
 
 const PERIODS: { value: Period; label: string }[] = [
   { value: 7,  label: '7d'  },
@@ -42,6 +43,15 @@ export default function Reportes() {
 
   const [period,    setPeriod]    = useState<Period>(30);
   const [chartMode, setChartMode] = useState<ChartMode>('ganancia');
+  const { data: roleData } = useUserRole();
+  const isAdmin = roleData?.role === 'admin';
+
+  // Force 'items' mode for employees
+  useEffect(() => {
+    if (roleData && !isAdmin) {
+      setChartMode('items');
+    }
+  }, [roleData, isAdmin]);
   const [refreshing, setRefreshing] = useState(false);
 
   // Restaurar scroll al entrar
@@ -80,8 +90,9 @@ export default function Reportes() {
       ingreso:  acc.ingreso  + d.ingreso_bruto,
       ganancia: acc.ganancia + d.ganancia,
       ventas:   acc.ventas   + d.num_ventas,
+      items:    acc.items    + (d.num_items || 0),
     }),
-    { ingreso: 0, ganancia: 0, ventas: 0 }
+    { ingreso: 0, ganancia: 0, ventas: 0, items: 0 }
   );
 
   return (
@@ -133,7 +144,7 @@ export default function Reportes() {
 
           {/* Chart mode toggle */}
           <View style={styles.spacer} />
-          {(['ganancia', 'ingreso'] as ChartMode[]).map(m => {
+          {isAdmin && (['ganancia', 'ingreso'] as ChartMode[]).map(m => {
             const active = chartMode === m;
             return (
               <Pressable
@@ -148,7 +159,7 @@ export default function Reportes() {
                 ]}
                 onPress={() => setChartMode(m)}
               >
-                <Text style={[styles.periodText, { color: active ? colors.text : colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>
+                <Text style={[styles.periodText, { color: active ? colors.text : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
                   {m === 'ganancia' ? 'Ganancia' : 'Ingresos'}
                 </Text>
               </Pressable>
@@ -159,8 +170,17 @@ export default function Reportes() {
         {/* Summary row */}
         {!loadingDaily && (
           <View style={[styles.summaryRow, styles.padH]}>
-            <SummaryPill label="Ingresos"  value={formatUSD(totals.ingreso)}  color={colors.text}    />
-            <SummaryPill label="Ganancia"  value={formatUSD(totals.ganancia)} color={totals.ganancia >= 0 ? colors.primary : colors.danger} />
+            {isAdmin ? (
+              <>
+                <SummaryPill label="Ingresos"  value={formatUSD(totals.ingreso)}  color={colors.text}    />
+                <SummaryPill label="Ganancia"  value={formatUSD(totals.ganancia)} color={totals.ganancia >= 0 ? colors.primary : colors.danger} />
+              </>
+            ) : (
+              <>
+                <SummaryPill label="Items Vendidos" value={`${totals.items}`} color={colors.text} />
+                <SummaryPill label="Promedio Item/Venta" value={(totals.items / (totals.ventas || 1)).toFixed(1)} color={colors.primary} />
+              </>
+            )}
             <SummaryPill label="Facturas"  value={`${totals.ventas}`}         color={colors.text}    />
           </View>
         )}
@@ -170,12 +190,12 @@ export default function Reportes() {
           Productos Estrella (Top 4)
         </Text>
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border, padding: 0 }]}>
-          <TopProductsDonut data={topProductos} loading={loadingTop} />
+          <TopProductsDonut data={topProductos} loading={loadingTop} useUnits={!isAdmin} />
         </View>
 
         {/* Main Trends Chart */}
         <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
-          Tendencia de {chartMode === 'ganancia' ? 'Ganancia' : 'Ingresos'}
+          Tendencia de {chartMode === 'ganancia' ? 'Ganancia' : chartMode === 'ingreso' ? 'Ingresos' : 'Unidades'}
         </Text>
         <View style={isDesktop ? styles.chartsRowDesktop : undefined}>
           <View style={isDesktop ? { flex: 1 } : undefined}>
@@ -203,7 +223,7 @@ export default function Reportes() {
               key={p.codigo_producto}
               style={[styles.productRow, { borderColor: colors.border }]}
             >
-              <Text style={[styles.rank, { color: colors.textDim }]}>{i + 1}</Text>
+              <Text style={[styles.rank, { color: colors.textMuted }]}>{i + 1}</Text>
               <View style={styles.productInfo}>
                 <Text style={[styles.productName, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
                   {p.descripcion}
@@ -213,11 +233,19 @@ export default function Reportes() {
                 </Text>
               </View>
               <View style={styles.productAmounts}>
-                <CurrencyText amount={p.ingreso}   style={styles.amountText}      />
-                <CurrencyText amount={p.ganancia}  style={styles.gananciaText}
-                  primary={p.ganancia >= 0}
-                  muted={p.ganancia < 0}
-                />
+                {isAdmin ? (
+                  <>
+                    <CurrencyText amount={p.ingreso}   style={styles.amountText}      />
+                    <CurrencyText amount={p.ganancia}  style={styles.gananciaText}
+                      primary={p.ganancia >= 0}
+                      muted={p.ganancia < 0}
+                    />
+                  </>
+                ) : (
+                  <Text style={[styles.amountText, { color: colors.text }]}>
+                    {p.unidades_vendidas} uds
+                  </Text>
+                )}
               </View>
             </View>
           ))

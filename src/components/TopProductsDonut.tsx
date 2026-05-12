@@ -8,15 +8,16 @@ import type { TopProductoRow } from '../lib/supabase';
 interface Props {
   data: TopProductoRow[];
   loading?: boolean;
+  useUnits?: boolean;
 }
 
-export function TopProductsDonut({ data, loading }: Props) {
+export function TopProductsDonut({ data, loading, useUnits }: Props) {
   const { colors, formatUSD } = useTheme();
   const { width: screenWidth } = useWindowDimensions();
 
   // Tomamos los top 4
   const top4 = data.slice(0, 4);
-  const totalProfit = top4.reduce((acc, p) => acc + (p.ganancia || 0), 0);
+  const totalValue = top4.reduce((acc, p) => acc + (useUnits ? (p.unidades_vendidas || 0) : (p.ganancia || 0)), 0);
   
   if (loading) {
     return (
@@ -42,7 +43,7 @@ export function TopProductsDonut({ data, loading }: Props) {
   ];
 
   const pieData = top4.map((p, i) => ({
-    value: Math.max(p.ganancia, 0.01),
+    value: Math.max(useUnits ? p.unidades_vendidas : p.ganancia, 0.01),
     color: PALETTE[i % PALETTE.length],
     text: p.descripcion,
   }));
@@ -106,10 +107,10 @@ export function TopProductsDonut({ data, loading }: Props) {
           centerLabelComponent={() => (
             <View style={styles.centerLabel}>
               <Text style={[styles.centerTotal, { color: colors.text }]}>
-                {formatUSD(totalProfit)}
+                {useUnits ? totalValue.toLocaleString() : formatUSD(totalValue)}
               </Text>
               <Text style={[styles.centerSub, { color: colors.textMuted }]}>
-                ganancia estrella
+                {useUnits ? 'unidades vendidas' : 'ganancia estrella'}
               </Text>
             </View>
           )}
@@ -122,7 +123,7 @@ export function TopProductsDonut({ data, loading }: Props) {
       <View style={styles.grid}>
         {top4.map((p, i) => {
           const color = PALETTE[i % PALETTE.length];
-          const percentage = totalProfit > 0 ? (p.ganancia / totalProfit) * 100 : 0;
+          const percentage = totalValue > 0 ? ((useUnits ? p.unidades_vendidas : p.ganancia) / totalValue) * 100 : 0;
           
           return (
             <View key={p.codigo_producto} style={styles.gridItem}>
@@ -137,7 +138,7 @@ export function TopProductsDonut({ data, loading }: Props) {
                   {p.descripcion}
                 </Text>
                 <Text style={[styles.itemValue, { color: colors.text }]}>
-                  {formatUSD(p.ganancia)}
+                  {useUnits ? `${p.unidades_vendidas} uds` : formatUSD(p.ganancia)}
                 </Text>
               </View>
               

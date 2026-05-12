@@ -77,7 +77,7 @@ export function SparklineChart({ data, width, height = 70, viewMode }: Props) {
       <View style={[styles.wrap, { width: w, height }]}>
         {isNonWorking && (
           <View style={styles.nonWorkingOverlay} pointerEvents="none">
-            <Text style={[styles.nonWorkingText, { color: colors.textDim }]}>
+            <Text style={[styles.nonWorkingText, { color: colors.textMuted }]}>
               DÍA NO LABORABLE
             </Text>
           </View>
@@ -200,7 +200,7 @@ export function SparklineChart({ data, width, height = 70, viewMode }: Props) {
       {/* Non-working day overlay */}
       {isNonWorking && (
         <View style={styles.nonWorkingOverlay} pointerEvents="none">
-          <Text style={[styles.nonWorkingText, { color: colors.textDim }]}>
+          <Text style={[styles.nonWorkingText, { color: colors.textMuted }]}>
             DÍA NO LABORABLE
           </Text>
         </View>
@@ -313,7 +313,7 @@ export function SparklineChart({ data, width, height = 70, viewMode }: Props) {
               { left, top: TOP_PAD + drawH + 1, width: tickWidth },
             ]}
           >
-            <Text style={[styles.tickText, { color: colors.textDim }]}>
+            <Text style={[styles.tickText, { color: colors.textMuted }]}>
               {label}
             </Text>
           </View>

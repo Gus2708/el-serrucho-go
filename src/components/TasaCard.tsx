@@ -28,14 +28,14 @@ export function TasaCard() {
           <Feather name="trending-up" size={14} color={colors.primary} />
           <Text style={[styles.title, { color: colors.textMuted }]}>Tasas de Cambio</Text>
         </View>
-        <Text style={[styles.time, { color: colors.textDim }]}>
+        <Text style={[styles.time, { color: colors.textMuted }]}>
           Actualizado: {new Date(tasa.created_at).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}
         </Text>
       </View>
 
       <View style={styles.content}>
         <View style={styles.stat}>
-          <Text style={[styles.label, { color: colors.textDim }]}>BCV</Text>
+          <Text style={[styles.label, { color: colors.textMuted }]}>BCV</Text>
           <Text style={[styles.value, { color: colors.text }]}>
             {tasa.bcv_usd.toFixed(2)}
           </Text>
@@ -44,7 +44,7 @@ export function TasaCard() {
         <View style={styles.divider} />
 
         <View style={styles.stat}>
-          <Text style={[styles.label, { color: colors.textDim }]}>BINANCE</Text>
+          <Text style={[styles.label, { color: colors.textMuted }]}>BINANCE</Text>
           <Text style={[styles.value, { color: colors.text }]}>
             {tasa.binance_p2p.toFixed(2)}
           </Text>
@@ -53,7 +53,7 @@ export function TasaCard() {
         <View style={styles.divider} />
 
         <View style={styles.stat}>
-          <Text style={[styles.label, { color: colors.textDim }]}>BRECHA</Text>
+          <Text style={[styles.label, { color: colors.textMuted }]}>BRECHA</Text>
           <View style={styles.brechaRow}>
             <Text style={[styles.brechaValue, { color: isPositive ? colors.danger : colors.success }]}>
               {isPositive ? '+' : ''}{brecha.toFixed(2)}%

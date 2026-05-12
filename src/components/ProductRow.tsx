@@ -62,7 +62,7 @@ function ProductRowImpl({ producto, onPress }: Props) {
         </View>
       </View>
 
-      <Feather name="chevron-right" size={16} color={colors.textDim} style={styles.chevron} />
+      <Feather name="chevron-right" size={16} color={colors.textMuted} style={styles.chevron} />
     </Pressable>
   );
 }
@@ -79,7 +79,7 @@ export const ProductRow = memo(ProductRowImpl, (prev, next) =>
 
 function getStockInfo(
   p: Producto,
-  colors: { danger: string; warning: string; success: string; textDim: string }
+  colors: { danger: string; warning: string; success: string; textMuted: string }
 ) {
   if (p.existencia <= 0) return { stockColor: colors.danger,  stockLabel: 'Sin stock' };
   if (p.existencia <= 5) return { stockColor: colors.warning, stockLabel: `${p.existencia} uds` };

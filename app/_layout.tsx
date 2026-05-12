@@ -139,10 +139,13 @@ export default function RootLayout() {
     // Suscripción a cambios de auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
-      // Solo limpiamos cache al salir. 
-      // Al entrar (SIGNED_IN), Supabase puede disparar el evento varias veces al refrescar tokens en web,
-      // lo que causaba que React Query vaciara todo y la app pareciera "reiniciarse".
-      if (event === 'SIGNED_OUT') {
+      
+      // Al entrar o recuperar sesión, invalidamos solo lo relacionado con auth
+      // para que AuthGuard y useUserRole obtengan datos frescos inmediatamente.
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        queryClient.invalidateQueries({ queryKey: ['auth-session'] });
+        queryClient.invalidateQueries({ queryKey: ['user-role'] });
+      } else if (event === 'SIGNED_OUT') {
         queryClient.clear();
       }
     });

@@ -194,7 +194,7 @@ export default function Index() {
     return (
       <View style={[styles.root, { backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={{ color: colors.textDim, marginTop: 12, fontSize: 12 }}>Cargando perfil...</Text>
+        <Text style={{ color: colors.textMuted, marginTop: 12, fontSize: 12 }}>Cargando perfil...</Text>
       </View>
     );
   }
@@ -217,7 +217,7 @@ export default function Index() {
         <View style={styles.logoStrip}>
           <LogoMark />
           <View style={styles.logoWords}>
-            <Text style={[styles.logoSub,  { color: colors.textDim  }]} numberOfLines={1} adjustsFontSizeToFit>Ferretería</Text>
+            <Text style={[styles.logoSub,  { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>Ferretería</Text>
             <Text style={[styles.logoName, { color: colors.primary  }]} numberOfLines={1} adjustsFontSizeToFit>El Serrucho GO</Text>
           </View>
           
@@ -248,7 +248,7 @@ export default function Index() {
               Estadísticas:
             </Text>
             {sessionUser?.email && (
-              <Text style={{ fontSize: 9, color: colors.textDim, opacity: 0.6, marginBottom: 5 }}>
+              <Text style={{ fontSize: 9, color: colors.textMuted, opacity: 0.85, marginBottom: 5 }}>
                 {sessionUser.email}
               </Text>
             )}
@@ -304,7 +304,7 @@ export default function Index() {
               </Text>
             )}
             {!loadingSum && (
-              <Text style={[styles.bigSub, { color: colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>
+              <Text style={[styles.bigSub, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
                 {isAdmin
                   ? (costosPendientes
                       ? `${kpiVentas} facturas · ganancia no disponible`
@@ -384,11 +384,11 @@ export default function Index() {
         {isAdmin && (
           <View style={[{ marginTop: 4 }, isDesktop && { flexDirection: 'row', gap: 12, paddingHorizontal: 16 }]}>
             <View style={[{ gap: 8 }, isDesktop && { flex: 1 }]}>
-              <Text style={[styles.sectionLabel, { color: colors.textDim }, isDesktop && { paddingHorizontal: 0 }]}>Tendencia de Ganancia</Text>
+              <Text style={[styles.sectionLabel, { color: colors.textMuted }, isDesktop && { paddingHorizontal: 0 }]}>Tendencia de Ganancia</Text>
               <GananciaChart data={daily7} mode="ganancia" />
             </View>
             <View style={[{ gap: 8 }, isDesktop && { flex: 1 }]}>
-              <Text style={[styles.sectionLabel, { color: colors.textDim }, isDesktop && { paddingHorizontal: 0 }]}>Tendencia de Ingreso</Text>
+              <Text style={[styles.sectionLabel, { color: colors.textMuted }, isDesktop && { paddingHorizontal: 0 }]}>Tendencia de Ingreso</Text>
               <GananciaChart data={daily7} mode="ingreso" />
             </View>
           </View>
@@ -396,7 +396,7 @@ export default function Index() {
 
         {/* ── Resumen del día / Actividad Reciente ── */}
         <View style={{ marginTop: 16 }}>
-          <Text style={[styles.sectionLabel, { color: colors.textDim }]}>
+          <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
             {isAdmin ? 'Resumen hoy' : 'Actividad Reciente'}
           </Text>
           <TopToday isAdmin={isAdmin} />
@@ -440,7 +440,7 @@ function TopToday({ isAdmin }: { isAdmin: boolean }) {
         <Text style={[styles.topVal, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
           {isAdmin ? formatUSD(today.ganancia) : today.num_ventas}
         </Text>
-        <Text style={[styles.topSub, { color: colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>
+        <Text style={[styles.topSub, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
           {isAdmin 
             ? `${today.num_ventas} facturas · ingreso ${formatUSD(today.ingreso_bruto)}`
             : `Ventas registradas · Ticket promedio: ${formatUSD(today.num_ventas > 0 ? today.ingreso_bruto / today.num_ventas : 0)}`
@@ -477,7 +477,7 @@ function KpiCard({ icon, value, label, loading, desktop }: {
           {value}
         </Text>
       )}
-      <Text style={[styles.kpiLabel, { color: colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
+      <Text style={[styles.kpiLabel, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
     </View>
   );
 }
