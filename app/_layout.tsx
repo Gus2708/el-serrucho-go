@@ -179,6 +179,20 @@ export default function RootLayout() {
       const h = setTimeout(() => {
         if (Platform.OS !== 'web') {
           SplashScreen.hideAsync().catch(() => {});
+        } else {
+          // Registro de Service Worker para PWA
+          if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+              navigator.serviceWorker.register('/service-worker.js').then(
+                (registration) => {
+                  console.log('SW registered: ', registration);
+                },
+                (registrationError) => {
+                  console.log('SW registration failed: ', registrationError);
+                }
+              );
+            });
+          }
         }
       }, 50);
       return () => clearTimeout(h);
