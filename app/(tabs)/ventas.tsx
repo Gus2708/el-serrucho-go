@@ -699,7 +699,7 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
                   {/* Header */}
                   <View style={styles.ticketHeader}>
                     <View style={styles.ticketHeaderLeft}>
-                      <Text style={[styles.ticketTitle, { color: colors.textDim }]}>RECIBO DE VENTA</Text>
+                      <Text style={[styles.ticketTitle, { color: colors.textMuted }]}>RECIBO DE VENTA</Text>
                       <Text style={[styles.ticketFolio, { color: colors.text }]}>
                         {venta.documento || `#${venta.venta_id}`}
                       </Text>
@@ -708,7 +708,7 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
                       </Text>
                     </View>
                     <View style={styles.ticketTimeContainer}>
-                      <Text style={[styles.ticketDateLabel, { color: colors.textDim }]}>FECHA / HORA</Text>
+                      <Text style={[styles.ticketDateLabel, { color: colors.textMuted }]}>FECHA / HORA</Text>
                       <Text style={[styles.ticketDate, { color: colors.text }]}>
                         {new Date(venta.created_at).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                       </Text>
@@ -740,7 +740,7 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
                               <Text style={[styles.ticketItemDesc, { color: colors.text }]}>
                                 {item.descripcion}
                               </Text>
-                              <Text style={[styles.ticketItemQty, { color: colors.textDim }]}>
+                              <Text style={[styles.ticketItemQty, { color: colors.textMuted }]}>
                                 {item.cantidad} × {formatUSD(item.precio_unitario_usd)}
                               </Text>
                             </View>
@@ -773,7 +773,7 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
                     
                     <View style={styles.ticketFooterGrid}>
                       <View style={styles.ticketFooterRow}>
-                        <Text style={[styles.ticketFooterLabel, { color: colors.textDim }]}>MÉTODO</Text>
+                        <Text style={[styles.ticketFooterLabel, { color: colors.textMuted }]}>MÉTODO</Text>
                         {pagoModal ? (
                           <View style={[styles.pagoChip, { backgroundColor: pagoModal.color + '18', borderColor: pagoModal.color + '40', marginRight: 0 }]}>
                             <Feather name={pagoModal.icon} size={10} color={pagoModal.color} />
@@ -786,17 +786,17 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
                         )}
                       </View>
                       <View style={styles.ticketFooterRow}>
-                        <Text style={[styles.ticketFooterLabel, { color: colors.textDim }]}>SUBTOTAL</Text>
+                        <Text style={[styles.ticketFooterLabel, { color: colors.textMuted }]}>SUBTOTAL</Text>
                         <Text style={[styles.ticketFooterValue, { color: colors.text }]}>{formatUSD(baseUSD)}</Text>
                       </View>
                       <View style={styles.ticketFooterRow}>
-                        <Text style={[styles.ticketFooterLabel, { color: colors.textDim }]}>IVA (16%)</Text>
+                        <Text style={[styles.ticketFooterLabel, { color: colors.textMuted }]}>IVA (16%)</Text>
                         <Text style={[styles.ticketFooterValue, { color: colors.text }]}>{formatUSD(ivaUSD)}</Text>
                       </View>
                     </View>
 
                     <View style={[styles.ticketTotalSection, { backgroundColor: colors.primary + '08', borderColor: colors.primary + '30' }]}>
-                      <Text style={[styles.ticketTotalLabel, { color: colors.textDim }]}>TOTAL PAGADO</Text>
+                      <Text style={[styles.ticketTotalLabel, { color: colors.textMuted }]}>TOTAL PAGADO</Text>
                       <View style={styles.ticketTotalValueRow}>
                         <Text style={[styles.ticketTotalCurrency, { color: colors.primary }]}>USD</Text>
                         <Text style={[styles.ticketTotalValue, { color: colors.primary }]}>
@@ -1025,13 +1025,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   ticketHeaderLeft: { gap: 0 },
-  ticketTitle: { fontSize: 9, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.2, textTransform: 'uppercase', opacity: 0.6 },
+  ticketTitle: { fontSize: 9, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.2, textTransform: 'uppercase', opacity: 0.85 },
   ticketFolio: { fontSize: 22, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -0.5 },
-  ticketProducts: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', marginTop: 4, opacity: 0.7 },
+  ticketProducts: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', marginTop: 4, opacity: 0.95 },
   ticketTimeContainer: { alignItems: 'flex-end', gap: 0 },
-  ticketDateLabel: { fontSize: 9, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1, opacity: 0.6, marginBottom: 2 },
+  ticketDateLabel: { fontSize: 9, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1, opacity: 0.85, marginBottom: 2 },
   ticketDate: { fontSize: 12, fontFamily: 'JetBrainsMono_700Bold' },
-  ticketTime: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', opacity: 0.7 },
+  ticketTime: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', opacity: 0.9 },
   
   ticketSeparatorContainer: {
     height: 30,
@@ -1099,7 +1099,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  ticketFooterLabel: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 0.5, textTransform: 'uppercase', opacity: 0.6 },
+  ticketFooterLabel: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 0.5, textTransform: 'uppercase', opacity: 0.85 },
   ticketFooterValue: { fontSize: 18, fontFamily: 'JetBrainsMono_700Bold' },
 
   ticketTotalSection: {
@@ -1110,7 +1110,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  ticketTotalLabel: { fontSize: 11, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.5, marginBottom: 8, opacity: 0.6 },
+  ticketTotalLabel: { fontSize: 11, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.5, marginBottom: 8, opacity: 0.85 },
   ticketTotalValueRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   ticketTotalCurrency: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold', marginTop: 4 },
   ticketTotalValue: { fontSize: 42, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -1 },

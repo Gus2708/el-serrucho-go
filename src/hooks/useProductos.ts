@@ -63,13 +63,15 @@ async function fetchProductos(
   const trimmed = search.trim();
   if (trimmed) {
     if (trimmed.includes('*')) {
-      // If user uses *, we enforce strict order for all words
-      const words = trimmed.split(/\s+/).filter(w => w.length > 0);
-      const pattern = `%${words.map(w => w.replace(/\*/g, '')).join('%')}%`;
+      // Wildcard mode: triggers 'contains' search and ignores word order where possible
+      const clean = trimmed.replace(/\*/g, '').trim();
+      const words = clean.split(/\s+/).filter(w => w.length > 0);
+      const pattern = `%${words.join('%')}%`;
       query = query.or(`descripcion.ilike.${pattern},codigo_interno.ilike.${pattern}`);
     } else {
-      // Standard search: contains the whole string in order
-      const term = `%${trimmed}%`;
+      // Strict mode: Starts with (Prefix search)
+      // Matches products whose name or code begins with the search string
+      const term = `${trimmed}%`;
       query = query.or(`descripcion.ilike.${term},codigo_interno.ilike.${term}`);
     }
   }

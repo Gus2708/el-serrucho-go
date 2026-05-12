@@ -77,9 +77,17 @@ async function fetchVentas(period: VentasPeriod, from: number, to: number, searc
       break;
   }
   
-  if (search && search.trim().length > 0) {
-    const s = `%${search.trim()}%`;
-    query = query.or(`nombre_cliente.ilike.${s},documento.ilike.${s}`);
+  const trimmed = search?.trim();
+  if (trimmed && trimmed.length > 0) {
+    if (trimmed.includes('*')) {
+      const clean = trimmed.replace(/\*/g, '').trim();
+      const words = clean.split(/\s+/).filter(w => w.length > 0);
+      const pattern = `%${words.join('%')}%`;
+      query = query.or(`nombre_cliente.ilike.${pattern},documento.ilike.${pattern}`);
+    } else {
+      const term = `${trimmed}%`;
+      query = query.or(`nombre_cliente.ilike.${term},documento.ilike.${term}`);
+    }
   }
 
   const { data, error } = await query;
