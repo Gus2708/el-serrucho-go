@@ -32,10 +32,18 @@ const queryClient = new QueryClient({
 import { useUserRole } from '../src/hooks/useUserRole';
 
 function AuthGuard({ session, ready }: { session: Session | null; ready: boolean }) {
+  const [hardTimeout, setHardTimeout] = useState(false);
   const segments = useSegments();
   const router   = useRouter();
   const { colors } = useTheme();
-  const { data: roleData, isLoading: roleLoading } = useUserRole();
+  const { data: roleData, isLoading: roleLoading } = useUserRole(session?.user?.id);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setHardTimeout(true);
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     // Si no estamos listos (fuentes/auth), no hacemos nada
@@ -55,8 +63,8 @@ function AuthGuard({ session, ready }: { session: Session | null; ready: boolean
         router.replace('/(auth)/login');
       }
     } else {
-      // Case 2: Hay sesión pero estamos cargando el rol
-      if (roleLoading) return;
+      // Case 2: Hay sesión pero estamos cargando el rol (con margen de 10s)
+      if (roleLoading && !hardTimeout) return;
 
       // Case 3: Hay sesión y rol cargado
       if (roleData) {
@@ -76,7 +84,8 @@ function AuthGuard({ session, ready }: { session: Session | null; ready: boolean
   }, [session, ready, segments, roleData, roleLoading]);
 
   // Pantalla de carga mientras se decide el destino
-  if (!ready || (session && roleLoading)) {
+  // El hardTimeout asegura que si el rol tarda más de 10s, pasamos igual
+  if (!ready || (session && roleLoading && !hardTimeout)) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color={colors.primary} />
