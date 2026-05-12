@@ -181,13 +181,20 @@ export default function RootLayout() {
           SplashScreen.hideAsync().catch(() => {});
         } else {
           // Registro de Service Worker para PWA
+          // Registro de Service Worker para PWA
           if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
+            const register = () => {
               navigator.serviceWorker.register('/service-worker.js').then(
                 (reg) => console.log('SW Registered'),
                 (err) => console.log('SW Registration Failed', err)
               );
-            });
+            };
+
+            if (document.readyState === 'complete') {
+              register();
+            } else {
+              window.addEventListener('load', register);
+            }
           }
         }
       }, 50);

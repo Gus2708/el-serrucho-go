@@ -1,0 +1,22 @@
+{
+  "name": "El Serrucho GO",
+  "short_name": "Serrucho GO",
+  "description": "Dashboard administrativo ferretería El Serrucho",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#010100",
+  "theme_color": "#010100",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
