@@ -20,6 +20,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { useTheme } from '../../src/theme/ThemeContext';
+import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
 import { useOrdenesHistory } from '../../src/hooks/useOrdenesHistory';
@@ -59,6 +60,7 @@ export default function Ordenes() {
 function BorradorView({ router }: { router: any }) {
   const { colors, formatUSD } = useTheme();
   const insets = useSafeAreaInsets();
+  const { isDesktop } = useDeviceSize();
   const { items, nota, isLoading, removeItem, updateItem, setNota, clear, submit } = useOrdenCambio();
 
   const [session, setSession] = useState<string | null>(null);
@@ -272,9 +274,10 @@ function BorradorView({ router }: { router: any }) {
           { 
             backgroundColor: colors.surface, 
             borderColor: colors.border,
-            bottom: Platform.OS === 'web' ? 0 : insets.bottom + 82 
+            bottom: isDesktop ? undefined : insets.bottom + 82,
+            position: isDesktop ? 'relative' : 'absolute',
           },
-          Platform.OS === 'web' && styles.submitBarWeb
+          isDesktop && styles.submitBarWeb
         ]}>
           <View style={styles.submitInfo}>
             <Text style={[styles.submitCount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>

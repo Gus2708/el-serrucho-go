@@ -11,9 +11,9 @@ export default function Root({ children }: PropsWithChildren) {
   return (
     <html lang="es">
       <head>
-        <meta charset="utf-8" />
+        <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, maximum-scale=1, user-scalable=0" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, maximum-scale=1, user-scalable=0, viewport-fit=cover" />
 
         {/* 
           Disable body scrolling on web. This makes stack navigation feel more native.
