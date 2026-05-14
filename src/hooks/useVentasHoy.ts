@@ -93,36 +93,16 @@ async function fetchVentas(period: VentasPeriod, from: number, to: number, searc
   const { data, error } = await query;
   if (error) throw error;
 
-  const ventas = data ?? [];
-  const ventaIds = ventas.map((v: any) => v.venta_id).filter(Boolean);
-
-  // Batch-query distinct product count per venta from detail table
-  let distinctCounts: Record<number, number> = {};
-  if (ventaIds.length > 0) {
-    const { data: lines } = await supabase
-      .from('ventas_detalle')
-      .select('venta_id, codigo_producto')
-      .in('venta_id', ventaIds);
-    const seen = new Set<string>();
-    for (const row of lines ?? []) {
-      const key = `${row.venta_id}:${row.codigo_producto}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        distinctCounts[row.venta_id] = (distinctCounts[row.venta_id] ?? 0) + 1;
-      }
-    }
-  }
-
-  return parseRows(ventas, distinctCounts);
+  return parseRows(data ?? []);
 }
 
-function parseRows(rows: any[], distinctCounts: Record<number, number> = {}): VentaHoy[] {
+function parseRows(rows: any[]): VentaHoy[] {
   return rows.map(v => ({
     ...v,
     id:                          v.venta_id,
     total_usd:                   Number(v.total_usd   ?? 0),
     ganancia_total_usd:          Number(v.ganancia_total_usd ?? 0),
-    items_count:                 distinctCounts[v.venta_id] ?? Number(v.items_count ?? 0),
+    items_count:                 Number(v.lines_count ?? v.items_count ?? 0),
     total_neto_usd:              Number(v.total_neto_usd     ?? 0),
     total_bruto_usd:             Number(v.total_bruto_usd    ?? 0),
     total_impuesto_usd:          Number(v.total_impuesto_usd ?? 0),
