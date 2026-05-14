@@ -13,7 +13,7 @@ export default function PresupuestoView({ router }: { router: any }) {
   const { colors, formatUSD } = useTheme();
   const insets = useSafeAreaInsets();
   const { isDesktop } = useDeviceSize();
-  const { items, cliente, nota, removeItem, updateItemQuantity, setNota, reset, submit } = usePresupuestoStore();
+  const { items, cliente, nota, removeItem, updateItemQuantity, updateItemPrice, setNota, reset, submit } = usePresupuestoStore();
   const [isLoading, setIsLoading] = useState(false);
 
   const [session, setSession] = useState<string | null>(null);
@@ -64,42 +64,36 @@ export default function PresupuestoView({ router }: { router: any }) {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* Top Actions */}
-        <View style={{ marginBottom: 8 }}>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.actionsRow}
+        <View style={styles.actionsContainer}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.actionBtn, 
+              { borderColor: colors.primary, backgroundColor: colors.primaryFaded }, 
+              pressed && { backgroundColor: colors.primary + '20', opacity: 0.85 }
+            ]}
+            onPress={() => router.push('/seleccionar-cliente')}
+            hitSlop={8}
           >
-            <Pressable
-              style={({ pressed }) => [
-                styles.actionBtn, 
-                { borderColor: colors.primary, backgroundColor: colors.primaryFaded }, 
-                pressed && { backgroundColor: colors.primary + '20', opacity: 0.85 }
-              ]}
-              onPress={() => router.push('/seleccionar-cliente')}
-              hitSlop={8}
-            >
-              <Feather name={cliente ? 'user-check' : 'user-plus'} size={18} color={colors.primary} />
-              <Text style={[styles.actionBtnText, { color: colors.primary }]}>
-                {cliente ? cliente.nombre : 'Asignar Cliente'}
-              </Text>
-            </Pressable>
+            <Feather name={cliente ? 'user-check' : 'user-plus'} size={16} color={colors.primary} />
+            <Text style={[styles.actionBtnText, { color: colors.primary }]} numberOfLines={1}>
+              {cliente ? cliente.nombre : 'Asignar Cliente'}
+            </Text>
+          </Pressable>
 
-            <Pressable
-              style={({ pressed }) => [
-                styles.actionBtn, 
-                { borderColor: colors.primary, backgroundColor: colors.primaryFaded }, 
-                pressed && { backgroundColor: colors.primary + '20', opacity: 0.85 }
-              ]}
-              onPress={() => router.push('/seleccionar-productos')}
-              hitSlop={8}
-            >
-              <Feather name="plus" size={18} color={colors.primary} />
-              <Text style={[styles.actionBtnText, { color: colors.primary }]}>
-                Agregar Productos
-              </Text>
-            </Pressable>
-          </ScrollView>
+          <Pressable
+            style={({ pressed }) => [
+              styles.actionBtn, 
+              { borderColor: colors.primary, backgroundColor: colors.primaryFaded }, 
+              pressed && { backgroundColor: colors.primary + '20', opacity: 0.85 }
+            ]}
+            onPress={() => router.push('/seleccionar-productos')}
+            hitSlop={8}
+          >
+            <Feather name="plus" size={16} color={colors.primary} />
+            <Text style={[styles.actionBtnText, { color: colors.primary }]} numberOfLines={1}>
+              Agregar Productos
+            </Text>
+          </Pressable>
         </View>
 
         {items.length === 0 ? (
@@ -119,13 +113,14 @@ export default function PresupuestoView({ router }: { router: any }) {
                   key={item.producto.codigo_interno}
                   style={[styles.itemCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 >
+                  {/* Header: name + remove */}
                   <View style={styles.itemTop}>
                     <View style={styles.itemInfo}>
                       <Text style={[styles.itemName, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
                         {item.producto.descripcion}
                       </Text>
                       <Text style={[styles.itemCode, { color: colors.textMuted }]}>
-                        {item.producto.codigo_interno} · {formatUSD(item.precio_unitario)} c/u
+                        {item.producto.codigo_interno}
                       </Text>
                     </View>
                     <Pressable
@@ -137,24 +132,25 @@ export default function PresupuestoView({ router }: { router: any }) {
                     </Pressable>
                   </View>
 
-                  <View style={styles.itemBottom}>
-                    <View style={[styles.qtyColumn, { flex: 1 }]}>
-                      <Text style={[styles.qtyLabel, { color: colors.textMuted }]}>CANTIDAD</Text>
-                      <View style={styles.qtyValueWrapper}>
+                  {/* Row 1: Quantity + Price */}
+                  <View style={styles.controlsRow}>
+                    {/* CANTIDAD */}
+                    <View style={styles.controlGroup}>
+                      <Text style={[styles.controlLabel, { color: colors.textMuted }]}>CANTIDAD</Text>
+                      <View style={styles.controlRow}>
                         <Pressable 
                           onPress={() => updateItemQuantity(item.producto.codigo_interno, Math.max(1, item.cantidad - 1))}
                           style={({ pressed }) => [
-                            styles.qtyBtn, 
+                            styles.ctrlBtn, 
                             { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, 
-                            pressed && { backgroundColor: colors.border + '44' }
+                            pressed && { opacity: 0.7 }
                           ]}
-                          hitSlop={6}
                         >
                           <Feather name="minus" size={14} color={colors.text} />
                         </Pressable>
                         
                         <TextInput
-                          style={[styles.qtyEdit, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                          style={[styles.ctrlInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }] as any}
                           keyboardType="numeric"
                           value={String(item.cantidad)}
                           onChangeText={v => {
@@ -169,23 +165,84 @@ export default function PresupuestoView({ router }: { router: any }) {
                         <Pressable 
                           onPress={() => updateItemQuantity(item.producto.codigo_interno, item.cantidad + 1)}
                           style={({ pressed }) => [
-                            styles.qtyBtn, 
+                            styles.ctrlBtn, 
                             { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, 
-                            pressed && { backgroundColor: colors.border + '44' }
+                            pressed && { opacity: 0.7 }
                           ]}
-                          hitSlop={6}
                         >
                           <Feather name="plus" size={14} color={colors.text} />
                         </Pressable>
                       </View>
                     </View>
 
-                    <View style={styles.qtyColumn}>
-                      <Text style={[styles.qtyLabel, { color: colors.textMuted, textAlign: 'right' }]}>SUBTOTAL</Text>
-                      <View style={[styles.qtyValueWrapper, { justifyContent: 'flex-end' }]}>
-                        <Text style={[styles.qtyVal, { color: colors.text }]}>{formatUSD(subtotal)}</Text>
+                    {/* PRECIO UNIT. */}
+                    <View style={[styles.controlGroup, { flex: 1 }]}>
+                      <Text style={[styles.controlLabel, { color: colors.textMuted }]}>PRECIO UNIT.</Text>
+                      <View style={styles.controlRow}>
+                        <View style={[styles.priceField, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}>
+                          <Text style={[styles.priceCurrency, { color: colors.textDim }]}>$</Text>
+                          <TextInput
+                            style={[styles.priceInput, { color: colors.text }] as any}
+                            keyboardType="numeric"
+                            value={String(item.precio_unitario)}
+                            onChangeText={v => {
+                              if (v === '' || v === '.') {
+                                updateItemPrice(item.producto.codigo_interno, 0);
+                                return;
+                              }
+                              const p = parseFloat(v);
+                              if (!isNaN(p) && p >= 0) {
+                                updateItemPrice(item.producto.codigo_interno, p);
+                              }
+                            }}
+                            selectTextOnFocus
+                            placeholder="0.00"
+                            placeholderTextColor={colors.textDim}
+                          />
+                        </View>
+
+                        {(() => {
+                          const originalPrice = item.producto.precio_venta;
+                          const isMarkupApplied = item.precio_unitario !== originalPrice;
+                          return (
+                            <Pressable 
+                              onPress={() => {
+                                if (isMarkupApplied) {
+                                  // Reset to original price
+                                  updateItemPrice(item.producto.codigo_interno, originalPrice);
+                                } else {
+                                  // Apply +40%
+                                  const newPrice = originalPrice * 1.4;
+                                  updateItemPrice(item.producto.codigo_interno, parseFloat(newPrice.toFixed(2)));
+                                }
+                              }}
+                              style={({ pressed }) => [
+                                styles.percentBtn,
+                                isMarkupApplied
+                                  ? { backgroundColor: colors.success + '18', borderColor: colors.success + '40' }
+                                  : { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' },
+                                pressed && { opacity: 0.7 }
+                              ]}
+                              hitSlop={4}
+                            >
+                              <Text style={[
+                                styles.percentBtnText, 
+                                { color: isMarkupApplied ? colors.success : colors.primary },
+                                isMarkupApplied && { fontSize: 16 }
+                              ]}>
+                                {isMarkupApplied ? '↺' : '+40%'}
+                              </Text>
+                            </Pressable>
+                          );
+                        })()}
                       </View>
                     </View>
+                  </View>
+
+                  {/* Row 2: Subtotal aligned right */}
+                  <View style={styles.subtotalRow}>
+                    <Text style={[styles.controlLabel, { color: colors.textMuted }]}>SUBTOTAL</Text>
+                    <Text style={[styles.subtotalVal, { color: colors.text }]}>{formatUSD(subtotal)}</Text>
                   </View>
                 </View>
               );
@@ -217,7 +274,7 @@ export default function PresupuestoView({ router }: { router: any }) {
           { 
             backgroundColor: colors.surface, 
             borderColor: colors.border,
-            bottom: isDesktop ? undefined : (Platform.OS === 'web' ? 82 : insets.bottom + 82),
+            bottom: isDesktop ? undefined : (Platform.OS === 'web' ? 96 : insets.bottom + 82),
             position: isDesktop ? 'relative' : 'absolute',
           },
           isDesktop && styles.submitBarWeb
@@ -252,26 +309,29 @@ export default function PresupuestoView({ router }: { router: any }) {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   scroll: { paddingTop: 12, gap: 8 },
-  actionsRow: {
+
+  /* ── Action buttons ─────────────────────────────────────── */
+  actionsContainer: {
     flexDirection: 'row',
     gap: 10,
     paddingHorizontal: 16,
     paddingBottom: 4,
   },
   actionBtn: {
-    minWidth: 160,
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
     paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     borderRadius: 12,
     borderWidth: 1,
     borderStyle: 'dashed',
   },
   actionBtnText: { fontSize: 13, fontFamily: 'JetBrainsMono_700Bold' },
 
+  /* ── Empty state ────────────────────────────────────────── */
   empty: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -281,12 +341,13 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold' },
   emptySub: { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular', textAlign: 'center', lineHeight: 20 },
 
+  /* ── Item card ──────────────────────────────────────────── */
   itemCard: {
     marginHorizontal: 16,
     borderRadius: 12,
     borderWidth: 0.5,
     padding: 12,
-    gap: 8,
+    gap: 10,
   },
   itemTop: {
     flexDirection: 'row',
@@ -298,41 +359,108 @@ const styles = StyleSheet.create({
   itemCode: { fontSize: 11, fontFamily: 'JetBrainsMono_400Regular', marginTop: 1 },
   removeBtn: { padding: 4, marginLeft: 8 },
 
-  itemBottom: {
+  /* ── Controls row (qty + price side by side) ────────────── */
+  controlsRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    marginTop: 4,
+    alignItems: 'flex-end',
+    gap: 16,
   },
-  qtyColumn: { gap: 4 },
-  qtyValueWrapper: {
-    height: 36,
+  controlGroup: {
+    gap: 4,
+  },
+  controlLabel: {
+    fontSize: 9,
+    fontFamily: 'JetBrainsMono_500Medium',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  controlRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
-  qtyLabel: { fontSize: 9, fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.3 },
-  qtyVal: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold' },
-  qtyEdit: {
+
+  /* ── Shared button & input (matches Ajuste card) ─────── */
+  ctrlBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ctrlInput: {
     fontSize: 15,
     fontFamily: 'JetBrainsMono_700Bold',
     textAlign: 'center',
-    borderWidth: 0.5,
+    textAlignVertical: 'center',
+    borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 4,
+    paddingVertical: 0,
+    includeFontPadding: false,
     height: 36,
     width: 50,
     fontVariant: ['tabular-nums'],
   },
-  qtyBtn: {
-    width: 36,
+
+  /* ── Price field ─────────────────────────────────────────── */
+  priceField: {
+    flex: 1,
     height: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
     borderRadius: 8,
-    borderWidth: 0.5,
+    paddingHorizontal: 10,
+    gap: 4,
+  },
+  priceCurrency: {
+    fontSize: 13,
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
+  priceInput: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: 'JetBrainsMono_700Bold',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
+    paddingVertical: 0,
+    paddingHorizontal: 2,
+    height: 36,
+    fontVariant: ['tabular-nums'],
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}),
+  },
+
+  /* ── Percent button ──────────────────────────────────────── */
+  percentBtn: {
+    height: 36,
+    minWidth: 50,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  percentBtnText: {
+    fontSize: 11,
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
 
+  /* ── Subtotal row ────────────────────────────────────────── */
+  subtotalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  subtotalVal: {
+    fontSize: 16,
+    fontFamily: 'JetBrainsMono_700Bold',
+    fontVariant: ['tabular-nums'],
+  },
+
+  /* ── Order note ──────────────────────────────────────────── */
   ordenNota: {
     marginHorizontal: 16,
     borderRadius: 12,
@@ -343,6 +471,7 @@ const styles = StyleSheet.create({
   ordenNotaLabel: { fontSize: 11, fontFamily: 'JetBrainsMono_700Bold', textTransform: 'uppercase', letterSpacing: 0.3 },
   ordenNotaInput: { fontSize: 16, fontFamily: 'JetBrainsMono_400Regular', lineHeight: 22, minHeight: 44 },
 
+  /* ── Submit bar ──────────────────────────────────────────── */
   submitBar: {
     position: 'absolute',
     bottom: 100,
@@ -352,10 +481,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderRadius: 16,
-    borderWidth: 0.5,
+    borderWidth: 1,
     padding: 16,
     gap: 12,
-  },
+    ...(Platform.OS === 'web' ? { 
+      boxShadow: '0 -2px 12px rgba(0,0,0,0.4)',
+    } : {}),
+  } as any,
   submitInfo: { flex: 1, gap: 2 },
   submitCount: { fontSize: 15, fontFamily: 'JetBrainsMono_700Bold' },
   clearText: { fontSize: 12, marginTop: 2, fontFamily: 'JetBrainsMono_400Regular' },

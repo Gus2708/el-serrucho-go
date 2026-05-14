@@ -28,6 +28,7 @@ type PresupuestoStore = {
   setNota: (nota: string) => void;
   addItem: (producto: Producto, cantidad: number) => void;
   updateItemQuantity: (codigo_producto: string, cantidad: number) => void;
+  updateItemPrice: (codigo_producto: string, precio: number) => void;
   removeItem: (codigo_producto: string) => void;
   reset: () => void;
   submit: () => Promise<{ presupuestoId: number; html?: string } | null>; // Returns the generated presupuesto ID and HTML if web
@@ -80,6 +81,16 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
         )
       };
     });
+  },
+
+  updateItemPrice: (codigo_producto, precio) => {
+    set((state) => ({
+      items: state.items.map(i => 
+        i.producto.codigo_interno === codigo_producto 
+          ? { ...i, precio_unitario: precio } 
+          : i
+      )
+    }));
   },
 
   removeItem: (codigo_producto) => {
