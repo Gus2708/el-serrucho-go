@@ -1,128 +1,231 @@
-// Nombres de caché con control de versiones
-const CACHE_NAME = 'serrucho-static-v2';
-const DATA_CACHE_NAME = 'serrucho-data-v2';
+// ═══════════════════════════════════════════════════════════════════════════════
+// Service Worker — El Serrucho GO PWA
+// Strategy: Offline-First App Shell + Network-First Data
+// ═══════════════════════════════════════════════════════════════════════════════
 
-// App Shell básico para pre-caché (Assets que no cambian de nombre frecuentemente)
+const CACHE_VERSION = 'v3';
+const STATIC_CACHE  = `serrucho-static-${CACHE_VERSION}`;
+const DATA_CACHE    = `serrucho-data-${CACHE_VERSION}`;
+const FONT_CACHE    = `serrucho-fonts-${CACHE_VERSION}`;
+
+// ── Pre-cache: critical app shell assets ────────────────────────────────────
+// These are cached on install so the app always has a baseline to load from.
 const PRECACHE_ASSETS = [
+  '/',                          // index.html (SPA entry)
   '/manifest.webmanifest',
-  '/favicon.ico',
   '/elserruchogo512x512.png',
-  '/screenshot-desktop.png',
-  '/screenshot-mobile.png',
+  '/apple-touch-icon.png',
 ];
 
-// Instalación: Pre-caché del App Shell y salto de espera
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function isNavigationRequest(request) {
+  return (
+    request.mode === 'navigate' ||
+    (request.method === 'GET' &&
+      request.headers.get('accept') &&
+      request.headers.get('accept').includes('text/html'))
+  );
+}
+
+function isSupabaseRequest(url) {
+  return url.hostname.includes('supabase.co') || url.hostname.includes('supabase.in');
+}
+
+function isApiRequest(url) {
+  return isSupabaseRequest(url) || url.pathname.startsWith('/api/');
+}
+
+function isStaticAsset(url) {
+  return (
+    url.pathname.startsWith('/_expo/') ||
+    url.pathname.startsWith('/assets/') ||
+    /\.(js|css|woff2?|ttf|otf|eot)$/i.test(url.pathname)
+  );
+}
+
+function isFontRequest(url) {
+  return (
+    url.hostname.includes('fonts.googleapis.com') ||
+    url.hostname.includes('fonts.gstatic.com') ||
+    /\.(woff2?|ttf|otf|eot)$/i.test(url.pathname)
+  );
+}
+
+function isImageRequest(url) {
+  return /\.(png|jpg|jpeg|gif|svg|webp|ico)$/i.test(url.pathname);
+}
+
+// ── Install ─────────────────────────────────────────────────────────────────
 self.addEventListener('install', (event) => {
-  console.log('SW: Instalando...');
+  console.log('[SW] Installing...');
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      console.log('SW: Pre-cacheando assets...');
-      // Intentamos cachear cada uno por separado para que si uno falla el resto siga
-      return Promise.allSettled(
-        PRECACHE_ASSETS.map(asset => 
-          cache.add(asset).catch(err => console.error(`SW: Error cacheando ${asset}:`, err))
-        )
-      );
-    }).then(() => {
-      console.log('SW: Pre-caché finalizado');
-      return self.skipWaiting();
-    })
+    caches.open(STATIC_CACHE)
+      .then((cache) => {
+        console.log('[SW] Pre-caching app shell...');
+        return Promise.allSettled(
+          PRECACHE_ASSETS.map((asset) =>
+            cache.add(asset).catch((err) =>
+              console.warn(`[SW] Failed to pre-cache ${asset}:`, err)
+            )
+          )
+        );
+      })
+      .then(() => {
+        console.log('[SW] Pre-cache complete');
+        return self.skipWaiting();
+      })
   );
 });
 
-// Activación: Limpieza de versiones de caché antiguas
+// ── Activate ────────────────────────────────────────────────────────────────
 self.addEventListener('activate', (event) => {
-  const currentCaches = [CACHE_NAME, DATA_CACHE_NAME];
+  const keepCaches = [STATIC_CACHE, DATA_CACHE, FONT_CACHE];
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (!currentCaches.includes(cacheName)) {
-            console.log('SW: Eliminando caché antigua:', cacheName);
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    }).then(() => self.clients.claim())
+    caches.keys()
+      .then((names) =>
+        Promise.all(
+          names
+            .filter((name) => !keepCaches.includes(name))
+            .map((name) => {
+              console.log('[SW] Deleting old cache:', name);
+              return caches.delete(name);
+            })
+        )
+      )
+      .then(() => self.clients.claim())
   );
 });
 
-// Interceptor de peticiones Fetch
+// ── Fetch ───────────────────────────────────────────────────────────────────
 self.addEventListener('fetch', (event) => {
-  // Solo interceptamos peticiones GET
+  // Only handle GET requests
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
 
-  // ESTRATEGIA: Network First para Datos (Supabase / API)
-  // Intentamos obtener datos frescos, si falla (offline), usamos el caché.
-  if (url.hostname.includes('supabase.co') || url.pathname.includes('/api/')) {
+  // Skip non-http(s) schemes (chrome-extension, etc.)
+  if (!url.protocol.startsWith('http')) return;
+
+  // ─── STRATEGY 1: Supabase / API → Network-first, cache fallback ─────────
+  // We try the network for fresh data. If offline, serve cached response.
+  // Supabase auth tokens are in localStorage so getSession() works offline.
+  if (isApiRequest(url)) {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          // Si la respuesta es válida, la guardamos en el caché de datos
           if (response && response.status === 200) {
-            const responseClone = response.clone();
-            caches.open(DATA_CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseClone);
+            const clone = response.clone();
+            caches.open(DATA_CACHE).then((cache) => {
+              cache.put(event.request, clone);
             });
           }
           return response;
         })
         .catch(() => {
-          // Si no hay red, buscamos en el caché de datos
-          return caches.match(event.request);
+          // Offline → serve cached API response if available
+          return caches.match(event.request).then((cached) => {
+            if (cached) return cached;
+            // Return an empty but valid JSON response so the app doesn't crash
+            return new Response(JSON.stringify({ data: null, error: 'offline' }), {
+              status: 503,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          });
         })
     );
     return;
   }
 
-  // ESTRATEGIA: Network First para Navegación (HTML)
-  // Siempre queremos la versión más reciente del HTML para evitar bundles viejos.
-  if (event.request.mode === 'navigate' || (event.request.method === 'GET' && event.request.headers.get('accept').includes('text/html'))) {
+  // ─── STRATEGY 2: Fonts → Cache-first, network fallback ──────────────────
+  // Fonts never change, cache indefinitely.
+  if (isFontRequest(url)) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request).then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(FONT_CACHE).then((cache) => {
+              cache.put(event.request, clone);
+            });
+          }
+          return response;
+        }).catch(() => {
+          // Font not available offline — return empty response
+          return new Response('', { status: 503 });
+        });
+      })
+    );
+    return;
+  }
+
+  // ─── STRATEGY 3: Navigation (HTML) → Network-first, cache fallback ──────
+  // Always try fresh HTML first (to pick up new deploys), but serve cached
+  // if offline. The SPA entry '/' is our universal fallback.
+  if (isNavigationRequest(event.request)) {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseClone);
-          });
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(STATIC_CACHE).then((cache) => {
+              cache.put(event.request, clone);
+              // Also update the '/' cache so the root SPA entry stays fresh
+              if (url.pathname !== '/') {
+                cache.put(new Request('/'), clone.clone());
+              }
+            });
+          }
           return response;
         })
-        .catch(() => caches.match(event.request) || caches.match('/'))
+        .catch(() => {
+          // Offline → serve exact cached page or fallback to '/'
+          return caches.match(event.request).then((cached) => {
+            return cached || caches.match('/');
+          });
+        })
     );
     return;
   }
 
-  // ESTRATEGIA: Cache First para Assets Estáticos (JS, CSS, Imágenes, Fuentes)
-  // Servimos desde el caché para velocidad, y actualizamos en segundo plano si es necesario.
+  // ─── STRATEGY 4: Static assets (JS/CSS/images) → Cache-first ───────────
+  // Expo bundles are hashed (_expo/static/...), so once cached they're valid
+  // forever. Images and other assets are also cached on first load.
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
+    caches.match(event.request).then((cached) => {
+      if (cached) return cached;
 
-      // Si no está en caché, vamos a la red
-      return fetch(event.request).then((response) => {
-        // Ignorar esquemas no soportados (como chrome-extension://) y respuestas no exitosas
-        const isSupportedScheme = event.request.url.startsWith('http');
-        
-        if (!isSupportedScheme || !response || response.status !== 200 || response.type !== 'basic') {
+      return fetch(event.request)
+        .then((response) => {
+          if (!response || response.status !== 200) return response;
+          // Only cache same-origin and cdn responses
+          if (response.type !== 'basic' && response.type !== 'cors') return response;
+
+          const clone = response.clone();
+          const cacheName = isImageRequest(url) ? STATIC_CACHE : STATIC_CACHE;
+          caches.open(cacheName).then((cache) => {
+            cache.put(event.request, clone);
+          });
+
           return response;
-        }
-
-        const responseToCache = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseToCache);
+        })
+        .catch(() => {
+          // Asset not available offline
+          // For images, return nothing (UI will handle missing images)
+          if (isImageRequest(url)) {
+            return new Response('', { status: 503 });
+          }
+          return new Response('', { status: 503 });
         });
-
-        return response;
-      }).catch(() => {
-        // Fallback para navegación ya manejado arriba, pero por si acaso:
-        if (event.request.mode === 'navigate') {
-          return caches.match('/');
-        }
-      });
     })
   );
+});
+
+// ── Background Sync (future-proof) ──────────────────────────────────────────
+// If we ever need to queue mutations while offline.
+self.addEventListener('message', (event) => {
+  if (event.data === 'skipWaiting') {
+    self.skipWaiting();
+  }
 });

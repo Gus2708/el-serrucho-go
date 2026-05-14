@@ -3,6 +3,19 @@ html, body, #root {
   background-color: #010100;
 }
 
+/* PWA standalone: ensure full viewport coverage on iOS */
+@media (display-mode: standalone) {
+  html, body {
+    height: 100vh !important;
+    height: 100dvh !important;
+    overflow: hidden !important;
+  }
+  #root {
+    min-height: 100vh !important;
+    min-height: 100dvh !important;
+  }
+}
+
 /* Remove default browser focus outline/rings on inputs (Web) */
 input, textarea, select {
   outline: none !important;

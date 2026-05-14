@@ -24,7 +24,10 @@ const queryClient = new QueryClient({
     queries: { 
       retry: 1, 
       staleTime: 30_000,
-      refetchOnWindowFocus: false, // Prevents flickering/reloading when switching windows
+      gcTime: 30 * 60_000,           // Keep cached data for 30 min (offline resilience)
+      refetchOnWindowFocus: false,    // Prevents flickering/reloading when switching windows
+      refetchOnReconnect: 'always',   // Refresh data when coming back online
+      networkMode: 'offlineFirst',    // Use cache first, then try network
     },
   },
 });
@@ -36,12 +39,12 @@ function AuthGuard({ session, ready }: { session: Session | null; ready: boolean
   const segments = useSegments();
   const router   = useRouter();
   const { colors } = useTheme();
-  const { data: roleData, isLoading: roleLoading } = useUserRole(session?.user?.id);
+  const { data: roleData, isLoading: roleLoading, isError: roleError } = useUserRole(session?.user?.id);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setHardTimeout(true);
-    }, 5000); // Reducido a 5s para mayor rapidez
+    }, 3000); // 3s — faster fallthrough for slow networks
     return () => clearTimeout(timer);
   }, []);
 
@@ -63,15 +66,26 @@ function AuthGuard({ session, ready }: { session: Session | null; ready: boolean
         router.replace('/(auth)/login');
       }
     } else {
-      // Case 2: Hay sesión pero estamos cargando el rol (con margen de 10s)
+      // Case 2: Hay sesión pero estamos cargando el rol (con margen de 3s)
       if (roleLoading && !hardTimeout) return;
 
-      // Case 3: Hay sesión y rol cargado
+      // Case 3: Role loaded successfully
       if (roleData) {
         if (!roleData.is_active) {
-          // Usuario no activo -> Mandar a pantalla de espera
-          if (segs[segs.length - 1] !== 'pending') {
-            router.replace('/(auth)/pending');
+          // ── Offline safety check ──
+          // If we're offline (or the role fetch errored), DON'T redirect to pending.
+          // The user had a valid session — trust it until we can verify online.
+          const isOffline = Platform.OS === 'web' && typeof navigator !== 'undefined' && !navigator.onLine;
+          if (isOffline || roleError) {
+            // Let the user through — they have a valid JWT session
+            if (inAuth || isRoot || isIndex) {
+              router.replace('/(tabs)');
+            }
+          } else {
+            // Online and confirmed not active → pending screen
+            if (segs[segs.length - 1] !== 'pending') {
+              router.replace('/(auth)/pending');
+            }
           }
         } else {
           // Usuario activo -> Solo redireccionar si está en auth o en la raíz absoluta
@@ -79,12 +93,18 @@ function AuthGuard({ session, ready }: { session: Session | null; ready: boolean
             router.replace('/(tabs)');
           }
         }
+      } else if (hardTimeout) {
+        // Case 4: Role never loaded (timeout hit) — let user through if they have a session
+        // This handles the scenario where the network is completely down.
+        if (session && (inAuth || isRoot || isIndex)) {
+          router.replace('/(tabs)');
+        }
       }
     }
-  }, [session, ready, segments, roleData, roleLoading]);
+  }, [session, ready, segments, roleData, roleLoading, roleError, hardTimeout]);
 
   // Pantalla de carga mientras se decide el destino
-  // El hardTimeout asegura que si el rol tarda más de 5s, pasamos igual
+  // El hardTimeout asegura que si el rol tarda más de 3s, pasamos igual
   if (!ready || (session && roleLoading && !hardTimeout)) {
     return (
       <View style={{ flex: 1, backgroundColor: colors?.bg || '#010100', justifyContent: 'center', alignItems: 'center', padding: 20 }}>

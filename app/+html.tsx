@@ -30,7 +30,7 @@ export default function Root({ children }: PropsWithChildren) {
 
         {/* iOS / Safari specific */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black" />
         <meta name="apple-mobile-web-app-title" content="Serrucho GO" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="application-name" content="Serrucho GO" />
@@ -44,26 +44,47 @@ export default function Root({ children }: PropsWithChildren) {
 }
 
 const expoRootStyles = `
-#root, body, html {
+html {
   height: 100% !important;
-  height: 100dvh !important;
-  width: 100vw !important;
-  display: flex !important;
-  flex-direction: column !important;
-  overflow: hidden !important;
-  position: fixed !important;
-  inset: 0 !important;
   margin: 0 !important;
   padding: 0 !important;
   background-color: #010100 !important;
+  overflow: hidden !important;
+}
+
+body {
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background-color: #010100 !important;
+  overflow: hidden !important;
   -webkit-overflow-scrolling: touch !important;
-  user-select: none !important;
-  -webkit-user-select: none !important;
-  touch-action: none !important;
 }
 
 #root {
-  display: flex;
-  flex-direction: column;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  background-color: #010100 !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+/* iOS standalone: fill entire screen including safe areas */
+@supports (padding: env(safe-area-inset-top)) {
+  #root {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: 0;
+    height: 100vh !important;
+    height: 100dvh !important;
+  }
 }
 `;
