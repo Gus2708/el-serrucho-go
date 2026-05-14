@@ -26,6 +26,7 @@ export default function ProductoDetail() {
   const [newQty,       setNewQty]       = useState('');
   const [adjMode,      setAdjMode]      = useState<'fixed' | 'relative'>('fixed');
   const [adjOp,        setAdjOp]        = useState<'+' | '-'>('+');
+  const [errorMsg,     setErrorMsg]     = useState<string | null>(null);
 
   const panY = useRef(new Animated.Value(screenHeight)).current;
 
@@ -209,6 +210,7 @@ export default function ProductoDetail() {
               style={({ pressed }) => [styles.addBtn, { backgroundColor: colors.primaryFaded, borderColor: colors.primary }, pressed && { opacity: 0.75 }]}
               onPress={() => {
                 setNewQty('');
+                setErrorMsg(null);
                 setShowAddSheet(true);
               }}
             >
@@ -288,6 +290,14 @@ export default function ProductoDetail() {
                 </Pressable>
               </View>
 
+              {errorMsg && (
+                <View style={{ backgroundColor: colors.danger + '22', padding: 8, borderRadius: 8, marginBottom: 8 }}>
+                  <Text style={{ color: colors.danger, fontSize: 12, fontFamily: 'JetBrainsMono_700Bold', textAlign: 'center' }}>
+                    {errorMsg}
+                  </Text>
+                </View>
+              )}
+
               <Text style={[styles.sheetLabel, { color: colors.textMuted }]}>
                 {adjMode === 'fixed' ? 'Actual: ' + producto.existencia + ' uds  ·  Nueva existencia:' : 'Ingresa la cantidad a ajustar:'}
               </Text>
@@ -333,7 +343,7 @@ export default function ProductoDetail() {
                 onPress={() => {
                   const inputVal = parseFloat(newQty);
                   if (isNaN(inputVal)) {
-                    notify('Cantidad inválida', 'Ingresa un número válido');
+                    setErrorMsg('Ingresa un número válido');
                     return;
                   }
 
@@ -343,9 +353,11 @@ export default function ProductoDetail() {
                   }
 
                   if (finalQty < 0) {
-                    notify('Error', 'La existencia no puede ser negativa');
+                    setErrorMsg('La existencia no puede ser negativa');
                     return;
                   }
+
+                  setErrorMsg(null);
 
                   addItem({
                     codigo_producto:   producto.codigo_interno,
@@ -563,11 +575,20 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     paddingHorizontal: 24,
     gap: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 24,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: -10 },
+        shadowOpacity: 0.3,
+        shadowRadius: 20,
+      },
+      android: {
+        elevation: 24,
+      },
+      web: {
+        boxShadow: '0px -10px 20px rgba(0,0,0,0.3)',
+      } as any,
+    }),
   },
   modalHandleArea: {
     paddingTop: 12,

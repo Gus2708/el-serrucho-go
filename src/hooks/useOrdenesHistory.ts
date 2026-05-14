@@ -3,6 +3,7 @@ import { supabase, OrdenCambio } from '../lib/supabase';
 
 export type OrdenConItems = OrdenCambio & {
   item_count: number;
+  creado_por_nombre?: string;
 };
 
 export function useOrdenesHistory() {
@@ -25,7 +26,26 @@ async function fetchOrdenes(): Promise<OrdenConItems[]> {
 
   if (error) throw error;
 
-  return (data ?? []).map((o: any) => ({
+  const rows = data ?? [];
+
+  // Batch-fetch creator names from profiles
+  const uniqueIds = [...new Set(rows.map((o: any) => o.creado_por).filter(Boolean))];
+  let profileMap: Record<string, string> = {};
+
+  if (uniqueIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, display_name')
+      .in('id', uniqueIds);
+
+    if (profiles) {
+      profileMap = Object.fromEntries(
+        profiles.map((p: any) => [p.id, p.display_name])
+      );
+    }
+  }
+
+  return rows.map((o: any) => ({
     id:         o.id,
     creado_por: o.creado_por,
     nota:       o.nota,
@@ -33,5 +53,6 @@ async function fetchOrdenes(): Promise<OrdenConItems[]> {
     pdf_url:    o.pdf_url,
     creado_en:  o.creado_en,
     item_count: o.item_count || 0,
+    creado_por_nombre: profileMap[o.creado_por] ?? undefined,
   }));
 }

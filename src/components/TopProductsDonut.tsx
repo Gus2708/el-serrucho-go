@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, useWindowDimensions, Platform } from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions, Platform, ActivityIndicator } from 'react-native';
 import { PieChart } from 'react-native-gifted-charts';
 import { useTheme } from '../theme/ThemeContext';
 import { CurrencyText } from './CurrencyText';
@@ -9,21 +9,27 @@ import type { TopProductoRow } from '../lib/supabase';
 interface Props {
   data: TopProductoRow[];
   loading?: boolean;
-  useUnits?: boolean;
+  mode?: 'ganancia' | 'ingreso' | 'items';
 }
 
-export function TopProductsDonut({ data, loading, useUnits }: Props) {
+export function TopProductsDonut({ data, loading, mode = 'ganancia' }: Props) {
   const { colors, formatUSD } = useTheme();
   const { isDesktop, width: screenWidth } = useDeviceSize();
 
+  const useUnits = mode === 'items';
+  const useIngreso = mode === 'ingreso';
+
   // Tomamos los top 4
   const top4 = data.slice(0, 4);
-  const totalValue = top4.reduce((acc, p) => acc + (useUnits ? (p.unidades_vendidas || 0) : (p.ganancia || 0)), 0);
+  const totalValue = top4.reduce((acc, p) => {
+    const val = useUnits ? p.unidades_vendidas : (useIngreso ? p.ingreso : p.ganancia);
+    return acc + (val || 0);
+  }, 0);
   
   if (loading) {
     return (
       <View style={styles.loading}>
-        <Text style={[styles.emptyText, { color: colors.textMuted }]}>Cargando datos...</Text>
+        <ActivityIndicator color={colors.primary} />
       </View>
     );
   }
@@ -44,7 +50,7 @@ export function TopProductsDonut({ data, loading, useUnits }: Props) {
   ];
 
   const pieData = top4.map((p, i) => ({
-    value: Math.max(useUnits ? p.unidades_vendidas : p.ganancia, 0.01),
+    value: Math.max(useUnits ? p.unidades_vendidas : (useIngreso ? p.ingreso : p.ganancia), 0.01),
     color: PALETTE[i % PALETTE.length],
     text: p.descripcion,
   }));
@@ -77,20 +83,20 @@ export function TopProductsDonut({ data, loading, useUnits }: Props) {
             </View>
           ) : (
             <>
-              {/* Ultra-smooth High-Impact Dense Glow for Mobile - 12 layers, 2px steps, 30% base opacity */}
-              {[...Array(12)].map((_, i) => {
+              {/* Optimized Glow for Mobile - 3 layers are enough for a premium feel */}
+              {[...Array(3)].map((_, i) => {
                 const step = i + 1;
-                const opacityHex = Math.round((0.30 / step) * 255).toString(16).padStart(2, '0');
+                const opacityHex = Math.round((0.25 / step) * 255).toString(16).padStart(2, '0');
                 return (
                   <View key={`glow-${i}`} style={{ position: 'absolute' }}>
                     <PieChart
                       data={glowData.map(d => ({ ...d, color: d.color + opacityHex }))}
                       donut
-                      radius={radius + (step * 2)}
-                      innerRadius={innerRadius - (step * 2)}
+                      radius={radius + (step * 4)}
+                      innerRadius={innerRadius - (step * 4)}
                       innerCircleColor="transparent"
                       showText={false}
-                      strokeWidth={2}
+                      strokeWidth={3}
                       strokeColor="transparent"
                     />
                   </View>
@@ -113,7 +119,7 @@ export function TopProductsDonut({ data, loading, useUnits }: Props) {
                 {useUnits ? totalValue.toLocaleString() : formatUSD(totalValue)}
               </Text>
               <Text style={[styles.centerSub, { color: colors.textMuted }]}>
-                {useUnits ? 'unidades vendidas' : 'ganancia estrella'}
+                {useUnits ? 'unidades vendidas' : (useIngreso ? 'ingresos brutos' : 'ganancia estrella')}
               </Text>
             </View>
           )}
@@ -126,7 +132,8 @@ export function TopProductsDonut({ data, loading, useUnits }: Props) {
       <View style={[styles.grid, isDesktop && styles.gridDesktop]}>
         {top4.map((p, i) => {
           const color = PALETTE[i % PALETTE.length];
-          const percentage = totalValue > 0 ? ((useUnits ? p.unidades_vendidas : p.ganancia) / totalValue) * 100 : 0;
+          const val = useUnits ? p.unidades_vendidas : (useIngreso ? p.ingreso : p.ganancia);
+          const percentage = totalValue > 0 ? (val / totalValue) * 100 : 0;
           
           return (
             <View key={p.codigo_producto} style={styles.gridItem}>
@@ -141,7 +148,7 @@ export function TopProductsDonut({ data, loading, useUnits }: Props) {
                   {p.descripcion}
                 </Text>
                 <Text style={[styles.itemValue, { color: colors.text }]}>
-                  {useUnits ? `${p.unidades_vendidas} uds` : formatUSD(p.ganancia)}
+                  {useUnits ? `${p.unidades_vendidas} uds` : formatUSD(val)}
                 </Text>
               </View>
               

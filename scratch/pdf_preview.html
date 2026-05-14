@@ -1,19 +1,11 @@
-import { Cliente, PresupuestoItem } from '../hooks/usePresupuestoStore';
-
-export interface DraftItem {
-  codigo_producto:   string;
-  descripcion:       string;
-  existencia_actual: number;
-  nueva_existencia:  number;
-  nota:              string;
-}
-
-/* ─── Shared CSS tokens ──────────────────────────────────── */
-const SHARED_STYLES = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@500;700&display=swap');
 
   :root {
-    /* Brand palette — warm slate tinted toward amber */
     --ink:          oklch(0.18 0.02 70);
     --ink-soft:     oklch(0.35 0.015 70);
     --ink-muted:    oklch(0.50 0.01 70);
@@ -27,11 +19,9 @@ const SHARED_STYLES = `
     --negative:     oklch(0.58 0.22 25);
     --white:        oklch(0.995 0.002 70);
 
-    /* Type */
     --font-body: 'DM Sans', system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
-    /* Spacing (4pt scale) */
     --sp-2: 8px;
     --sp-3: 12px;
     --sp-4: 16px;
@@ -70,7 +60,6 @@ const SHARED_STYLES = `
       0 8px 24px oklch(0.18 0.02 70 / 0.04);
   }
 
-  /* ── Header ──────────────────────────────────── */
   .header {
     display: flex;
     align-items: center;
@@ -115,7 +104,6 @@ const SHARED_STYLES = `
     letter-spacing: 0.5px;
   }
 
-  /* ── Meta grid ───────────────────────────────── */
   .meta-grid {
     display: flex;
     gap: var(--sp-4);
@@ -147,7 +135,6 @@ const SHARED_STYLES = `
     color: var(--ink);
   }
 
-  /* ── Note / Observations ─────────────────────── */
   .note-box {
     background: oklch(0.96 0.03 75);
     border: 1px solid oklch(0.88 0.06 75);
@@ -169,7 +156,6 @@ const SHARED_STYLES = `
     color: oklch(0.38 0.10 75);
   }
 
-  /* ── Table ───────────────────────────────────── */
   table {
     width: 100%;
     border-collapse: separate;
@@ -262,49 +248,6 @@ const SHARED_STYLES = `
     max-width: 140px;
   }
 
-  .col-money {
-    text-align: right;
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
-  .col-money-bold {
-    text-align: right;
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
-    font-weight: 700;
-    font-size: 15px;
-    white-space: nowrap;
-  }
-
-  /* ── Total row (presupuesto) ─────────────────── */
-  .total-row td {
-    border-bottom: none;
-    border-top: 2px solid var(--ink);
-    padding-top: var(--sp-4);
-    background: var(--white) !important;
-  }
-
-  .total-label {
-    font-weight: 700;
-    font-size: 14px;
-    text-align: right;
-    color: var(--ink);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
-  .total-amount {
-    font-family: var(--font-mono);
-    font-weight: 700;
-    font-size: 18px;
-    text-align: right;
-    color: var(--ink);
-  }
-
-  /* ── Footer ──────────────────────────────────── */
   .footer {
     margin-top: auto;
     padding-top: var(--sp-5);
@@ -332,7 +275,6 @@ const SHARED_STYLES = `
     vertical-align: middle;
   }
 
-  /* ── Print overrides ─────────────────────────── */
   @media print {
     body { background: white !important; padding: 0 !important; }
     .ticket {
@@ -344,34 +286,7 @@ const SHARED_STYLES = `
       border-radius: 0;
     }
   }
-`;
-
-/* ─── Inventory Adjustment PDF ──────────────────────────── */
-export function buildPdfHtml(items: DraftItem[], nota: string, orderId: number, creadoPor?: string): string {
-  const now = new Date().toLocaleString('es-VE');
-
-  const rows = items.map((item, i) => {
-    const delta = item.nueva_existencia - item.existencia_actual;
-    const sign  = delta >= 0 ? '+' : '';
-    const cls   = delta >= 0 ? 'col-delta-pos' : 'col-delta-neg';
-
-    return `
-      <tr>
-        <td class="col-code">${item.codigo_producto}</td>
-        <td class="col-desc">${item.descripcion}</td>
-        <td class="col-num-muted">${item.existencia_actual}</td>
-        <td class="col-num">${item.nueva_existencia}</td>
-        <td class="${cls}">${sign}${delta}</td>
-        <td class="col-note">${item.nota || '—'}</td>
-      </tr>`;
-  }).join('');
-
-  return `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<style>${SHARED_STYLES}</style>
+</style>
 </head>
 <body>
   <div class="ticket">
@@ -381,34 +296,28 @@ export function buildPdfHtml(items: DraftItem[], nota: string, orderId: number, 
         <span class="brand-name">EL SERRUCHO</span>
         <span class="brand-accent"></span>
       </div>
-      <div class="doc-badge">ORDEN #${String(orderId).padStart(5, '0')}</div>
+      <div class="doc-badge">ORDEN #00031</div>
     </div>
 
     <div class="meta-grid">
       <div class="meta-card">
         <span class="meta-label">Fecha y Hora</span>
-        <span class="meta-value">${now}</span>
+        <span class="meta-value">14/5/2026, 12:59:46 a. m.</span>
       </div>
       <div class="meta-card">
         <span class="meta-label">Total Ítems</span>
-        <span class="meta-value">${items.length}</span>
+        <span class="meta-value">3</span>
       </div>
-      ${creadoPor ? `
-      <div class="meta-card">
-        <span class="meta-label">Creado por</span>
-        <span class="meta-value">${creadoPor}</span>
-      </div>` : `
       <div class="meta-card">
         <span class="meta-label">Tipo de Documento</span>
         <span class="meta-value">Validación de Inventario</span>
-      </div>`}
+      </div>
     </div>
 
-    ${nota ? `
     <div class="note-box">
       <strong>Observaciones</strong>
-      ${nota}
-    </div>` : ''}
+      Revisión de inventario de abrazaderas — conteo físico realizado por turno mañana.
+    </div>
 
     <table>
       <thead>
@@ -421,7 +330,32 @@ export function buildPdfHtml(items: DraftItem[], nota: string, orderId: number, 
           <th>Nota</th>
         </tr>
       </thead>
-      <tbody>${rows}</tbody>
+      <tbody>
+        <tr>
+          <td class="col-code">00023</td>
+          <td class="col-desc">ABRAZADERA 1-1/4-2 AB-008 50PZAS</td>
+          <td class="col-num-muted">9</td>
+          <td class="col-num">12</td>
+          <td class="col-delta-pos">+3</td>
+          <td class="col-note">—</td>
+        </tr>
+        <tr>
+          <td class="col-code">00045</td>
+          <td class="col-desc">TORNILLO HEX 3/8x2 GR5 ZINC 100PZAS</td>
+          <td class="col-num-muted">24</td>
+          <td class="col-num">20</td>
+          <td class="col-delta-neg">-4</td>
+          <td class="col-note">Faltante en rack B</td>
+        </tr>
+        <tr>
+          <td class="col-code">00112</td>
+          <td class="col-desc">TUERCA HEX 1/2 GR2 NEGRA 50PZAS</td>
+          <td class="col-num-muted">15</td>
+          <td class="col-num">15</td>
+          <td class="col-delta-pos">0</td>
+          <td class="col-note">OK verificado</td>
+        </tr>
+      </tbody>
     </table>
 
     <div class="footer">
@@ -432,113 +366,4 @@ export function buildPdfHtml(items: DraftItem[], nota: string, orderId: number, 
 
   </div>
 </body>
-</html>`;
-}
-
-/* ─── Budget / Presupuesto PDF ──────────────────────────── */
-export function buildPresupuestoPdfHtml(
-  cliente: Cliente | null,
-  items: any[],
-  nota: string,
-  presupuestoId: number,
-  creadoPor?: string,
-): string {
-  const now = new Date().toLocaleString('es-VE');
-
-  const rows = items.map((item, i) => {
-    const code = item.producto ? item.producto.codigo_interno : item.codigo_producto;
-    const desc = item.producto ? item.producto.descripcion : item.descripcion;
-    return `
-      <tr>
-        <td class="col-code">${code}</td>
-        <td class="col-desc">${desc}</td>
-        <td class="col-num">${item.cantidad}</td>
-        <td class="col-money">$${item.precio_unitario.toFixed(2)}</td>
-        <td class="col-money-bold">$${(item.cantidad * item.precio_unitario).toFixed(2)}</td>
-      </tr>`;
-  }).join('');
-
-  const totalUsd = items
-    .reduce((acc, item) => acc + item.cantidad * item.precio_unitario, 0)
-    .toFixed(2);
-
-  /* ── Client info card ── */
-  const clienteCard = cliente
-    ? `
-      <div class="meta-card" style="flex:1.2;">
-        <span class="meta-label">Cliente</span>
-        <span class="meta-value">${cliente.nombre}</span>
-        <span class="meta-label" style="margin-top:4px;">RIF / CI</span>
-        <span class="meta-value">${cliente.rif}</span>
-        ${cliente.telefono ? `<span class="meta-label" style="margin-top:4px;">Teléfono</span><span class="meta-value">${cliente.telefono}</span>` : ''}
-        ${cliente.direccion ? `<span class="meta-label" style="margin-top:4px;">Dirección</span><span class="meta-value">${cliente.direccion}</span>` : ''}
-      </div>`
-    : `
-      <div class="meta-card" style="flex:1.2;">
-        <span class="meta-label">Cliente</span>
-        <span class="meta-value">Cliente Casual</span>
-      </div>`;
-
-  return `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<style>${SHARED_STYLES}</style>
-</head>
-<body>
-  <div class="ticket">
-
-    <div class="header">
-      <div class="brand">
-        <span class="brand-name">EL SERRUCHO</span>
-        <span class="brand-accent"></span>
-      </div>
-      <div class="doc-badge">PRESUPUESTO #${String(presupuestoId).padStart(5, '0')}</div>
-    </div>
-
-    <div class="meta-grid">
-      ${clienteCard}
-      <div class="meta-card">
-        <span class="meta-label">Fecha de Emisión</span>
-        <span class="meta-value">${now}</span>
-        ${creadoPor ? `<span class="meta-label" style="margin-top:4px;">Creado por</span><span class="meta-value">${creadoPor}</span>` : ''}
-      </div>
-    </div>
-
-    ${nota ? `
-    <div class="note-box">
-      <strong>Observaciones</strong>
-      ${nota}
-    </div>` : ''}
-
-    <table>
-      <thead>
-        <tr>
-          <th>Código</th>
-          <th>Descripción</th>
-          <th style="text-align:center;">Cantidad</th>
-          <th style="text-align:right;">P. Unit</th>
-          <th style="text-align:right;">Subtotal</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows}
-        <tr class="total-row">
-          <td colspan="3"></td>
-          <td class="total-label">Total USD</td>
-          <td class="total-amount">$${totalUsd}</td>
-        </tr>
-      </tbody>
-    </table>
-
-    <div class="footer">
-      <span class="footer-left">EL SERRUCHO v1.1.0</span>
-      <span class="footer-dot"></span>
-      <span class="footer-right">DOCUMENTO NO FISCAL</span>
-    </div>
-
-  </div>
-</body>
-</html>`;
-}
+</html>

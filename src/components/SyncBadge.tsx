@@ -17,13 +17,12 @@ export function SyncBadge() {
         Animated.timing(pulse, { toValue: 1,    duration: 1000, useNativeDriver: Platform.OS !== 'web' }),
       ])
     ).start();
-  }, []);
+  }, [pulse]);
 
   const { dotColor, line1, line2, tag, tagColor, isClosed, isStuck, isRecess } = getState(minutesAgo, isLoading, colors, activeCommand);
 
   const handleSync = () => {
     if (isClosed) {
-      notify('Tienda Cerrada', 'El Serrucho está fuera de su horario laboral (8am - 6pm). Los datos se actualizarán automáticamente al abrir.');
       return;
     }
 
@@ -124,6 +123,7 @@ function getState(
       tag:      'Cerrado',
       tagColor: colors.textMuted,
       isClosed: true,
+      isStuck: false,
       isRecess: false,
     };
   }
@@ -136,6 +136,7 @@ function getState(
       tag:      'Receso',
       tagColor: colors.warning,
       isClosed: false,
+      isStuck: false,
       isRecess: true,
     };
   }
@@ -147,6 +148,8 @@ function getState(
       line2:    'Conectando con Supabase',
       tag:      '…',
       tagColor: colors.textMuted,
+      isClosed: false,
+      isStuck: false,
       isRecess: false,
     };
   }
@@ -157,6 +160,8 @@ function getState(
       line2:    'No hay datos de sincronización',
       tag:      'Offline',
       tagColor: colors.danger,
+      isClosed: false,
+      isStuck: false,
       isRecess: false,
     };
   }
@@ -167,6 +172,8 @@ function getState(
       line2:    'Último cambio detectado · ahora mismo',
       tag:      'En sync',
       tagColor: colors.success,
+      isClosed: false,
+      isStuck: false,
       isRecess: false,
     };
   }
@@ -177,6 +184,8 @@ function getState(
       line2:    `Último cambio detectado · ${minutesAgo} min`,
       tag:      'En sync',
       tagColor: colors.success,
+      isClosed: false,
+      isStuck: false,
       isRecess: false,
     };
   }
@@ -190,6 +199,8 @@ function getState(
       line2:    `Sin actividad hace ${ago}`,
       tag:      'Demorada',
       tagColor: colors.warning,
+      isClosed: false,
+      isStuck: false,
       isRecess: false,
     };
   }
@@ -200,6 +211,8 @@ function getState(
     line2:    `Sin cambios desde hace ${hours}h`,
     tag:      'Sin sync',
     tagColor: colors.danger,
+    isClosed: false,
+    isStuck: false,
     isRecess: false,
   };
 }

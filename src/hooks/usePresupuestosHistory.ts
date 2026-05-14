@@ -7,6 +7,7 @@ const PAGE_SIZE = 20;
 export type PresupuestoHistoryRow = Presupuesto & {
   cliente_nombre?: string;
   items_count?: number;
+  creado_por_nombre?: string;
 };
 
 export function usePresupuestosHistory(search?: string) {
@@ -43,12 +44,32 @@ export function usePresupuestosHistory(search?: string) {
         throw error;
       }
 
-      return (data || []).map(row => ({
+      const rows = data || [];
+
+      // Batch-fetch creator names from profiles
+      const uniqueIds = [...new Set(rows.map((r: any) => r.creado_por).filter(Boolean))];
+      let profileMap: Record<string, string> = {};
+
+      if (uniqueIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, display_name')
+          .in('id', uniqueIds);
+
+        if (profiles) {
+          profileMap = Object.fromEntries(
+            profiles.map((p: any) => [p.id, p.display_name])
+          );
+        }
+      }
+
+      return rows.map(row => ({
         ...row,
         cliente_nombre: Array.isArray(row.clientes) 
           ? row.clientes[0]?.nombre 
           : (row.clientes as any)?.nombre,
         items_count: row.items_count || 0,
+        creado_por_nombre: profileMap[(row as any).creado_por] ?? undefined,
       })) as PresupuestoHistoryRow[];
     },
     initialPageParam: 0,
@@ -83,7 +104,18 @@ export function usePresupuestoWithDetails(presupuestoId: number | null) {
 
       if (detailErr) throw detailErr;
 
-      return { header, detail: detail as PresupuestoDetalle[] };
+      // Fetch creator name
+      let creado_por_nombre: string | undefined;
+      if (header.creado_por) {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('display_name')
+          .eq('id', header.creado_por)
+          .single();
+        creado_por_nombre = profileData?.display_name ?? undefined;
+      }
+
+      return { header: { ...header, creado_por_nombre }, detail: detail as PresupuestoDetalle[] };
     },
     enabled: !!presupuestoId,
   });

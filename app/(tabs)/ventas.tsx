@@ -29,7 +29,7 @@ import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useVentasInfinite, VentaHoy, VentasPeriod, useVentasSearchSummary } from '../../src/hooks/useVentasHoy';
 import { useProfitSummary } from '../../src/hooks/useProfitSummary';
 import { useVentaDetalle } from '../../src/hooks/useVentaDetalle';
-import { VentaDetalleUSD } from '../../src/lib/supabase';
+import { VentaDetalleUSD, supabase } from '../../src/lib/supabase';
 import { useUserRole } from '../../src/hooks/useUserRole';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 import Svg, { 
@@ -177,6 +177,7 @@ export default function Ventas() {
     ]);
     setRefreshing(false);
   }
+
 
   const periodStats = useMemo(() => {
     if (!summary) return { ingreso: 0, ventas: 0 };
@@ -931,7 +932,7 @@ const styles = StyleSheet.create({
   },
   docInfo: { gap: 4 },
   docNum: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold' },
-  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   docTime: { fontSize: 11, fontFamily: 'JetBrainsMono_400Regular' },
   docAmount: { fontSize: 18, fontFamily: 'JetBrainsMono_700Bold' },
   
@@ -1003,14 +1004,22 @@ const styles = StyleSheet.create({
   },
   ticketShadowWrapper: {
     borderRadius: 24,
-    // We reduce OS elevation as SVG now provides the notched shadow
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
     backgroundColor: 'transparent',
     overflow: 'visible',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 8,
+      },
+      web: {
+        boxShadow: '0px 4px 10px rgba(0,0,0,0.3)',
+      } as any,
+    }),
   },
   ticketInnerContent: {
     paddingTop: 32,

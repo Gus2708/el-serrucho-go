@@ -25,6 +25,7 @@ import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
 import { useOrdenesHistory } from '../../src/hooks/useOrdenesHistory';
+import { useUserRole } from '../../src/hooks/useUserRole';
 import { supabase } from '../../src/lib/supabase';
 import { buildPdfHtml, buildPresupuestoPdfHtml } from '../../src/utils/pdfGenerator';
 import PresupuestoView from '../../src/components/PresupuestoView';
@@ -321,18 +322,27 @@ function HistorialView({ queryClient }: { queryClient: any }) {
   const scrollRef = useRef<ScrollView>(null);
   
   const [subTab, setSubTab] = useState<'ajuste' | 'presupuesto'>('ajuste');
+  const { data: userAuth } = useUserRole();
+  const isAdmin = userAuth?.role === 'admin';
+  const currentUserId = userAuth?.profile?.id;
 
   // Realtime subscription to refresh lists automatically
   useEffect(() => {
+    console.log('Suscrito a cambios en historial (Realtime)');
+    
     const channel = supabase
-      .channel('historial-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'presupuestos' }, () => {
-        queryClient.invalidateQueries({ queryKey: ['presupuestos-history'] });
+      .channel('historial-changes-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'presupuestos' }, (payload) => {
+        console.log('Cambio detectado en presupuestos:', payload.eventType);
+        queryClient.refetchQueries({ queryKey: ['presupuestos-history'], type: 'all' });
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ordenes_cambio' }, () => {
-        queryClient.invalidateQueries({ queryKey: ['ordenes-history'] });
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ordenes_cambio' }, (payload) => {
+        console.log('Cambio detectado en ordenes_cambio:', payload.eventType);
+        queryClient.refetchQueries({ queryKey: ['ordenes-history'], type: 'all' });
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') console.log('Canal Realtime activo: historial-changes-sync');
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -391,7 +401,14 @@ function HistorialView({ queryClient }: { queryClient: any }) {
           .eq('orden_id', o.id);
 
         if (error) throw error;
-        html = buildPdfHtml(items as any[], o.nota, o.id);
+        // Fetch creator name
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('display_name')
+          .eq('id', o.creado_por)
+          .single();
+        const creadoPor = profileData?.display_name || undefined;
+        html = buildPdfHtml(items as any[], o.nota, o.id, creadoPor);
       } else {
         const { data: header, error: headerErr } = await supabase
           .from('presupuestos')
@@ -409,7 +426,17 @@ function HistorialView({ queryClient }: { queryClient: any }) {
         if (detailErr) throw detailErr;
 
         const clienteObj = Array.isArray(header.clientes) ? header.clientes[0] : header.clientes;
-        html = buildPresupuestoPdfHtml(clienteObj as any, items as any[], header.nota || '', header.id);
+        // Fetch creator name
+        let creadoPorNombre: string | undefined;
+        if (header.creado_por) {
+          const { data: pData } = await supabase
+            .from('profiles')
+            .select('display_name')
+            .eq('id', header.creado_por)
+            .single();
+          creadoPorNombre = pData?.display_name || undefined;
+        }
+        html = buildPresupuestoPdfHtml(clienteObj as any, items as any[], header.nota || '', header.id, creadoPorNombre);
       }
       
       if (Platform.OS === 'web') {
@@ -439,6 +466,69 @@ function HistorialView({ queryClient }: { queryClient: any }) {
     } finally {
       setIsGeneratingPdf(null);
     }
+  };
+
+  const handleDelete = async (o: any) => {
+    confirm({
+      title: 'Eliminar registro',
+      message: `¿Estás seguro de que deseas eliminar este ${subTab === 'ajuste' ? 'ajuste' : 'presupuesto'}? Esta acción no se puede deshacer.`,
+      confirmText: 'Eliminar',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          if (subTab === 'ajuste') {
+            // Delete child items first
+            const { error: itemsError, count: itemsCount } = await supabase
+              .from('ordenes_cambio_items')
+              .delete({ count: 'exact' })
+              .eq('orden_id', o.id);
+            if (itemsError) throw itemsError;
+            console.log(`Deleted ${itemsCount} items for orden ${o.id}`);
+
+            // Delete parent header
+            const { error: headerError, count: headerCount } = await supabase
+              .from('ordenes_cambio')
+              .delete({ count: 'exact' })
+              .eq('id', o.id);
+            if (headerError) throw headerError;
+
+            if (headerCount === 0) {
+              throw new Error('No se pudo eliminar: sin permisos para este registro.');
+            }
+
+            // Force immediate refetch
+            await queryClient.refetchQueries({ queryKey: ['ordenes-history'], type: 'all' });
+          } else {
+            // Delete child details first
+            const { error: itemsError, count: itemsCount } = await supabase
+              .from('presupuestos_detalle')
+              .delete({ count: 'exact' })
+              .eq('presupuesto_id', o.id);
+            if (itemsError) throw itemsError;
+            console.log(`Deleted ${itemsCount} detail rows for presupuesto ${o.id}`);
+
+            // Delete parent header
+            const { error: headerError, count: headerCount } = await supabase
+              .from('presupuestos')
+              .delete({ count: 'exact' })
+              .eq('id', o.id);
+            if (headerError) throw headerError;
+
+            if (headerCount === 0) {
+              throw new Error('No se pudo eliminar: sin permisos para este registro.');
+            }
+
+            // Force total reset for infinite query then refetch
+            queryClient.removeQueries({ queryKey: ['presupuestos-history'] });
+            await refetchPresupuestos();
+          }
+            // notify('Éxito', 'Registro eliminado correctamente');
+        } catch (err: any) {
+          console.error('Error eliminando registro:', err);
+          notify('Error', err.message || 'No se pudo eliminar el registro');
+        }
+      },
+    });
   };
 
   // Guardar scroll
@@ -530,6 +620,7 @@ function HistorialView({ queryClient }: { queryClient: any }) {
                 <Text style={[styles.histMeta, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
                   {dateStr}
                   {'  ·  '}{itemCount} ítem{itemCount !== 1 ? 's' : ''}
+                  {(o as any).creado_por_nombre ? `  ·  ${(o as any).creado_por_nombre}` : ''}
                 </Text>
 
                 {o.nota ? (
@@ -538,26 +629,48 @@ function HistorialView({ queryClient }: { queryClient: any }) {
                   </Text>
                 ) : null}
 
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.pdfBtn, 
-                    { borderColor: colors.primary }, 
-                    (pressed || isGeneratingPdf === o.id) && { opacity: 0.7 }
-                  ]}
-                  onPress={() => handleViewPDF(o)}
-                  disabled={isGeneratingPdf !== null}
-                >
-                  {isGeneratingPdf === o.id ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
-                  ) : (
-                    <>
-                      <Feather name="file-text" size={14} color={colors.primary} />
-                      <Text style={[styles.pdfBtnText, { color: colors.primary }]}>
-                        {o.pdf_url ? 'Ver PDF' : 'Imprimir PDF'}
-                      </Text>
-                    </>
+                <View style={styles.histFooter}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.pdfBtn, 
+                      { borderColor: colors.primary }, 
+                      (pressed || isGeneratingPdf === o.id) && { opacity: 0.7 }
+                    ]}
+                    onPress={() => handleViewPDF(o)}
+                    disabled={isGeneratingPdf !== null}
+                  >
+                    {isGeneratingPdf === o.id ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <>
+                        <Feather name="file-text" size={14} color={colors.primary} />
+                        <Text style={[styles.pdfBtnText, { color: colors.primary }]}>
+                          {o.pdf_url ? 'Ver PDF' : 'Imprimir PDF'}
+                        </Text>
+                      </>
+                    )}
+                  </Pressable>
+
+                  {/* Delete button — admin: all, employee: own items only */}
+                  {(isAdmin || currentUserId === o.creado_por) && (
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.deleteBtn,
+                        { borderColor: colors.border },
+                        pressed && { backgroundColor: colors.danger + '15', borderColor: colors.danger + '40' }
+                      ]}
+                      onPress={() => handleDelete(o)}
+                    >
+                      {({ pressed }) => (
+                        <Feather 
+                          name="trash-2" 
+                          size={14} 
+                          color={pressed ? colors.danger : colors.textMuted} 
+                        />
+                      )}
+                    </Pressable>
                   )}
-                </Pressable>
+                </View>
               </View>
             );
           })}
@@ -784,6 +897,19 @@ const styles = StyleSheet.create({
     marginTop:         2,
   },
   pdfBtnText: { fontSize: 12, fontFamily: 'JetBrainsMono_700Bold' },
+  histFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  deleteBtn: {
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 0.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   subTabRow: {
     flexDirection: 'row',

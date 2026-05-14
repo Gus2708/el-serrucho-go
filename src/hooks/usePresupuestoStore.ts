@@ -101,6 +101,14 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('No authenticado');
 
+      // Get creator's display name
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('display_name')
+        .eq('id', user.id)
+        .single();
+      const creadoPor = profileData?.display_name || undefined;
+
       const total_usd = items.reduce((acc, item) => acc + (item.cantidad * item.precio_unitario), 0);
 
       // Insertar cabecera
@@ -134,7 +142,7 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
       if (detalleError) throw detalleError;
 
       // 3. Generate HTML
-      const html = buildPresupuestoPdfHtml(cliente, items, nota || '', presupuesto.id);
+      const html = buildPresupuestoPdfHtml(cliente, items, nota || '', presupuesto.id, creadoPor);
 
       if (Platform.OS === 'web') {
         // Web: return the html so the UI can decide how to handle the print/delivery

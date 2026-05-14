@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo, memo } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
   View,
@@ -42,8 +42,8 @@ export default function Reportes() {
   const { width: screenW } = useWindowDimensions();
 
   const [period,    setPeriod]    = useState<Period>(30);
-  const [chartMode, setChartMode] = useState<ChartMode>('ganancia');
-  const { data: roleData } = useUserRole();
+  const [chartMode, setChartMode] = useState<ChartMode>('items');
+  const { data: roleData, isLoading: loadingRole } = useUserRole();
   const isAdmin = roleData?.role === 'admin';
 
   // Force 'items' mode for employees
@@ -66,17 +66,35 @@ export default function Reportes() {
     }, [scrollOffsetReportes])
   );
 
-  // Guardar scroll al mover
-  const handleScroll = (event: any) => {
+  const { data: daily = [], isLoading: loadingDaily } = useProfitDaily(period);
+
+  // Memoize total calculations to avoid heavy lifting on every render
+  // Renamed to reportTotals to avoid any potential collision
+  const reportTotals = useMemo(() => daily.reduce(
+    (acc, d) => ({
+      ingreso:  acc.ingreso  + (d.ingreso_bruto || 0),
+      ganancia: acc.ganancia + (d.ganancia || 0),
+      ventas:   acc.ventas   + (d.num_ventas || 0),
+      items:    acc.items    + (d.num_items || 0),
+    }),
+    { ingreso: 0, ganancia: 0, ventas: 0, items: 0 }
+  ), [daily]);
+
+  // Memoize sorting criteria
+  const topOrderBy = useMemo(() => 
+    chartMode === 'items' ? 'unidades_vendidas' : chartMode === 'ganancia' ? 'ganancia' : 'ingreso',
+    [chartMode]
+  );
+
+  const { data: topProductos = [], isLoading: loadingTop  }  = useTopProductos(topOrderBy, period);
+
+  // Save scroll only on end to avoid lag during scrolling
+  const handleScrollEnd = (event: any) => {
     const offset = event.nativeEvent.contentOffset.y;
     if (offset >= 0) {
       setScrollOffsetReportes(offset);
     }
   };
-
-  const { data: daily      = [], isLoading: loadingDaily }   = useProfitDaily(period);
-  const { data: topProductos = [], isLoading: loadingTop  }  = useTopProductos();
-  const { data: velocidad,       isLoading: loadingVel   }   = useVelocidad();
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -84,16 +102,13 @@ export default function Reportes() {
     setRefreshing(false);
   }
 
-  // Compute totals from the daily slice
-  const totals = daily.reduce(
-    (acc, d) => ({
-      ingreso:  acc.ingreso  + d.ingreso_bruto,
-      ganancia: acc.ganancia + d.ganancia,
-      ventas:   acc.ventas   + d.num_ventas,
-      items:    acc.items    + (d.num_items || 0),
-    }),
-    { ingreso: 0, ganancia: 0, ventas: 0, items: 0 }
-  );
+  if (loadingRole) {
+    return (
+      <View style={[styles.root, { backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
@@ -103,8 +118,9 @@ export default function Reportes() {
         ref={scrollRef}
         contentContainerStyle={[styles.scroll, isDesktop && styles.scrollDesktop]}
         showsVerticalScrollIndicator={false}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
+        onMomentumScrollEnd={handleScrollEnd}
+        onScrollEndDrag={handleScrollEnd}
+        scrollEventThrottle={32}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -119,52 +135,57 @@ export default function Reportes() {
         </View>
 
         {/* Period selector */}
-        <View style={[styles.row, styles.padH]}>
-          {PERIODS.map(p => {
-            const active = period === p.value;
-            return (
-              <Pressable
-                key={p.value}
-                style={({ pressed }) => [
-                  styles.periodBtn,
-                  {
-                    backgroundColor: active ? colors.primary  : colors.surfaceAlt,
-                    borderColor:     active ? colors.primary  : colors.border,
-                  },
-                  pressed && { opacity: 0.75 },
-                ]}
-                onPress={() => setPeriod(p.value)}
-              >
-                <Text style={[styles.periodText, { color: active ? colors.onPrimary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
-                  {p.label}
-                </Text>
-              </Pressable>
-            );
-          })}
+        <View style={[styles.selectorsRow, styles.padH]}>
+          <View style={styles.periodGroup}>
+            {PERIODS.map(p => {
+              const active = period === p.value;
+              return (
+                <Pressable
+                  key={p.value}
+                  style={({ pressed }) => [
+                    styles.selectorBtn,
+                    {
+                      backgroundColor: active ? colors.primary  : colors.surfaceAlt,
+                      borderColor:     active ? colors.primary  : colors.border,
+                    },
+                    pressed && { opacity: 0.75 },
+                  ]}
+                  onPress={() => setPeriod(p.value)}
+                >
+                  <Text style={[styles.selectorText, { color: active ? colors.onPrimary : colors.textMuted }]}>
+                    {p.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
 
           {/* Chart mode toggle */}
-          <View style={styles.spacer} />
-          {isAdmin && (['ganancia', 'ingreso'] as ChartMode[]).map(m => {
-            const active = chartMode === m;
-            return (
-              <Pressable
-                key={m}
-                style={({ pressed }) => [
-                  styles.periodBtn,
-                  {
-                    backgroundColor: active ? colors.surfaceAlt : 'transparent',
-                    borderColor:     active ? colors.border      : 'transparent',
-                  },
-                  pressed && { opacity: 0.75 },
-                ]}
-                onPress={() => setChartMode(m)}
-              >
-                <Text style={[styles.periodText, { color: active ? colors.text : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
-                  {m === 'ganancia' ? 'Ganancia' : 'Ingresos'}
-                </Text>
-              </Pressable>
-            );
-          })}
+          <View style={styles.modeGroup}>
+            {(['ganancia', 'ingreso', 'items'] as ChartMode[]).map(m => {
+              const active = chartMode === m;
+              if (!isAdmin && m !== 'items') return null;
+
+              return (
+                <Pressable
+                  key={m}
+                  style={({ pressed }) => [
+                    styles.selectorBtn,
+                    {
+                      backgroundColor: active ? colors.surfaceAlt : 'transparent',
+                      borderColor:     active ? colors.border      : 'transparent',
+                    },
+                    pressed && { opacity: 0.75 },
+                  ]}
+                  onPress={() => setChartMode(m)}
+                >
+                  <Text style={[styles.selectorText, { color: active ? colors.text : colors.textMuted }]}>
+                    {m === 'ganancia' ? 'Ganancia' : m === 'ingreso' ? 'Ingresos' : 'Unidades'}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
 
         {/* Summary row */}
@@ -172,25 +193,29 @@ export default function Reportes() {
           <View style={[styles.summaryRow, styles.padH]}>
             {isAdmin ? (
               <>
-                <SummaryPill label="Ingresos"  value={formatUSD(totals.ingreso)}  color={colors.text}    />
-                <SummaryPill label="Ganancia"  value={formatUSD(totals.ganancia)} color={totals.ganancia >= 0 ? colors.primary : colors.danger} />
+                {chartMode === 'items' ? (
+                  <SummaryPill label="Items Vendidos" value={`${reportTotals.items}`} color={colors.text} />
+                ) : (
+                  <SummaryPill label="Ingresos"  value={formatUSD(reportTotals.ingreso)}  color={colors.text}    />
+                )}
+                <SummaryPill label="Ganancia"  value={formatUSD(reportTotals.ganancia)} color={reportTotals.ganancia >= 0 ? colors.primary : colors.danger} />
               </>
             ) : (
               <>
-                <SummaryPill label="Items Vendidos" value={`${totals.items}`} color={colors.text} />
-                <SummaryPill label="Promedio Item/Venta" value={(totals.items / (totals.ventas || 1)).toFixed(1)} color={colors.primary} />
+                <SummaryPill label="Items Vendidos" value={`${reportTotals.items}`} color={colors.text} />
+                <SummaryPill label="Promedio Item/Venta" value={(reportTotals.items / (reportTotals.ventas || 1)).toFixed(1)} color={colors.primary} />
               </>
             )}
-            <SummaryPill label="Facturas"  value={`${totals.ventas}`}         color={colors.text}    />
+            <SummaryPill label="Facturas"  value={`${reportTotals.ventas}`}         color={colors.text}    />
           </View>
         )}
 
         {/* Top 4 Products High-Impact Chart */}
         <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
-          Productos Estrella (Top 4)
+          {chartMode === 'items' ? 'Productos Más Vendidos (Top 4)' : chartMode === 'ganancia' ? 'Productos Más Rentables (Top 4)' : 'Productos Estrella (Top 4)'}
         </Text>
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border, padding: 0 }]}>
-          <TopProductsDonut data={topProductos} loading={loadingTop} useUnits={!isAdmin} />
+          <TopProductsDonut data={topProductos} loading={loadingTop} mode={chartMode} />
         </View>
 
         {/* Main Trends Chart */}
@@ -208,7 +233,7 @@ export default function Reportes() {
 
         {/* Top 20 products */}
         <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
-          Top productos · últimos 30 días
+          Top por {chartMode === 'items' ? 'unidades' : chartMode === 'ganancia' ? 'ganancia' : 'ingresos'} · últimos {period} días
         </Text>
         {loadingTop
           ? <View style={styles.loadingRow}><ActivityIndicator color={colors.primary} /></View>
@@ -219,35 +244,13 @@ export default function Reportes() {
             </View>
           )
           : topProductos.map((p, i) => (
-            <View
-              key={p.codigo_producto}
-              style={[styles.productRow, { borderColor: colors.border }]}
-            >
-              <Text style={[styles.rank, { color: colors.textMuted }]}>{i + 1}</Text>
-              <View style={styles.productInfo}>
-                <Text style={[styles.productName, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
-                  {p.descripcion}
-                </Text>
-                <Text style={[styles.productMeta, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
-                  {p.unidades_vendidas} uds vendidas
-                </Text>
-              </View>
-              <View style={styles.productAmounts}>
-                {isAdmin ? (
-                  <>
-                    <CurrencyText amount={p.ingreso}   style={styles.amountText}      />
-                    <CurrencyText amount={p.ganancia}  style={styles.gananciaText}
-                      primary={p.ganancia >= 0}
-                      muted={p.ganancia < 0}
-                    />
-                  </>
-                ) : (
-                  <Text style={[styles.amountText, { color: colors.text }]}>
-                    {p.unidades_vendidas} uds
-                  </Text>
-                )}
-              </View>
-            </View>
+            <ProductRow 
+              key={p.codigo_producto} 
+              product={p} 
+              index={i} 
+              mode={chartMode} 
+              isAdmin={isAdmin}
+            />
           ))
         }
 
@@ -257,7 +260,7 @@ export default function Reportes() {
   );
 }
 
-function SummaryPill({ label, value, color }: { label: string; value: string; color: string }) {
+const SummaryPill = memo(({ label, value, color }: { label: string; value: string; color: string }) => {
   const { colors } = useTheme();
   return (
     <View style={[styles.pill, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -265,7 +268,39 @@ function SummaryPill({ label, value, color }: { label: string; value: string; co
       <Text style={[styles.pillValue, { color }]} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
     </View>
   );
-}
+});
+
+const ProductRow = memo(({ product, index, mode, isAdmin }: { product: any; index: number; mode: ChartMode; isAdmin: boolean }) => {
+  const { colors } = useTheme();
+  return (
+    <View style={[styles.productRow, { borderColor: colors.border }]}>
+      <Text style={[styles.rank, { color: colors.textMuted }]}>{index + 1}</Text>
+      <View style={styles.productInfo}>
+        <Text style={[styles.productName, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
+          {product.descripcion}
+        </Text>
+        <Text style={[styles.productMeta, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
+          {product.unidades_vendidas} uds vendidas
+        </Text>
+      </View>
+      <View style={styles.productAmounts}>
+        {isAdmin ? (
+          <>
+            <CurrencyText amount={product.ingreso}   style={styles.amountText}      />
+            <CurrencyText amount={product.ganancia}  style={styles.gananciaText}
+              primary={product.ganancia >= 0}
+              muted={product.ganancia < 0}
+            />
+          </>
+        ) : (
+          <Text style={[styles.amountText, { color: colors.text }]}>
+            {product.unidades_vendidas} uds
+          </Text>
+        )}
+      </View>
+    </View>
+  );
+});
 
 const styles = StyleSheet.create({
   root:   { flex: 1 },
@@ -284,17 +319,20 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 26, fontFamily: 'JetBrainsMono_700Bold' },
 
-  row:     { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  selectorsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   padH:    { paddingHorizontal: 16 },
-  spacer:  { flex: 1 },
+  periodGroup: { flexDirection: 'row', gap: 4 },
+  modeGroup:   { flexDirection: 'row', gap: 4, flex: 1, justifyContent: 'flex-end' },
 
-  periodBtn: {
+  selectorBtn: {
     borderRadius:      999,
     borderWidth:       0.5,
     paddingVertical:   6,
-    paddingHorizontal: 14,
+    paddingHorizontal: 10,
+    minWidth:          40,
+    alignItems:        'center',
   },
-  periodText: { fontSize: 12, fontFamily: 'JetBrainsMono_500Medium' },
+  selectorText: { fontSize: 11, fontFamily: 'JetBrainsMono_500Medium' },
 
   summaryRow: {
     flexDirection: 'row',

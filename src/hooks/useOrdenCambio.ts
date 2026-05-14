@@ -73,8 +73,16 @@ export const useOrdenCambio = create<OrdenStore>((set, get) => ({
 
       if (itemsError) throw itemsError;
 
-      // 3. Generate HTML
-      const html = buildPdfHtml(items, nota, orden.id);
+      // 3. Get the creator's display name
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('display_name')
+        .eq('id', userId)
+        .single();
+      const creadoPor = profileData?.display_name || undefined;
+
+      // 4. Generate HTML
+      const html = buildPdfHtml(items, nota, orden.id, creadoPor);
 
       if (Platform.OS === 'web') {
         // Web: return the html so the UI can decide how to handle the print/delivery
