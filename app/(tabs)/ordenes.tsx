@@ -53,12 +53,17 @@ export default function Ordenes() {
 
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Órdenes y Presupuestos</Text>
-        <View style={[styles.tabRow]}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false} 
+          contentContainerStyle={styles.tabRow}
+          style={styles.tabRowWrapper}
+        >
           <TabBtn label="Ajuste" active={tab === 'ajuste'} onPress={() => setTab('ajuste')} />
           <TabBtn label="Presupuesto" active={tab === 'presupuesto'} onPress={() => setTab('presupuesto')} />
           <TabBtn label="Fallas" active={tab === 'fallas'} onPress={() => setTab('fallas')} />
           <TabBtn label="Historial" active={tab === 'historial'} onPress={() => setTab('historial')} />
-        </View>
+        </ScrollView>
       </View>
 
       {tab === 'ajuste' && <BorradorView router={router} />}
@@ -549,15 +554,23 @@ function HistorialView({ queryClient }: { queryClient: any }) {
   return (
     <View style={styles.flex}>
       {/* Sub-tabs for Historial */}
-      <View style={[styles.subTabRow, { borderBottomColor: colors.border }]}>
+      <View style={[styles.subTabContainer, { backgroundColor: '#0A0A0A', borderColor: colors.border }]}>
         <Pressable 
-          style={[styles.subTabBtn, subTab === 'ajuste' && { backgroundColor: colors.surface, borderColor: colors.border }]} 
+          style={({ pressed }) => [
+            styles.subTabBtn, 
+            subTab === 'ajuste' && { backgroundColor: colors.surface, borderColor: '#333' },
+            pressed && { opacity: 0.8 }
+          ]} 
           onPress={() => setSubTab('ajuste')}
         >
           <Text style={[styles.subTabText, { color: subTab === 'ajuste' ? colors.primary : colors.textMuted }]}>Ajustes</Text>
         </Pressable>
         <Pressable 
-          style={[styles.subTabBtn, subTab === 'presupuesto' && { backgroundColor: colors.surface, borderColor: colors.border }]} 
+          style={({ pressed }) => [
+            styles.subTabBtn, 
+            subTab === 'presupuesto' && { backgroundColor: colors.surface, borderColor: '#333' },
+            pressed && { opacity: 0.8 }
+          ]} 
           onPress={() => setSubTab('presupuesto')}
         >
           <Text style={[styles.subTabText, { color: subTab === 'presupuesto' ? colors.primary : colors.textMuted }]}>Presupuestos</Text>
@@ -690,10 +703,15 @@ function TabBtn({ label, active, onPress }: { label: string; active: boolean; on
   const { colors } = useTheme();
   return (
     <Pressable
-      style={({ pressed }) => [styles.tabBtn, active && { borderBottomColor: colors.primary, borderBottomWidth: 2 }, pressed && { opacity: 0.7 }]}
+      style={({ pressed }) => [
+        styles.tabBtn, 
+        active && { borderBottomColor: colors.primary, borderBottomWidth: 2 }, 
+        pressed && { backgroundColor: colors.primary + '10' }
+      ]}
       onPress={onPress}
+      hitSlop={8}
     >
-      <Text style={[styles.tabText, { color: active ? colors.primary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
+      <Text style={[styles.tabText, { color: active ? colors.primary : colors.textMuted }]}>
         {label}
       </Text>
     </Pressable>
@@ -710,15 +728,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop:        12,
   },
-  title: { fontSize: 26, fontFamily: 'JetBrainsMono_700Bold', marginBottom: 12 },
+  title: { fontSize: 26, fontFamily: 'JetBrainsMono_700Bold', marginBottom: 20 },
 
+  tabRowWrapper: {
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(128,128,128,0.2)',
+  },
   tabRow: {
     flexDirection: 'row',
-    gap:           24,
-    borderBottomWidth: 0.5,
+    gap:           20,
+    paddingHorizontal: 16,
   },
   tabBtn: {
     paddingBottom: 10,
+    paddingHorizontal: 4,
+    borderRadius: 4,
   },
   tabText: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold' },
 
@@ -895,9 +919,9 @@ const styles = StyleSheet.create({
     alignSelf:      'flex-start',
     borderWidth:    0.5,
     borderRadius:   999,
-    paddingVertical:   5,
-    paddingHorizontal: 12,
-    marginTop:         2,
+    paddingVertical:   6,
+    paddingHorizontal: 14,
+    marginTop:         4,
   },
   pdfBtnText: { fontSize: 12, fontFamily: 'JetBrainsMono_700Bold' },
   histFooter: {
@@ -914,19 +938,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  subTabRow: {
+  subTabContainer: {
     flexDirection: 'row',
-    padding: 8,
-    gap: 8,
-    borderBottomWidth: 0.5,
+    marginHorizontal: 16,
+    marginVertical: 12,
+    padding: 4,
+    borderRadius: 14,
+    gap: 4,
+    borderWidth: 0.5,
   },
   subTabBtn: {
     flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 10,
+    borderRadius: 10,
     borderWidth: 0.5,
     borderColor: 'transparent',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   subTabText: {
     fontSize: 13,

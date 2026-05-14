@@ -90,26 +90,42 @@ export default function PresupuestoView({ router }: { router: any }) {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* Top Actions */}
-        <View style={styles.actionsRow}>
-          <Pressable
-            style={({ pressed }) => [styles.actionBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }, pressed && { opacity: 0.75 }]}
-            onPress={() => router.push('/seleccionar-cliente')}
+        <View style={{ marginBottom: 8 }}>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.actionsRow}
           >
-            <Feather name={cliente ? 'user-check' : 'user-plus'} size={18} color={colors.primary} />
-            <Text style={[styles.actionBtnText, { color: colors.primary }]}>
-              {cliente ? cliente.nombre : 'Asignar Cliente'}
-            </Text>
-          </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.actionBtn, 
+                { borderColor: colors.primary, backgroundColor: colors.primaryFaded }, 
+                pressed && { backgroundColor: colors.primary + '20', opacity: 0.85 }
+              ]}
+              onPress={() => router.push('/seleccionar-cliente')}
+              hitSlop={8}
+            >
+              <Feather name={cliente ? 'user-check' : 'user-plus'} size={18} color={colors.primary} />
+              <Text style={[styles.actionBtnText, { color: colors.primary }]}>
+                {cliente ? cliente.nombre : 'Asignar Cliente'}
+              </Text>
+            </Pressable>
 
-          <Pressable
-            style={({ pressed }) => [styles.actionBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }, pressed && { opacity: 0.75 }]}
-            onPress={() => router.push('/seleccionar-productos')}
-          >
-            <Feather name="plus" size={18} color={colors.primary} />
-            <Text style={[styles.actionBtnText, { color: colors.primary }]}>
-              Agregar Productos
-            </Text>
-          </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.actionBtn, 
+                { borderColor: colors.primary, backgroundColor: colors.primaryFaded }, 
+                pressed && { backgroundColor: colors.primary + '20', opacity: 0.85 }
+              ]}
+              onPress={() => router.push('/seleccionar-productos')}
+              hitSlop={8}
+            >
+              <Feather name="plus" size={18} color={colors.primary} />
+              <Text style={[styles.actionBtnText, { color: colors.primary }]}>
+                Agregar Productos
+              </Text>
+            </Pressable>
+          </ScrollView>
         </View>
 
         {items.length === 0 ? (
@@ -140,8 +156,8 @@ export default function PresupuestoView({ router }: { router: any }) {
                     </View>
                     <Pressable
                       onPress={() => removeItem(item.producto.codigo_interno)}
-                      hitSlop={8}
-                      style={({ pressed }) => [styles.removeBtn, pressed && { opacity: 0.6 }]}
+                      hitSlop={12}
+                      style={({ pressed }) => [styles.removeBtn, pressed && { opacity: 0.5, backgroundColor: colors.border + '33', borderRadius: 4 }]}
                     >
                       <Feather name="x" size={16} color={colors.textDim} />
                     </Pressable>
@@ -153,7 +169,12 @@ export default function PresupuestoView({ router }: { router: any }) {
                       <View style={styles.qtyValueWrapper}>
                         <Pressable 
                           onPress={() => updateItemQuantity(item.producto.codigo_interno, Math.max(1, item.cantidad - 1))}
-                          style={({ pressed }) => [styles.qtyBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, pressed && { opacity: 0.7 }]}
+                          style={({ pressed }) => [
+                            styles.qtyBtn, 
+                            { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, 
+                            pressed && { backgroundColor: colors.border + '44' }
+                          ]}
+                          hitSlop={6}
                         >
                           <Feather name="minus" size={14} color={colors.text} />
                         </Pressable>
@@ -173,7 +194,12 @@ export default function PresupuestoView({ router }: { router: any }) {
 
                         <Pressable 
                           onPress={() => updateItemQuantity(item.producto.codigo_interno, item.cantidad + 1)}
-                          style={({ pressed }) => [styles.qtyBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, pressed && { opacity: 0.7 }]}
+                          style={({ pressed }) => [
+                            styles.qtyBtn, 
+                            { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, 
+                            pressed && { backgroundColor: colors.border + '44' }
+                          ]}
+                          hitSlop={6}
                         >
                           <Feather name="plus" size={14} color={colors.text} />
                         </Pressable>
@@ -254,17 +280,18 @@ const styles = StyleSheet.create({
   scroll: { paddingTop: 12, gap: 8 },
   actionsRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginHorizontal: 16,
-    marginBottom: 8,
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingBottom: 4,
   },
   actionBtn: {
-    flex: 1,
+    minWidth: 160,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
     paddingVertical: 14,
+    paddingHorizontal: 16,
     borderRadius: 12,
     borderWidth: 1,
     borderStyle: 'dashed',

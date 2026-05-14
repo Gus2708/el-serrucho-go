@@ -858,9 +858,9 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
 const styles = StyleSheet.create({
   root: { flex: 1 },
   scroll: { paddingBottom: 110 },
-  header: { paddingHorizontal: 16, paddingTop: 12, marginBottom: 16 },
+  header: { paddingHorizontal: 16, paddingTop: 12, marginBottom: 20 },
   headerSub: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },
-  title: { fontSize: 26, fontFamily: 'JetBrainsMono_700Bold' },
+  title: { fontSize: 26, fontFamily: 'JetBrainsMono_700Bold', marginBottom: 4 },
   dateContext: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium' },
   subtitle: { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular' },
 

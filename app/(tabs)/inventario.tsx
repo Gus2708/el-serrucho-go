@@ -202,9 +202,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingTop:     12,
-    paddingBottom:  10,
   },
-  title: { fontSize: 26, fontFamily: 'JetBrainsMono_700Bold' },
+  title: { fontSize: 26, fontFamily: 'JetBrainsMono_700Bold', marginBottom: 20 },
   count: { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular' },
 
   toolbarDesktop: {

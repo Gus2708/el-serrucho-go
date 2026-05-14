@@ -168,13 +168,13 @@ export default function FallasView() {
             ]}
           >
             <Pressable 
-              hitSlop={8}
-              style={styles.checkBtn}
+              hitSlop={12}
+              style={({ pressed }) => [styles.checkBtn, pressed && { opacity: 0.7, transform: [{ scale: 0.95 }] }]}
               onPress={() => togglePedido({ id: falla.id, currentStatus: falla.pedido })}
             >
               <Feather 
                 name={falla.pedido ? "check-square" : "square"} 
-                size={20} 
+                size={22} 
                 color={falla.pedido ? colors.primary : colors.textDim} 
               />
             </Pressable>
@@ -195,11 +195,11 @@ export default function FallasView() {
             </View>
 
             <Pressable
-              hitSlop={8}
-              style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.5 }]}
+              hitSlop={12}
+              style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.5, backgroundColor: colors.danger + '22', borderRadius: 6 }]}
               onPress={() => handleDelete(falla.id)}
             >
-              <Feather name="trash-2" size={16} color={colors.danger + 'AA'} />
+              <Feather name="trash-2" size={16} color={colors.danger} />
             </Pressable>
           </View>
         ))}
