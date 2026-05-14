@@ -18,7 +18,7 @@ async function fetchOrdenes(): Promise<OrdenConItems[]> {
     .from('ordenes_cambio')
     .select(`
       id, creado_por, nota, status, pdf_url, creado_en,
-      ordenes_cambio_items(id)
+      item_count
     `)
     .order('creado_en', { ascending: false })
     .limit(50);
@@ -32,6 +32,6 @@ async function fetchOrdenes(): Promise<OrdenConItems[]> {
     status:     o.status,
     pdf_url:    o.pdf_url,
     creado_en:  o.creado_en,
-    item_count: Array.isArray(o.ordenes_cambio_items) ? o.ordenes_cambio_items.length : 0,
+    item_count: o.item_count || 0,
   }));
 }

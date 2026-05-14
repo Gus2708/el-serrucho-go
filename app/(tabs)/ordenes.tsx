@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Linking,
   Platform,
+  RefreshControl,
 } from 'react-native';
 import { notify, confirm } from '../../src/lib/notify';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,32 +26,41 @@ import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
 import { useOrdenesHistory } from '../../src/hooks/useOrdenesHistory';
 import { supabase } from '../../src/lib/supabase';
-import { buildPdfHtml } from '../../src/utils/pdfGenerator';
+import { buildPdfHtml, buildPresupuestoPdfHtml } from '../../src/utils/pdfGenerator';
+import PresupuestoView from '../../src/components/PresupuestoView';
+import { usePresupuestosHistory } from '../../src/hooks/usePresupuestosHistory';
 
-type Tab = 'borrador' | 'historial';
+type Tab = 'ajuste' | 'presupuesto' | 'historial';
 
 export default function Ordenes() {
   const { colors, formatUSD } = useTheme();
   const router       = useRouter();
   const queryClient  = useQueryClient();
-  const [tab, setTab] = useState<Tab>('borrador');
+  const params       = useLocalSearchParams<{ tab?: string }>();
+  const [tab, setTab] = useState<Tab>('ajuste');
+
+  useEffect(() => {
+    if (params.tab === 'ajuste' || params.tab === 'presupuesto' || params.tab === 'historial') {
+      setTab(params.tab as Tab);
+    }
+  }, [params.tab]);
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
       <StatusBar style="light" />
 
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Órdenes</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Órdenes y Presupuestos</Text>
         <View style={[styles.tabRow]}>
-          <TabBtn label="Borrador" active={tab === 'borrador'} onPress={() => setTab('borrador')} />
+          <TabBtn label="Ajuste" active={tab === 'ajuste'} onPress={() => setTab('ajuste')} />
+          <TabBtn label="Presupuesto" active={tab === 'presupuesto'} onPress={() => setTab('presupuesto')} />
           <TabBtn label="Historial" active={tab === 'historial'} onPress={() => setTab('historial')} />
         </View>
       </View>
 
-      {tab === 'borrador'
-        ? <BorradorView router={router} />
-        : <HistorialView queryClient={queryClient} />
-      }
+      {tab === 'ajuste' && <BorradorView router={router} />}
+      {tab === 'presupuesto' && <PresupuestoView router={router} />}
+      {tab === 'historial' && <HistorialView queryClient={queryClient} />}
     </SafeAreaView>
   );
 }
@@ -80,7 +90,6 @@ function BorradorView({ router }: { router: any }) {
       const msg = `OC-${String(orderId).padStart(4, '0')} generada.`;
       
       if (Platform.OS === 'web' && html) {
-        notify('✓ Orden emitida', msg);
         try {
           // Manual iframe print for Web to guarantee ONLY the HTML is printed
           const iframe = document.createElement('iframe');
@@ -111,8 +120,6 @@ function BorradorView({ router }: { router: any }) {
           const url = URL.createObjectURL(blob);
           window.open(url, '_blank');
         }
-      } else {
-        notify('✓ Orden emitida', msg + ' PDF enviado a compartir.');
       }
     } catch (e: any) {
       notify('Error', e.message ?? 'No se pudo emitir la orden');
@@ -312,7 +319,47 @@ function HistorialView({ queryClient }: { queryClient: any }) {
   const { colors } = useTheme();
   const { scrollOffsetOrdenes, setScrollOffsetOrdenes } = useInventarioStore();
   const scrollRef = useRef<ScrollView>(null);
-  const { data: ordenes = [], isLoading } = useOrdenesHistory();
+  
+  const [subTab, setSubTab] = useState<'ajuste' | 'presupuesto'>('ajuste');
+
+  // Realtime subscription to refresh lists automatically
+  useEffect(() => {
+    const channel = supabase
+      .channel('historial-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'presupuestos' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['presupuestos-history'] });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ordenes_cambio' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['ordenes-history'] });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+  
+  const { data: ordenes = [], isLoading: isLoadingOrdenes, refetch: refetchOrdenes } = useOrdenesHistory();
+  const { data: presupuestosData, isLoading: isLoadingPresupuestos, refetch: refetchPresupuestos } = usePresupuestosHistory();
+  
+  const presupuestos = presupuestosData?.pages.flat() || [];
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    if (subTab === 'ajuste') {
+      await refetchOrdenes();
+    } else {
+      await refetchPresupuestos();
+    }
+    setRefreshing(false);
+  }, [subTab, refetchOrdenes, refetchPresupuestos]);
+
+  
+  const isLoading = subTab === 'ajuste' ? isLoadingOrdenes : isLoadingPresupuestos;
+  const listData = subTab === 'ajuste' ? ordenes : presupuestos;
+
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<number | null>(null);
 
   // Restaurar scroll
@@ -336,14 +383,34 @@ function HistorialView({ queryClient }: { queryClient: any }) {
     // No PDF URL, re-generate it
     setIsGeneratingPdf(o.id);
     try {
-      const { data: items, error } = await supabase
-        .from('ordenes_cambio_items')
-        .select('*')
-        .eq('orden_id', o.id);
+      let html = '';
+      if (subTab === 'ajuste') {
+        const { data: items, error } = await supabase
+          .from('ordenes_cambio_items')
+          .select('*')
+          .eq('orden_id', o.id);
 
-      if (error) throw error;
+        if (error) throw error;
+        html = buildPdfHtml(items as any[], o.nota, o.id);
+      } else {
+        const { data: header, error: headerErr } = await supabase
+          .from('presupuestos')
+          .select(`*, clientes ( nombre, rif, telefono, direccion )`)
+          .eq('id', o.id)
+          .single();
+          
+        if (headerErr) throw headerErr;
 
-      const html = buildPdfHtml(items as any[], o.nota, o.id);
+        const { data: items, error: detailErr } = await supabase
+          .from('presupuestos_detalle')
+          .select('*')
+          .eq('presupuesto_id', o.id);
+          
+        if (detailErr) throw detailErr;
+
+        const clienteObj = Array.isArray(header.clientes) ? header.clientes[0] : header.clientes;
+        html = buildPresupuestoPdfHtml(clienteObj as any, items as any[], header.nota || '', header.id);
+      }
       
       if (Platform.OS === 'web') {
         try {
@@ -386,80 +453,118 @@ function HistorialView({ queryClient }: { queryClient: any }) {
     return <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>;
   }
 
-  if (ordenes.length === 0) {
-    return (
-      <View style={styles.center}>
-        <Feather name="inbox" size={32} color={colors.textDim} />
-        <Text style={[styles.emptyTitle, { color: colors.textMuted }]}>Sin órdenes emitidas</Text>
-      </View>
-    );
-  }
-
   return (
-    <ScrollView 
-      ref={scrollRef}
-      onScroll={handleScroll}
-      scrollEventThrottle={16}
-      contentContainerStyle={styles.scroll} 
-      showsVerticalScrollIndicator={false}
-    >
-      {ordenes.map(o => (
-        <View
-          key={o.id}
-          style={[styles.histCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+    <View style={styles.flex}>
+      {/* Sub-tabs for Historial */}
+      <View style={[styles.subTabRow, { borderBottomColor: colors.border }]}>
+        <Pressable 
+          style={[styles.subTabBtn, subTab === 'ajuste' && { backgroundColor: colors.surface, borderColor: colors.border }]} 
+          onPress={() => setSubTab('ajuste')}
         >
-          <View style={styles.histTop}>
-            <Text style={[styles.histId, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
-              OC-{String(o.id).padStart(4, '0')}
-            </Text>
-            <View style={[
-              styles.statusBadge,
-              { backgroundColor: o.status === 'emitido' ? colors.success + '22' : colors.warning + '22',
-                borderColor:     o.status === 'emitido' ? colors.success + '55' : colors.warning + '55' },
-            ]}>
-              <Text style={[styles.statusText, { color: o.status === 'emitido' ? colors.success : colors.warning }]} numberOfLines={1} adjustsFontSizeToFit>
-                {o.status}
-              </Text>
-            </View>
-          </View>
+          <Text style={[styles.subTabText, { color: subTab === 'ajuste' ? colors.primary : colors.textMuted }]}>Ajustes</Text>
+        </Pressable>
+        <Pressable 
+          style={[styles.subTabBtn, subTab === 'presupuesto' && { backgroundColor: colors.surface, borderColor: colors.border }]} 
+          onPress={() => setSubTab('presupuesto')}
+        >
+          <Text style={[styles.subTabText, { color: subTab === 'presupuesto' ? colors.primary : colors.textMuted }]}>Presupuestos</Text>
+        </Pressable>
+      </View>
 
-          <Text style={[styles.histMeta, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
-            {new Date(o.creado_en).toLocaleString('es-VE', {
-              day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-            })}
-            {'  ·  '}{o.item_count} ítem{o.item_count !== 1 ? 's' : ''}
-          </Text>
-
-          {o.nota ? (
-            <Text style={[styles.histNota, { color: colors.textMuted }]} numberOfLines={1}>
-              {o.nota}
-            </Text>
-          ) : null}
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.pdfBtn, 
-              { borderColor: colors.primary }, 
-              (pressed || isGeneratingPdf === o.id) && { opacity: 0.7 }
-            ]}
-            onPress={() => handleViewPDF(o)}
-            disabled={isGeneratingPdf !== null}
-          >
-            {isGeneratingPdf === o.id ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <>
-                <Feather name="file-text" size={14} color={colors.primary} />
-                <Text style={[styles.pdfBtnText, { color: colors.primary }]}>
-                  {o.pdf_url ? 'Ver PDF' : 'Imprimir PDF'}
-                </Text>
-              </>
-            )}
-          </Pressable>
+      {listData.length === 0 ? (
+        <View style={styles.center}>
+          <Feather name="inbox" size={32} color={colors.textDim} />
+          <Text style={[styles.emptyTitle, { color: colors.textMuted }]}>Sin historial</Text>
         </View>
-      ))}
-      <View style={{ height: 150 }} />
-    </ScrollView>
+      ) : (
+        <ScrollView 
+          ref={scrollRef}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          contentContainerStyle={styles.scroll} 
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
+        >
+          {listData.map(o => {
+            const isPresupuesto = subTab === 'presupuesto';
+            const prefix = isPresupuesto ? 'P-' : 'OC-';
+            const dateStr = new Date(o.creado_en).toLocaleString('es-VE', {
+              day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+            });
+            const itemCount = isPresupuesto ? (o as any).items_count || 0 : (o as any).item_count || 0;
+            const status = o.status || 'emitido';
+
+            return (
+              <View
+                key={o.id}
+                style={[styles.histCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              >
+                <View style={styles.histTop}>
+                  <Text style={[styles.histId, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
+                    {prefix}{String(o.id).padStart(4, '0')}
+                  </Text>
+                  <View style={[
+                    styles.statusBadge,
+                    { backgroundColor: status === 'emitido' ? colors.success + '22' : colors.warning + '22',
+                      borderColor:     status === 'emitido' ? colors.success + '55' : colors.warning + '55' },
+                  ]}>
+                    <Text style={[styles.statusText, { color: status === 'emitido' ? colors.success : colors.warning }]} numberOfLines={1} adjustsFontSizeToFit>
+                      {status}
+                    </Text>
+                  </View>
+                </View>
+
+                {isPresupuesto && (o as any).cliente_nombre ? (
+                  <Text style={[styles.histClient, { color: colors.text }]} numberOfLines={1}>
+                    <Feather name="user" size={12} /> {(o as any).cliente_nombre}
+                  </Text>
+                ) : null}
+
+                <Text style={[styles.histMeta, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
+                  {dateStr}
+                  {'  ·  '}{itemCount} ítem{itemCount !== 1 ? 's' : ''}
+                </Text>
+
+                {o.nota ? (
+                  <Text style={[styles.histNota, { color: colors.textMuted }]} numberOfLines={1}>
+                    {o.nota}
+                  </Text>
+                ) : null}
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.pdfBtn, 
+                    { borderColor: colors.primary }, 
+                    (pressed || isGeneratingPdf === o.id) && { opacity: 0.7 }
+                  ]}
+                  onPress={() => handleViewPDF(o)}
+                  disabled={isGeneratingPdf !== null}
+                >
+                  {isGeneratingPdf === o.id ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <>
+                      <Feather name="file-text" size={14} color={colors.primary} />
+                      <Text style={[styles.pdfBtnText, { color: colors.primary }]}>
+                        {o.pdf_url ? 'Ver PDF' : 'Imprimir PDF'}
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
+            );
+          })}
+          <View style={{ height: 150 }} />
+        </ScrollView>
+      )}
+    </View>
   );
 }
 
@@ -680,5 +785,27 @@ const styles = StyleSheet.create({
   },
   pdfBtnText: { fontSize: 12, fontFamily: 'JetBrainsMono_700Bold' },
 
-  tabBorder: {},
+  subTabRow: {
+    flexDirection: 'row',
+    padding: 8,
+    gap: 8,
+    borderBottomWidth: 0.5,
+  },
+  subTabBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 0.5,
+    borderColor: 'transparent',
+    alignItems: 'center',
+  },
+  subTabText: {
+    fontSize: 13,
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
+  histClient: {
+    fontSize: 13,
+    fontFamily: 'JetBrainsMono_700Bold',
+    marginTop: 4,
+  },
 });

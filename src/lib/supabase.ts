@@ -102,6 +102,27 @@ export type OrdenCambioItem = {
   nota:               string | null;
 };
 
+export type Presupuesto = {
+  id:         number;
+  creado_por: string;
+  cliente_id: string | null;
+  total_usd:  number;
+  status:     'borrador' | 'emitido';
+  pdf_url:    string | null;
+  nota:       string | null;
+  creado_en:  string;
+};
+
+export type PresupuestoDetalle = {
+  id:              number;
+  presupuesto_id:  number;
+  codigo_producto: string;
+  descripcion:     string;
+  cantidad:        number;
+  precio_unitario: number;
+  subtotal:        number;
+};
+
 export type Profile = {
   id:           string;
   role:         'admin' | 'empleado';

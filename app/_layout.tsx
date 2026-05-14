@@ -12,7 +12,7 @@ import { supabase } from '../src/lib/supabase';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
 import * as Font from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import { ActivityIndicator, Platform, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Platform, View, useWindowDimensions, Text, Pressable } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 // SplashScreen is a no-op on web
 if (Platform.OS !== 'web') {

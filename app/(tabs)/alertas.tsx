@@ -22,7 +22,6 @@ import { StockAlertCard } from '../../src/components/AlertCard';
 import { supabase } from '../../src/lib/supabase';
 import type { AlertaStockRow } from '../../src/lib/supabase';
 
-type StockFilter = 'todos' | 'sin_stock' | 'stock_negativo' | 'margen_negativo' | 'stock_muerto';
 
 const STOCK_FILTERS: { key: StockFilter; label: string }[] = [
   { key: 'todos',           label: 'Todos'      },

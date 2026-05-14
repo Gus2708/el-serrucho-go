@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, useWindowDimensions, Platform } from 'react-nat
 import { PieChart } from 'react-native-gifted-charts';
 import { useTheme } from '../theme/ThemeContext';
 import { CurrencyText } from './CurrencyText';
+import { useDeviceSize } from '../hooks/useDeviceSize';
 import type { TopProductoRow } from '../lib/supabase';
 
 interface Props {
@@ -13,7 +14,7 @@ interface Props {
 
 export function TopProductsDonut({ data, loading, useUnits }: Props) {
   const { colors, formatUSD } = useTheme();
-  const { width: screenWidth } = useWindowDimensions();
+  const { isDesktop, width: screenWidth } = useDeviceSize();
 
   // Tomamos los top 4
   const top4 = data.slice(0, 4);
@@ -51,13 +52,15 @@ export function TopProductsDonut({ data, loading, useUnits }: Props) {
   // Background data for the glow - handled per-platform in the JSX
   const glowData = pieData;
 
-  const radius = screenWidth * 0.28;
+  const radius = isDesktop 
+    ? Math.min(screenWidth * 0.12, 140) 
+    : screenWidth * 0.28;
   const innerRadius = radius * 0.85;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isDesktop && styles.containerDesktop]}>
       {/* Chart Section */}
-      <View style={styles.chartContainer}>
+      <View style={[styles.chartContainer, isDesktop && styles.chartContainerDesktop, { height: (radius * 2) + 40 }]}>
         {/* Glow Layers (Background) */}
         <View style={styles.glowLayer}>
           {Platform.OS === 'web' ? (
@@ -119,8 +122,8 @@ export function TopProductsDonut({ data, loading, useUnits }: Props) {
         />
       </View>
 
-      {/* Grid Section (2x2) */}
-      <View style={styles.grid}>
+      {/* Grid Section (2x2 on mobile, variable on desktop) */}
+      <View style={[styles.grid, isDesktop && styles.gridDesktop]}>
         {top4.map((p, i) => {
           const color = PALETTE[i % PALETTE.length];
           const percentage = totalValue > 0 ? ((useUnits ? p.unidades_vendidas : p.ganancia) / totalValue) * 100 : 0;
@@ -176,6 +179,12 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 20,
   },
+  containerDesktop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 32,
+    paddingVertical: 32,
+  },
   glowLayer: {
     position: 'absolute',
     zIndex: -1,
@@ -191,7 +200,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginVertical: 32,
     position: 'relative',
-    height: 220, // Explicit height to avoid clipping
+    height: 220, // Fallback height
+  },
+  chartContainerDesktop: {
+    flex: 1,
+    marginVertical: 0,
   },
   centerLabel: {
     alignItems: 'center',
@@ -215,6 +228,11 @@ const styles = StyleSheet.create({
     marginTop: 20,
     paddingHorizontal: 12,
     marginBottom: 20,
+  },
+  gridDesktop: {
+    flex: 1.5,
+    marginTop: 0,
+    marginBottom: 0,
   },
   gridItem: {
     flex: 1,

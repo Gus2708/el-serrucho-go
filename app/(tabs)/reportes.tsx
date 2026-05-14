@@ -101,7 +101,7 @@ export default function Reportes() {
 
       <ScrollView
         ref={scrollRef}
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, isDesktop && styles.scrollDesktop]}
         showsVerticalScrollIndicator={false}
         onScroll={handleScroll}
         scrollEventThrottle={16}
@@ -270,6 +270,12 @@ function SummaryPill({ label, value, color }: { label: string; value: string; co
 const styles = StyleSheet.create({
   root:   { flex: 1 },
   scroll: { gap: 16, paddingBottom: 20 },
+  scrollDesktop: {
+    maxWidth: 1000,
+    alignSelf: 'center',
+    width: '100%',
+    paddingTop: 20,
+  },
 
   header: {
     paddingHorizontal: 16,
@@ -296,8 +302,8 @@ const styles = StyleSheet.create({
   },
   chartsRowDesktop: {
     flexDirection: 'row',
-    gap:           12,
-    paddingHorizontal: 0,
+    gap:           16,
+    paddingHorizontal: 16,
     marginTop:     8,
   },
   pill: {
