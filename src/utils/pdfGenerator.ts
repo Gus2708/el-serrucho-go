@@ -46,6 +46,17 @@ const SHARED_STYLES = `
 
   * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
+  @page { margin: 10mm; }
+  @media print {
+    body { background: white !important; padding: 0 !important; margin: 0 !important; }
+    .ticket { 
+      box-shadow: none !important; 
+      border: 1px solid var(--border-light) !important; 
+      max-width: 100% !important;
+      border-radius: 0 !important;
+    }
+  }
+
   body {
     font-family: var(--font-body);
     background: var(--surface);
@@ -656,19 +667,54 @@ export function buildVentaPdfHtml(
  * which is critical for a smooth PWA experience.
  */
 export async function printHtml(html: string) {
-  try {
-    await Print.printAsync({ html });
-  } catch (error) {
-    console.error('Error printing PDF:', error);
-    if (Platform.OS === 'web') {
-      // Fallback only for web: if print fails, download as HTML file
-      const blob = new Blob([html], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'documento.html';
-      link.click();
-      URL.revokeObjectURL(url);
+  if (Platform.OS !== 'web') {
+    try {
+      await Print.printAsync({ html });
+    } catch (error) {
+      console.error('Error printing PDF native:', error);
     }
+    return;
   }
+
+  // Web: Use an isolated hidden iframe for clean printing without opening new tabs.
+  // This avoids capturing the main application UI and provides better styling control.
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.left = '-10000px';
+  iframe.style.top = '-10000px';
+  iframe.style.width = '100%';
+  iframe.style.height = '100%';
+  document.body.appendChild(iframe);
+
+  const iframeDoc = iframe.contentWindow?.document;
+  if (!iframeDoc) {
+    // Fallback: download as HTML if iframe fails
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'documento.html';
+    link.click();
+    return;
+  }
+
+  iframeDoc.open();
+  iframeDoc.write(html);
+  iframeDoc.close();
+
+  // Give it a moment to load fonts/styles
+  setTimeout(() => {
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+      // Cleanup after a delay to ensure print dialog was triggered
+      setTimeout(() => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+      }, 2000);
+    } catch (e) {
+      console.error('Error during web print:', e);
+    }
+  }, 600);
 }
