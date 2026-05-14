@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: 'JetBrainsMono_400Regular',
     height: '100%',
-    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {})
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' as any } : {})
   },
   addBtn: {
     width: 32,

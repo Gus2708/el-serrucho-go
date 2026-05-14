@@ -21,7 +21,7 @@ async function fetchTopProductos(orderBy: string, days: number): Promise<TopProd
   // Sorting and limiting on the client side since we get the full list from RPC
   // Alternatively, we could order inside the function, but client side is fine for 20-50 items
   return (data ?? [])
-    .map(d => ({
+    .map((d: any) => ({
       ...d,
       unidades_vendidas: Number(d.unidades_vendidas || 0),
       ingreso:           Number(d.ingreso || 0),
