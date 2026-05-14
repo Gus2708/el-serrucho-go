@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+import * as Print from 'expo-print';
 import { Cliente, PresupuestoItem } from '../hooks/usePresupuestoStore';
 
 export interface DraftItem {
@@ -646,4 +648,27 @@ export function buildVentaPdfHtml(
   </div>
 </body>
 </html>`;
+}
+
+/**
+ * Robustly triggers the print dialog for a given HTML string.
+ * On Web, it uses an iframe-based approach (via expo-print) to avoid opening new windows/tabs,
+ * which is critical for a smooth PWA experience.
+ */
+export async function printHtml(html: string) {
+  try {
+    await Print.printAsync({ html });
+  } catch (error) {
+    console.error('Error printing PDF:', error);
+    if (Platform.OS === 'web') {
+      // Fallback only for web: if print fails, download as HTML file
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'documento.html';
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+  }
 }

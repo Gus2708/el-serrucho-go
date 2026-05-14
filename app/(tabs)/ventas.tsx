@@ -34,7 +34,7 @@ import { useUserRole } from '../../src/hooks/useUserRole';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { buildVentaPdfHtml } from '../../src/utils/pdfGenerator';
+import { buildVentaPdfHtml, printHtml } from '../../src/utils/pdfGenerator';
 import Svg, { 
   Path, Rect, Defs, LinearGradient as SvgGradient, Stop, Filter, 
   FeGaussianBlur, FeOffset, FeComponentTransfer, FeFuncA, FeMerge, FeMergeNode, Line 
@@ -589,12 +589,7 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
     try {
       const html = buildVentaPdfHtml(venta, details);
       if (Platform.OS === 'web') {
-        const printWindow = window.open('', '_blank');
-        if (printWindow) {
-          printWindow.document.write(html);
-          printWindow.document.close();
-          printWindow.print();
-        }
+        await printHtml(html);
       } else {
         const { uri } = await Print.printToFileAsync({ html });
         await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });

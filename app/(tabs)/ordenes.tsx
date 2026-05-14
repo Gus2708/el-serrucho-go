@@ -27,7 +27,7 @@ import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
 import { useOrdenesHistory } from '../../src/hooks/useOrdenesHistory';
 import { useUserRole } from '../../src/hooks/useUserRole';
 import { supabase } from '../../src/lib/supabase';
-import { buildPdfHtml, buildPresupuestoPdfHtml } from '../../src/utils/pdfGenerator';
+import { buildPdfHtml, buildPresupuestoPdfHtml, printHtml } from '../../src/utils/pdfGenerator';
 import PresupuestoView from '../../src/components/PresupuestoView';
 import FallasView from '../../src/components/FallasView';
 import { usePresupuestosHistory } from '../../src/hooks/usePresupuestosHistory';
@@ -99,36 +99,7 @@ function BorradorView({ router }: { router: any }) {
       const msg = `OC-${String(orderId).padStart(4, '0')} generada.`;
       
       if (Platform.OS === 'web' && html) {
-        try {
-          // Manual iframe print for Web to guarantee ONLY the HTML is printed
-          const iframe = document.createElement('iframe');
-          iframe.style.position = 'fixed';
-          iframe.style.right = '0';
-          iframe.style.bottom = '0';
-          iframe.style.width = '0';
-          iframe.style.height = '0';
-          iframe.style.border = '0';
-          document.body.appendChild(iframe);
-          
-          const doc = iframe.contentWindow?.document;
-          if (doc) {
-            doc.open();
-            doc.write(html);
-            doc.close();
-            
-            // Wait for styles/fonts to load
-            setTimeout(() => {
-              iframe.contentWindow?.focus();
-              iframe.contentWindow?.print();
-              setTimeout(() => document.body.removeChild(iframe), 1000);
-            }, 500);
-          }
-        } catch (e) {
-          console.error('Error printing PDF:', e);
-          const blob = new Blob([html], { type: 'text/html' });
-          const url = URL.createObjectURL(blob);
-          window.open(url, '_blank');
-        }
+        await printHtml(html);
       }
     } catch (e: any) {
       notify('Error', e.message ?? 'No se pudo emitir la orden');
@@ -448,23 +419,7 @@ function HistorialView({ queryClient }: { queryClient: any }) {
       }
       
       if (Platform.OS === 'web') {
-        try {
-          const iframe = document.createElement('iframe');
-          iframe.style.position = 'fixed'; iframe.style.width = '0'; iframe.style.height = '0'; iframe.style.border = '0';
-          document.body.appendChild(iframe);
-          const doc = iframe.contentWindow?.document;
-          if (doc) {
-            doc.open(); doc.write(html); doc.close();
-            setTimeout(() => {
-              iframe.contentWindow?.focus(); iframe.contentWindow?.print();
-              setTimeout(() => document.body.removeChild(iframe), 1000);
-            }, 500);
-          }
-        } catch (e) {
-          const blob = new Blob([html], { type: 'text/html' });
-          const url = URL.createObjectURL(blob);
-          window.open(url, '_blank');
-        }
+        await printHtml(html);
       } else {
         const { uri } = await Print.printToFileAsync({ html });
         await Sharing.shareAsync(uri, { mimeType: 'application/pdf' });
