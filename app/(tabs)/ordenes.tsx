@@ -29,9 +29,10 @@ import { useUserRole } from '../../src/hooks/useUserRole';
 import { supabase } from '../../src/lib/supabase';
 import { buildPdfHtml, buildPresupuestoPdfHtml } from '../../src/utils/pdfGenerator';
 import PresupuestoView from '../../src/components/PresupuestoView';
+import FallasView from '../../src/components/FallasView';
 import { usePresupuestosHistory } from '../../src/hooks/usePresupuestosHistory';
 
-type Tab = 'ajuste' | 'presupuesto' | 'historial';
+type Tab = 'ajuste' | 'presupuesto' | 'historial' | 'fallas';
 
 export default function Ordenes() {
   const { colors, formatUSD } = useTheme();
@@ -41,7 +42,7 @@ export default function Ordenes() {
   const [tab, setTab] = useState<Tab>('ajuste');
 
   useEffect(() => {
-    if (params.tab === 'ajuste' || params.tab === 'presupuesto' || params.tab === 'historial') {
+    if (params.tab === 'ajuste' || params.tab === 'presupuesto' || params.tab === 'historial' || params.tab === 'fallas') {
       setTab(params.tab as Tab);
     }
   }, [params.tab]);
@@ -55,12 +56,14 @@ export default function Ordenes() {
         <View style={[styles.tabRow]}>
           <TabBtn label="Ajuste" active={tab === 'ajuste'} onPress={() => setTab('ajuste')} />
           <TabBtn label="Presupuesto" active={tab === 'presupuesto'} onPress={() => setTab('presupuesto')} />
+          <TabBtn label="Fallas" active={tab === 'fallas'} onPress={() => setTab('fallas')} />
           <TabBtn label="Historial" active={tab === 'historial'} onPress={() => setTab('historial')} />
         </View>
       </View>
 
       {tab === 'ajuste' && <BorradorView router={router} />}
       {tab === 'presupuesto' && <PresupuestoView router={router} />}
+      {tab === 'fallas' && <FallasView />}
       {tab === 'historial' && <HistorialView queryClient={queryClient} />}
     </SafeAreaView>
   );

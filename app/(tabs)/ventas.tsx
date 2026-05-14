@@ -32,6 +32,9 @@ import { useVentaDetalle } from '../../src/hooks/useVentaDetalle';
 import { VentaDetalleUSD, supabase } from '../../src/lib/supabase';
 import { useUserRole } from '../../src/hooks/useUserRole';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import { buildVentaPdfHtml } from '../../src/utils/pdfGenerator';
 import Svg, { 
   Path, Rect, Defs, LinearGradient as SvgGradient, Stop, Filter, 
   FeGaussianBlur, FeOffset, FeComponentTransfer, FeFuncA, FeMerge, FeMergeNode, Line 
@@ -581,6 +584,26 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
     }).start(onClose);
   };
 
+  const handleDownloadPdf = async () => {
+    if (!venta || details.length === 0) return;
+    try {
+      const html = buildVentaPdfHtml(venta, details);
+      if (Platform.OS === 'web') {
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write(html);
+          printWindow.document.close();
+          printWindow.print();
+        }
+      } else {
+        const { uri } = await Print.printToFileAsync({ html });
+        await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+      }
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+    }
+  };
+
   const onShow = () => {
     animProgress.setValue(0);
     Animated.spring(animProgress, {
@@ -633,6 +656,20 @@ function VentaDetailModal({ venta, onClose }: { venta: VentaHoy | null; onClose:
           onPress={closeModal}
         />
         <View style={styles.modalCloseContainer}>
+          <Pressable 
+            onPress={handleDownloadPdf} 
+            style={({ pressed }) => [
+              styles.modalCloseBtn,
+              { 
+                opacity: pressed ? 0.7 : 1, 
+                marginRight: 10,
+                backgroundColor: colors.primary + '20',
+                borderColor: colors.primary + '40'
+              }
+            ]}
+          >
+            <Feather name="download" size={20} color={colors.primary} />
+          </Pressable>
           <Pressable 
             onPress={closeModal} 
             style={({ pressed }) => [
@@ -1136,6 +1173,8 @@ const styles = StyleSheet.create({
     top: 50,
     right: 20,
     zIndex: 100,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   modalCloseBtn: {
     width: 44,

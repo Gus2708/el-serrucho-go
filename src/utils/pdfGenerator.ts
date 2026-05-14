@@ -542,3 +542,108 @@ export function buildPresupuestoPdfHtml(
 </body>
 </html>`;
 }
+
+/* ─── Sale / Venta PDF ──────────────────────────── */
+export function buildVentaPdfHtml(
+  venta: any,
+  items: any[],
+): string {
+  const now = new Date(venta.created_at).toLocaleString('es-VE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  const rows = items.map((item) => `
+    <tr>
+      <td class="col-code">${item.codigo_producto}</td>
+      <td class="col-desc">${item.descripcion}</td>
+      <td class="col-num">${item.cantidad}</td>
+      <td class="col-money">$${Number(item.precio_unitario_usd).toFixed(2)}</td>
+      <td class="col-money-bold">$${Number(item.subtotal_usd).toFixed(2)}</td>
+    </tr>`).join('');
+
+  const totalUSD = Number(venta.total_neto_usd || venta.total_usd || 0);
+  const baseUSD  = venta.total_bruto_usd > 0
+    ? Number(venta.total_bruto_usd)
+    : totalUSD / 1.16;
+  const ivaUSD   = venta.total_impuesto_usd > 0
+    ? Number(venta.total_impuesto_usd)
+    : totalUSD - baseUSD;
+
+  return `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<style>${SHARED_STYLES}</style>
+</head>
+<body>
+  <div class="ticket">
+
+    <div class="header">
+      <div class="brand">
+        <span class="brand-name">EL SERRUCHO</span>
+        <span class="brand-accent"></span>
+      </div>
+      <div class="doc-badge">RECIBO DE VENTA ${venta.documento || `#${venta.venta_id || venta.id}`}</div>
+    </div>
+
+    <div class="meta-grid">
+      <div class="meta-card" style="flex:1.2;">
+        <span class="meta-label">Cliente</span>
+        <span class="meta-value">${venta.nombre_cliente || 'Cliente Casual'}</span>
+      </div>
+      <div class="meta-card">
+        <span class="meta-label">Fecha y Hora</span>
+        <span class="meta-value">${now}</span>
+      </div>
+      <div class="meta-card">
+        <span class="meta-label">Método de Pago</span>
+        <span class="meta-value">${venta.metodo_pago || 'No especificado'}</span>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Descripción</th>
+          <th style="text-align:center;">Cant.</th>
+          <th style="text-align:right;">P. Unit</th>
+          <th style="text-align:right;">Subtotal</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+        <tr class="total-row">
+          <td colspan="3"></td>
+          <td class="total-label">Subtotal</td>
+          <td class="total-amount">$${baseUSD.toFixed(2)}</td>
+        </tr>
+        <tr>
+          <td colspan="3"></td>
+          <td class="total-label">IVA (16%)</td>
+          <td class="total-amount">$${ivaUSD.toFixed(2)}</td>
+        </tr>
+        <tr class="total-row">
+          <td colspan="3"></td>
+          <td class="total-label" style="font-size: 16px; color: var(--accent-dark);">Total USD</td>
+          <td class="total-amount" style="font-size: 22px; color: var(--accent-dark);">$${totalUSD.toFixed(2)}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="footer">
+      <span class="footer-left">EL SERRUCHO v1.1.0</span>
+      <span class="footer-dot"></span>
+      <span class="footer-right">RECIBO DE VENTA - DOCUMENTO NO FISCAL</span>
+    </div>
+
+  </div>
+</body>
+</html>`;
+}
