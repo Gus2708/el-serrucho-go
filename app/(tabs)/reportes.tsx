@@ -40,6 +40,13 @@ export default function Reportes() {
   const { isDesktop } = useDeviceSize();
   const { scrollOffsetReportes, setScrollOffsetReportes } = useInventarioStore();
   const { width: screenW } = useWindowDimensions();
+  const hasRestored = useRef(false);
+  const scrollOffsetRef = useRef(scrollOffsetReportes);
+
+  // Keep ref in sync without triggering effects
+  useEffect(() => {
+    scrollOffsetRef.current = scrollOffsetReportes;
+  }, [scrollOffsetReportes]);
 
   const [period,    setPeriod]    = useState<Period>(30);
   const [chartMode, setChartMode] = useState<ChartMode>('items');
@@ -54,16 +61,21 @@ export default function Reportes() {
   }, [roleData, isAdmin]);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Restaurar scroll al entrar
+  // Restaurar scroll al entrar (solo una vez por enfoque)
   useFocusEffect(
     useCallback(() => {
-      if (scrollOffsetReportes > 0 && scrollRef.current) {
+      const offset = scrollOffsetRef.current;
+      if (!hasRestored.current && offset > 0 && scrollRef.current) {
         const timer = setTimeout(() => {
-          scrollRef.current?.scrollTo({ y: scrollOffsetReportes, animated: false });
+          scrollRef.current?.scrollTo({ y: offset, animated: false });
+          hasRestored.current = true;
         }, 100);
         return () => clearTimeout(timer);
       }
-    }, [scrollOffsetReportes])
+      return () => {
+        hasRestored.current = false;
+      };
+    }, []) // Estable: solo corre al ganar foco
   );
 
   const { data: daily = [], isLoading: loadingDaily } = useProfitDaily(period);

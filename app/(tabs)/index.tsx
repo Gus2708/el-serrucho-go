@@ -55,6 +55,13 @@ function getGreeting(): string {
   return 'Buenas noches';
 }
 
+function getDefaultPeriod(): Period {
+  const h = new Date().getHours();
+  if (h >= 8 && h < 18) return 'dia';
+  if (h >= 0 && h < 8) return 'ayer';
+  return 'dia';
+}
+
 export default function Index() {
   const { colors, formatUSD } = useTheme();
   const router      = useRouter();
@@ -68,7 +75,7 @@ export default function Index() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [userName,   setUserName]   = useState('');
-  const [period,     setPeriod]     = useState<Period>('mes');
+  const [period,     setPeriod]     = useState<Period>(getDefaultPeriod());
 
   // Restaurar scroll
   useFocusEffect(
