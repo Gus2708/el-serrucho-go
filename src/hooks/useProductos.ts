@@ -63,16 +63,22 @@ async function fetchProductos(
   const trimmed = search.trim();
   if (trimmed) {
     if (trimmed.includes('*')) {
-      // Wildcard mode: triggers 'contains' search and ignores word order where possible
+      // Wildcard mode: busca en cualquier posición
       const clean = trimmed.replace(/\*/g, '').trim();
       const words = clean.split(/\s+/).filter(w => w.length > 0);
       const pattern = `%${words.join('%')}%`;
-      query = query.or(`descripcion.ilike.${pattern},codigo_interno.ilike.${pattern},codigo_barras.ilike.${pattern},referencia.ilike.${pattern}`);
-    } else {
-      // Strict mode: Starts with (Prefix search)
-      // Matches products whose name or code begins with the search string
+      // NOTE: referencia no está en productos_view — solo buscar en columnas existentes
+      query = query.or(`descripcion.ilike.${pattern},codigo_interno.ilike.${pattern},codigo_barras.ilike.${pattern}`);
+    } else if (/^\d{8,}$/.test(trimmed)) {
+      // Modo código de barras: la búsqueda es solo dígitos largos (EAN-8/13, UPC, etc.)
+      // Busca coincidencia exacta en codigo_barras o como prefijo en codigo_interno
       const term = `${trimmed}%`;
-      query = query.or(`descripcion.ilike.${term},codigo_interno.ilike.${term},codigo_barras.ilike.${term},referencia.ilike.${term}`);
+      query = query.or(`codigo_barras.eq.${trimmed},codigo_interno.ilike.${term},codigo_barras.ilike.${term}`);
+    } else {
+      // Strict mode: busca por prefijo en nombre y código
+      const term = `${trimmed}%`;
+      // NOTE: referencia no está en productos_view — solo buscar en columnas existentes
+      query = query.or(`descripcion.ilike.${term},codigo_interno.ilike.${term},codigo_barras.ilike.${term}`);
     }
   }
 
