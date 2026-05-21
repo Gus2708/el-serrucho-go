@@ -33,6 +33,7 @@ const queryClient = new QueryClient({
 });
 
 import { useUserRole } from '../src/hooks/useUserRole';
+import { usePWAInstallStore } from '../src/hooks/usePWAInstall';
 
 function AuthGuard({ session, ready }: { session: Session | null; ready: boolean }) {
   const [hardTimeout, setHardTimeout] = useState(false);
@@ -134,12 +135,124 @@ function RealtimeInitializer({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function UpdateToast() {
+  const hasUpdate = usePWAInstallStore(state => state.hasUpdate);
+  const { colors } = useTheme();
+
+  if (!hasUpdate) return null;
+
+  const handleUpdate = () => {
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(registrations => {
+        for (const reg of registrations) {
+          if (reg.waiting) {
+            reg.waiting.postMessage('skipWaiting');
+          }
+        }
+        setTimeout(() => {
+          window.location.reload();
+        }, 200);
+      });
+    }
+  };
+
+  return (
+    <View style={{
+      position: 'absolute',
+      bottom: 90,
+      left: 16,
+      right: 16,
+      backgroundColor: '#1E1E1E',
+      borderWidth: 1,
+      borderColor: colors?.primary || '#F5B200',
+      borderRadius: 14,
+      padding: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 5,
+      elevation: 6,
+      zIndex: 9999,
+    }}>
+      <View style={{ flex: 1, marginRight: 12 }}>
+        <Text style={{ color: '#FFFFFF', fontSize: 13, fontFamily: 'JetBrainsMono_700Bold', marginBottom: 2 }}>
+          Nueva versión disponible
+        </Text>
+        <Text style={{ color: '#888888', fontSize: 10, fontFamily: 'JetBrainsMono_400Regular' }}>
+          Instala la última actualización para aplicar las mejoras.
+        </Text>
+      </View>
+      <Pressable
+        onPress={handleUpdate}
+        style={({ pressed }) => [{
+          backgroundColor: colors?.primary || '#F5B200',
+          paddingVertical: 8,
+          paddingHorizontal: 14,
+          borderRadius: 8,
+        }, pressed && { opacity: 0.8 }]}
+      >
+        <Text style={{ color: '#0C0C0C', fontSize: 11, fontFamily: 'JetBrainsMono_700Bold' }}>
+          ACTUALIZAR
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [failsafeActive, setFailsafeActive] = useState(false);
   const { width: windowWidth } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && windowWidth >= 768;
+
+  // PWA life-cycle and event capturing
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+
+    // 1. Detección de display-mode standalone
+    const checkStandalone = () => {
+      const isStandalone = 
+        window.matchMedia('(display-mode: standalone)').matches ||
+        (navigator as any).standalone === true ||
+        document.referrer.includes('android-app://');
+      usePWAInstallStore.getState().setIsStandalone(isStandalone);
+    };
+    checkStandalone();
+
+    // Escuchar si cambia el modo de despliegue
+    const mediaQuery = window.matchMedia('(display-mode: standalone)');
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', checkStandalone);
+    }
+
+    // 2. Escuchar beforeinstallprompt
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      usePWAInstallStore.getState().setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+
+    // Escuchar si ya se instaló desde el navegador
+    const handleAppInstalled = () => {
+      console.log('PWA app installed successfully');
+      usePWAInstallStore.getState().setDeferredPrompt(null);
+      usePWAInstallStore.getState().setIsStandalone(true);
+    };
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+      if (mediaQuery.removeEventListener) {
+        mediaQuery.removeEventListener('change', checkStandalone);
+      }
+    };
+  }, []);
 
   // Carga de fuentes JetBrains Mono Locales (Máxima performance)
   const [fontsLoaded, fontError] = Font.useFonts({
@@ -223,10 +336,29 @@ export default function RootLayout() {
           // Registro de Service Worker para PWA
           if ('serviceWorker' in navigator) {
             const register = () => {
-              navigator.serviceWorker.register('/service-worker.js').then(
-                (reg) => console.log('SW Registered'),
-                (err) => console.log('SW Registration Failed', err)
-              );
+              navigator.serviceWorker.register('/service-worker.js').then((reg) => {
+                console.log('SW Registered');
+                
+                // Detectar si hay una actualización disponible esperando activación
+                if (reg.waiting) {
+                  usePWAInstallStore.getState().setHasUpdate(true);
+                }
+
+                // Escuchar futuras actualizaciones
+                reg.addEventListener('updatefound', () => {
+                  const newWorker = reg.installing;
+                  if (newWorker) {
+                    newWorker.addEventListener('statechange', () => {
+                      if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                        console.log('Nueva versión de PWA disponible para actualizar');
+                        usePWAInstallStore.getState().setHasUpdate(true);
+                      }
+                    });
+                  }
+                });
+              }).catch((err) => {
+                console.log('SW Registration Failed', err);
+              });
             };
 
             if (document.readyState === 'complete') {
@@ -247,7 +379,10 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <RealtimeInitializer>
             <ThemeProvider>
-              <AuthGuard session={session} ready={isAppReady} />
+              <>
+                <AuthGuard session={session} ready={isAppReady} />
+                <UpdateToast />
+              </>
             </ThemeProvider>
           </RealtimeInitializer>
         </QueryClientProvider>

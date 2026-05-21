@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { notify } from '../lib/notify';
+import { useRouter } from 'expo-router';
 
 function decodeJwtSid(accessToken: string | undefined | null): string | null {
   if (!accessToken) return null;
@@ -37,6 +38,7 @@ function notifyKicked() {
  */
 export function useSessionEnforcer(session: Session | null) {
   const claimedSidRef = useRef<string | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     if (!session?.user || !session.access_token) {
@@ -51,20 +53,7 @@ export function useSessionEnforcer(session: Session | null) {
     let cancelled = false;
 
     async function claimAndVerify() {
-      // 1. Reclamar este dispositivo (idempotente si ya éramos el dueño).
-      if (claimedSidRef.current !== mySid) {
-        const { error } = await supabase.rpc('sync_session');
-        if (!cancelled && !error) claimedSidRef.current = mySid;
-        // Silence all sync_session warnings in console to avoid noise
-        // as this is a non-critical background enforcement task.
-        /* 
-        if (error && !error.message.includes('No session found in JWT')) {
-          console.warn('[session-enforcer] sync_session error:', error.message);
-        }
-        */
-      }
-
-      // 2. Verificación inicial: ¿seguimos siendo el dispositivo permitido?
+      // 1. Verificación inicial: ¿quién tiene el allowed_sid actualmente?
       const { data, error: selErr } = await supabase
         .from('profiles')
         .select('allowed_sid')
@@ -76,9 +65,25 @@ export function useSessionEnforcer(session: Session | null) {
         console.warn('[session-enforcer] check error:', selErr.message);
         return;
       }
-      if (data?.allowed_sid && data.allowed_sid !== mySid) {
-        notifyKicked();
-        try { await supabase.auth.signOut({ scope: 'local' }); } catch {}
+
+      const activeSid = data?.allowed_sid;
+
+      if (!activeSid || activeSid === mySid) {
+        // La sesión está libre o ya es nuestra. La reclamamos de forma segura.
+        if (claimedSidRef.current !== mySid) {
+          const { error } = await supabase.rpc('sync_session');
+          if (!cancelled && !error) claimedSidRef.current = mySid;
+        }
+      } else {
+        // Ya hay otra sesión activa en otro dispositivo (activeSid !== mySid y no es null).
+        // Bloqueamos el ingreso de este dispositivo de inmediato sin tocar la sesión activa del otro.
+        notify('Cuenta en uso', 'Esta cuenta ya tiene una sesión activa en otro dispositivo.');
+        try { 
+          await supabase.auth.signOut({ scope: 'local' }); 
+          router.replace('/(auth)/kicked');
+        } catch (e) {
+          console.error('[session-enforcer] signOut error:', e);
+        }
       }
     }
 
@@ -99,7 +104,10 @@ export function useSessionEnforcer(session: Session | null) {
           const newSid = (payload.new as { allowed_sid?: string | null })?.allowed_sid ?? null;
           if (newSid && newSid !== mySid) {
             notifyKicked();
-            try { await supabase.auth.signOut({ scope: 'local' }); } catch {}
+            try { 
+              await supabase.auth.signOut({ scope: 'local' }); 
+              router.replace('/(auth)/kicked');
+            } catch {}
           }
         }
       )

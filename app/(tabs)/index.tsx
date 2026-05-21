@@ -23,6 +23,7 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { useProfitSummary, useProfitDaily, useProfitHourly } from '../../src/hooks/useProfitSummary';
 import { useUserRole } from '../../src/hooks/useUserRole';
+import { usePWAInstallStore } from '../../src/hooks/usePWAInstall';
 import { SyncBadge } from '../../src/components/SyncBadge';
 import { SparklineChart } from '../../src/components/SparklineChart';
 import { GananciaChart } from '../../src/components/GananciaChart';
@@ -60,6 +61,70 @@ function getDefaultPeriod(): Period {
   if (h >= 8 && h < 18) return 'dia';
   if (h >= 0 && h < 8) return 'ayer';
   return 'dia';
+}
+
+function PWAInstallBanner() {
+  const { colors } = useTheme();
+  const isInstallable = usePWAInstallStore(state => state.isInstallable);
+  const install = usePWAInstallStore(state => state.install);
+  const [dismissed, setDismissed] = useState(false);
+
+  if (!isInstallable || dismissed || Platform.OS !== 'web') return null;
+
+  return (
+    <View style={{
+      marginHorizontal: 16,
+      marginTop: 12,
+      marginBottom: 4,
+      backgroundColor: '#1E1E1E',
+      borderWidth: 1,
+      borderColor: colors.primary || '#F5B200',
+      borderRadius: 16,
+      padding: 16,
+      position: 'relative',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 5,
+      elevation: 4,
+    }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <View style={{ flex: 1, marginRight: 24 }}>
+          <Text style={{ color: '#FFFFFF', fontSize: 14, fontFamily: 'JetBrainsMono_700Bold', marginBottom: 4 }}>
+            Instalar App
+          </Text>
+          <Text style={{ color: '#A0A0A0', fontSize: 11, fontFamily: 'JetBrainsMono_400Regular', lineHeight: 16 }}>
+            Accede más rápido y úsala sin conexión instalando la aplicación en tu pantalla de inicio.
+          </Text>
+        </View>
+        <Pressable
+          onPress={() => setDismissed(true)}
+          style={({ pressed }) => [{
+            padding: 4,
+            borderRadius: 6,
+            backgroundColor: '#262626',
+          }, pressed && { opacity: 0.7 }]}
+        >
+          <Feather name="x" size={14} color="#A0A0A0" />
+        </Pressable>
+      </View>
+      <Pressable
+        onPress={() => install()}
+        style={({ pressed }) => [{
+          marginTop: 12,
+          backgroundColor: colors.primary || '#F5B200',
+          paddingVertical: 10,
+          borderRadius: 8,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }, pressed && { opacity: 0.85 }]}
+      >
+        <Text style={{ color: '#0C0C0C', fontSize: 12, fontFamily: 'JetBrainsMono_700Bold' }}>
+          INSTALAR AHORA
+        </Text>
+      </Pressable>
+    </View>
+  );
 }
 
 export default function Index() {
@@ -197,6 +262,36 @@ export default function Index() {
   const costosPendientes =
     stats.ingreso > 0 && Math.abs(stats.ganancia - stats.ingreso) < 0.01;
 
+  // Simplificación de lógica condicional (evitar nested ternaries en renderizado)
+  const bigCardSubText = useMemo(() => {
+    if (loadingSum) return '';
+    if (isAdmin) {
+      if (costosPendientes) {
+        return `${kpiVentas} facturas · ganancia no disponible`;
+      }
+      const facturasSuffix = kpiVentas > 0 ? `  ·  ${kpiVentas} facturas` : '';
+      return `Ingreso ${formatUSD(stats.ingreso)}${facturasSuffix}`;
+    } else {
+      const ticketPromedio = summary?.ticket_promedio ?? 0;
+      const facturasSuffix = kpiVentas > 0 ? `  ·  ${kpiVentas} facturas` : '';
+      return `Ticket promedio: ${formatUSD(ticketPromedio)}${facturasSuffix}`;
+    }
+  }, [loadingSum, isAdmin, costosPendientes, kpiVentas, stats.ingreso, summary, formatUSD]);
+
+  const getPeriodLabel = useCallback((base: string) => {
+    switch (period) {
+      case 'dia':
+        return `${base} hoy`;
+      case 'ayer':
+        return `${base} ayer`;
+      case 'semana':
+        return `${base} semana`;
+      case 'mes':
+      default:
+        return `${base} del mes`;
+    }
+  }, [period]);
+
   if (loadingRole && !userAuth) {
     return (
       <View style={[styles.root, { backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' }]}>
@@ -262,6 +357,8 @@ export default function Index() {
           </View>
         </View>
 
+        <PWAInstallBanner />
+
         {/* ── SyncBadge ── */}
         <SyncBadge />
 
@@ -312,11 +409,7 @@ export default function Index() {
             )}
             {!loadingSum && (
               <Text style={[styles.bigSub, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
-                {isAdmin
-                  ? (costosPendientes
-                      ? `${kpiVentas} facturas · ganancia no disponible`
-                      : `Ingreso ${formatUSD(stats.ingreso)}${kpiVentas > 0 ? `  ·  ${kpiVentas} facturas` : ''}`)
-                  : `Ticket promedio: ${formatUSD(summary?.ticket_promedio ?? 0)}${kpiVentas > 0 ? `  ·  ${kpiVentas} facturas` : ''}`}
+                {bigCardSubText}
               </Text>
             )}
             {!loadingSum && costosPendientes && (
@@ -350,7 +443,7 @@ export default function Index() {
           <KpiCard
             icon="shopping-cart"
             value={String(stats.ventas)}
-            label={`Ventas ${period === 'dia' ? 'hoy' : period === 'ayer' ? 'ayer' : period === 'semana' ? 'semana' : 'del mes'}`}
+            label={getPeriodLabel('Ventas')}
             loading={loadingSum}
             desktop={isDesktop}
           />
@@ -364,7 +457,7 @@ export default function Index() {
           <KpiCard
             icon="package"
             value={String(Math.round(stats.items))}
-            label={`Unidades ${period === 'dia' ? 'hoy' : period === 'ayer' ? 'ayer' : period === 'semana' ? 'semana' : 'del mes'}`}
+            label={getPeriodLabel('Unidades')}
             loading={loadingSum}
             desktop={isDesktop}
           />
@@ -372,7 +465,7 @@ export default function Index() {
             <KpiCard
               icon="trending-up"
               value={formatUSD(stats.ingreso)}
-              label={`Ingreso ${period === 'dia' ? 'hoy' : period === 'ayer' ? 'ayer' : period === 'semana' ? 'semana' : 'mes'}`}
+              label={getPeriodLabel('Ingreso')}
               loading={loadingSum}
               desktop={isDesktop}
             />
@@ -434,6 +527,15 @@ function TopToday({ isAdmin }: { isAdmin: boolean }) {
   const todayStr = getLocalDateStr();
   const today = daily.find(d => d.dia === todayStr) ?? daily[daily.length - 1];
 
+  const subText = useMemo(() => {
+    if (!today) return '';
+    if (isAdmin) {
+      return `${today.num_ventas} facturas · ingreso ${formatUSD(today.ingreso_bruto)}`;
+    }
+    const ticketProm = today.num_ventas > 0 ? today.ingreso_bruto / today.num_ventas : 0;
+    return `Ventas registradas · Ticket promedio: ${formatUSD(ticketProm)}`;
+  }, [today, isAdmin, formatUSD]);
+
   if (!today) return null;
 
   return (
@@ -448,10 +550,7 @@ function TopToday({ isAdmin }: { isAdmin: boolean }) {
           {isAdmin ? formatUSD(today.ganancia) : today.num_ventas}
         </Text>
         <Text style={[styles.topSub, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
-          {isAdmin 
-            ? `${today.num_ventas} facturas · ingreso ${formatUSD(today.ingreso_bruto)}`
-            : `Ventas registradas · Ticket promedio: ${formatUSD(today.num_ventas > 0 ? today.ingreso_bruto / today.num_ventas : 0)}`
-          }
+          {subText}
         </Text>
       </View>
       <View style={[styles.topBadge, { backgroundColor: colors.primaryFaded, borderColor: colors.primary + '40' }]}>

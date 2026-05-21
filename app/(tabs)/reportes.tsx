@@ -40,6 +40,7 @@ export default function Reportes() {
   const { isDesktop } = useDeviceSize();
   const { scrollOffsetReportes, setScrollOffsetReportes } = useInventarioStore();
   const { width: screenW } = useWindowDimensions();
+  const isNarrow = screenW < 420;
   const hasRestored = useRef(false);
   const scrollOffsetRef = useRef(scrollOffsetReportes);
 
@@ -147,8 +148,12 @@ export default function Reportes() {
         </View>
 
         {/* Period selector */}
-        <View style={[styles.selectorsRow, styles.padH]}>
-          <View style={styles.periodGroup}>
+        <View style={[
+          styles.selectorsRow, 
+          styles.padH,
+          isNarrow && { flexDirection: 'column', alignItems: 'stretch', gap: 10 }
+        ]}>
+          <View style={[styles.periodGroup, isNarrow && { width: '100%' }]}>
             {PERIODS.map(p => {
               const active = period === p.value;
               return (
@@ -160,11 +165,16 @@ export default function Reportes() {
                       backgroundColor: active ? colors.primary  : colors.surfaceAlt,
                       borderColor:     active ? colors.primary  : colors.border,
                     },
+                    isNarrow && { flex: 1, paddingVertical: 8 },
                     pressed && { opacity: 0.75 },
                   ]}
                   onPress={() => setPeriod(p.value)}
                 >
-                  <Text style={[styles.selectorText, { color: active ? colors.onPrimary : colors.textMuted }]}>
+                  <Text style={[
+                    styles.selectorText, 
+                    { color: active ? colors.onPrimary : colors.textMuted },
+                    isNarrow && { fontSize: 10 }
+                  ]}>
                     {p.label}
                   </Text>
                 </Pressable>
@@ -173,7 +183,10 @@ export default function Reportes() {
           </View>
 
           {/* Chart mode toggle */}
-          <View style={styles.modeGroup}>
+          <View style={[
+            styles.modeGroup,
+            isNarrow && { width: '100%', flex: undefined, justifyContent: 'center' }
+          ]}>
             {(['ganancia', 'ingreso', 'items'] as ChartMode[]).map(m => {
               const active = chartMode === m;
               if (!isAdmin && m !== 'items') return null;
@@ -187,11 +200,16 @@ export default function Reportes() {
                       backgroundColor: active ? colors.surfaceAlt : 'transparent',
                       borderColor:     active ? colors.border      : 'transparent',
                     },
+                    isNarrow && (isAdmin ? { flex: 1, paddingVertical: 8 } : { paddingVertical: 8, paddingHorizontal: 16 }),
                     pressed && { opacity: 0.75 },
                   ]}
                   onPress={() => setChartMode(m)}
                 >
-                  <Text style={[styles.selectorText, { color: active ? colors.text : colors.textMuted }]}>
+                  <Text style={[
+                    styles.selectorText, 
+                    { color: active ? colors.text : colors.textMuted },
+                    isNarrow && { fontSize: 10 }
+                  ]}>
                     {m === 'ganancia' ? 'Ganancia' : m === 'ingreso' ? 'Ingresos' : 'Unidades'}
                   </Text>
                 </Pressable>

@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   ScrollView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -18,6 +19,67 @@ import { notify, confirm } from '../src/lib/notify';
 import { useTheme } from '../src/theme/ThemeContext';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUserRole } from '../src/hooks/useUserRole';
+import { usePWAInstallStore } from '../src/hooks/usePWAInstall';
+
+function PWAProfileControl() {
+  const { colors } = useTheme();
+  const isInstallable = usePWAInstallStore(state => state.isInstallable);
+  const isStandalone = usePWAInstallStore(state => state.isStandalone);
+  const install = usePWAInstallStore(state => state.install);
+
+  if (Platform.OS !== 'web') return null;
+
+  if (isStandalone) {
+    return (
+      <View style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 12,
+        height: 58,
+        borderRadius: 18,
+        borderWidth: 0.5,
+        borderColor: colors.border || '#333',
+        backgroundColor: colors.surface || '#1E1E1E',
+        marginTop: 10,
+        paddingHorizontal: 16,
+      }}>
+        <Feather name="check-circle" size={18} color={colors.primary || '#F5B200'} />
+        <Text style={{ fontSize: 13, fontFamily: 'JetBrainsMono_700Bold', color: '#FFFFFF', letterSpacing: 0.5 }}>
+          APLICACIÓN INSTALADA (PWA)
+        </Text>
+      </View>
+    );
+  }
+
+  if (isInstallable) {
+    return (
+      <Pressable
+        onPress={() => install()}
+        style={({ pressed }) => [{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 12,
+          height: 58,
+          borderRadius: 18,
+          borderWidth: 0.5,
+          borderColor: colors.primary || '#F5B200',
+          backgroundColor: '#1E1E1E',
+          marginTop: 10,
+          paddingHorizontal: 16,
+        }, pressed && { opacity: 0.8 }]}
+      >
+        <Feather name="download" size={18} color={colors.primary || '#F5B200'} />
+        <Text style={{ fontSize: 13, fontFamily: 'JetBrainsMono_700Bold', color: colors.primary || '#F5B200', letterSpacing: 0.5 }}>
+          INSTALAR APLICACIÓN
+        </Text>
+      </Pressable>
+    );
+  }
+
+  return null;
+}
 
 export default function Perfil() {
   const { colors } = useTheme();
@@ -96,6 +158,18 @@ export default function Perfil() {
   }
 
   async function performLogout() {
+    try {
+      // Liberamos el allowed_sid en la base de datos para que otros
+      // dispositivos puedan iniciar sesión.
+      if (profile?.id) {
+        await supabase
+          .from('profiles')
+          .update({ allowed_sid: null })
+          .eq('id', profile.id);
+      }
+    } catch (err) {
+      console.warn('Error al liberar la sesión del dispositivo:', err);
+    }
     try {
       // En web, sin "global", signOut puede quedarse colgado intentando
       // contactar al endpoint de logout — usamos "local" que solo limpia
@@ -200,6 +274,8 @@ export default function Perfil() {
             </View>
           </View>
         </View>
+
+        <PWAProfileControl />
 
         {/* Salida */}
         <Pressable
