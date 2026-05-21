@@ -33,7 +33,8 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Permite a El Serrucho GO acceder a tu cámara para escanear códigos de barras y QR."
+          "cameraPermission": "Permite a El Serrucho GO acceder a tu cámara para escanear códigos de barras y QR.",
+          "barcodeScannerEnabled": true
         }
       ],
       [
