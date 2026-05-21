@@ -18,6 +18,7 @@ import { useProductos, StockFilter } from '../../src/hooks/useProductos';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 import { ProductRow } from '../../src/components/ProductRow';
+import { BarcodeScannerModal } from '../../src/components/BarcodeScannerModal';
 import type { Producto } from '../../src/lib/supabase';
 
 const FILTERS: { key: StockFilter; label: string }[] = [
@@ -32,6 +33,7 @@ export default function Inventario() {
   const router = useRouter();
   const listRef = useRef<FlashList<Producto>>(null);
   const { isDesktop } = useDeviceSize();
+  const [scannerVisible, setScannerVisible] = useState(false);
   const { search, filter, scrollOffset, setSearch, setFilter, setScrollOffset } = useInventarioStore();
 
   const { productos, isLoading, isFetchingMore, hasMore, fetchMore, error } = useProductos(search, filter);
@@ -107,10 +109,13 @@ export default function Inventario() {
             clearButtonMode="while-editing"
           />
           {search.length > 0 && (
-            <Pressable onPress={() => setSearch('')} hitSlop={8} style={({ pressed }) => pressed && { opacity: 0.6 }}>
+            <Pressable onPress={() => setSearch('')} hitSlop={8} style={({ pressed }) => [{ marginRight: 6 }, pressed && { opacity: 0.6 }]}>
               <Feather name="x" size={16} color={colors.textMuted} />
             </Pressable>
           )}
+          <Pressable onPress={() => setScannerVisible(true)} hitSlop={8} style={({ pressed }) => pressed && { opacity: 0.6 }}>
+            <Feather name="camera" size={18} color={colors.primary} />
+          </Pressable>
         </View>
 
         {/* Filter chips */}
@@ -188,7 +193,14 @@ export default function Inventario() {
           }
         />
       )}
-
+      <BarcodeScannerModal
+        visible={scannerVisible}
+        onClose={() => setScannerVisible(false)}
+        onScan={(data) => {
+          setSearch(data);
+          setScannerVisible(false);
+        }}
+      />
     </SafeAreaView>
   );
 }

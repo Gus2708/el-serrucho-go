@@ -11,6 +11,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   useWindowDimensions,
+  Platform,
 } from 'react-native';
 
 // Padding interior del bigCard (debe coincidir con `bigCard.padding` en styles)

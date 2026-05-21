@@ -80,7 +80,7 @@ export function useSessionEnforcer(session: Session | null) {
         notify('Cuenta en uso', 'Esta cuenta ya tiene una sesión activa en otro dispositivo.');
         try { 
           await supabase.auth.signOut({ scope: 'local' }); 
-          router.replace('/(auth)/kicked');
+          router.replace('/(auth)/kicked' as any);
         } catch (e) {
           console.error('[session-enforcer] signOut error:', e);
         }
@@ -106,7 +106,7 @@ export function useSessionEnforcer(session: Session | null) {
             notifyKicked();
             try { 
               await supabase.auth.signOut({ scope: 'local' }); 
-              router.replace('/(auth)/kicked');
+              router.replace('/(auth)/kicked' as any);
             } catch {}
           }
         }

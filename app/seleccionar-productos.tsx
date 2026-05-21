@@ -9,12 +9,14 @@ import { useProductos, isPlaceholder } from '../src/hooks/useProductos';
 import { Producto } from '../src/lib/supabase';
 import { usePresupuestoStore } from '../src/hooks/usePresupuestoStore';
 import { useDeviceSize } from '../src/hooks/useDeviceSize';
+import { BarcodeScannerModal } from '../src/components/BarcodeScannerModal';
 
 export default function SeleccionarProductos() {
   const { colors, formatUSD } = useTheme();
   const { isDesktop } = useDeviceSize();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [scannerVisible, setScannerVisible] = useState(false);
   
   const { items, addItem, updateItemQuantity, removeItem } = usePresupuestoStore();
 
@@ -165,10 +167,13 @@ export default function SeleccionarProductos() {
           clearButtonMode="always"
         />
         {search.length > 0 && Platform.OS !== 'ios' && (
-          <Pressable onPress={() => setSearch('')}>
+          <Pressable onPress={() => setSearch('')} style={{ marginRight: 8 }}>
             <Feather name="x-circle" size={20} color={colors.textDim} />
           </Pressable>
         )}
+        <Pressable onPress={() => setScannerVisible(true)} hitSlop={8} style={({ pressed }) => pressed && { opacity: 0.6 }}>
+          <Feather name="camera" size={20} color={colors.primary} />
+        </Pressable>
       </View>
 
       {/* List */}
@@ -198,6 +203,14 @@ export default function SeleccionarProductos() {
         ListFooterComponent={
           isFetchingMore ? <ActivityIndicator size="small" color={colors.primary} style={{ padding: 20 }} /> : null
         }
+      />
+      <BarcodeScannerModal
+        visible={scannerVisible}
+        onClose={() => setScannerVisible(false)}
+        onScan={(data) => {
+          setSearch(data);
+          setScannerVisible(false);
+        }}
       />
     </SafeAreaView>
   );
