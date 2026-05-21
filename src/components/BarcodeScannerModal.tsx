@@ -149,9 +149,6 @@ export function BarcodeScannerModal({ visible, onClose, onScan }: Props) {
             style={StyleSheet.absoluteFillObject}
             facing="back"
             onBarcodeScanned={handleBarcodeScanned}
-            barcodeScannerSettings={{
-              barcodeTypes: ['qr', 'ean13', 'ean8', 'code128', 'upc_a', 'upc_e', 'code39', 'code93'],
-            }}
           >
             {/* Dark overlay surrounding the scanning target */}
             <View style={styles.overlayContainer}>
