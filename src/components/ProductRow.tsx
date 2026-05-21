@@ -45,6 +45,7 @@ function ProductRowImpl({ producto, onPress }: Props) {
           <Text style={[styles.meta, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
             {producto.codigo_interno}
             {producto.unidad ? `  ·  ${producto.unidad}` : ''}
+            {producto.referencia ? `  ·  Ref: ${producto.referencia}` : ''}
           </Text>
 
           <View style={styles.badges}>
@@ -74,6 +75,7 @@ export const ProductRow = memo(ProductRowImpl, (prev, next) =>
   prev.producto.precio_venta    === next.producto.precio_venta &&
   prev.producto.costo           === next.producto.costo &&
   prev.producto.descripcion     === next.producto.descripcion &&
+  prev.producto.referencia      === next.producto.referencia &&
   prev.onPress                  === next.onPress
 );
 

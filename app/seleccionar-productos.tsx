@@ -67,7 +67,9 @@ export default function SeleccionarProductos() {
         isDesktop && styles.productCardDesktop
       ]}>
         <View style={styles.productInfo}>
-          <Text style={[styles.productCode, { color: colors.textDim }]}>{item.codigo_interno}</Text>
+          <Text style={[styles.productCode, { color: colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>
+            {item.codigo_interno}{item.referencia ? `  ·  Ref: ${item.referencia}` : ''}
+          </Text>
           <Text style={[styles.productName, { color: colors.text }]} numberOfLines={2}>
             {item.descripcion}
           </Text>

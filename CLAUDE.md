@@ -310,6 +310,7 @@ The badge state is computed from `MAX(productos.actualizado_en)`:
     the client unless specifically authorized (current example: `detect-anomalies`
     is invoked from the Alertas screen via `supabase.functions.invoke`, gated
     behind a button).
+13. **Code Simplification**: Proactively and always apply the `code-simplifier` skill to any written or modified code. Refine for clarity, ES module syntax, explicit Props and return types, no nested ternaries, and standard function declarations, preserving exact original functionality.
 
 ---
 

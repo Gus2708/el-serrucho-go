@@ -132,6 +132,12 @@ export default function ProductoDetail() {
                 <Text style={[styles.code, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>{producto.codigo_barras}</Text>
               </View>
             ) : null}
+            {producto.referencia ? (
+              <View style={styles.codeRow}>
+                <Text style={[styles.label, { color: colors.textMuted }]}>Referencia</Text>
+                <Text style={[styles.code, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>{producto.referencia}</Text>
+              </View>
+            ) : null}
             {producto.unidad ? (
               <View style={styles.codeRow}>
                 <Text style={[styles.label, { color: colors.textMuted }]}>Unidad</Text>

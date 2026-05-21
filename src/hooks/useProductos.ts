@@ -67,12 +67,12 @@ async function fetchProductos(
       const clean = trimmed.replace(/\*/g, '').trim();
       const words = clean.split(/\s+/).filter(w => w.length > 0);
       const pattern = `%${words.join('%')}%`;
-      query = query.or(`descripcion.ilike.${pattern},codigo_interno.ilike.${pattern},codigo_barras.ilike.${pattern}`);
+      query = query.or(`descripcion.ilike.${pattern},codigo_interno.ilike.${pattern},codigo_barras.ilike.${pattern},referencia.ilike.${pattern}`);
     } else {
       // Strict mode: Starts with (Prefix search)
       // Matches products whose name or code begins with the search string
       const term = `${trimmed}%`;
-      query = query.or(`descripcion.ilike.${term},codigo_interno.ilike.${term},codigo_barras.ilike.${term}`);
+      query = query.or(`descripcion.ilike.${term},codigo_interno.ilike.${term},codigo_barras.ilike.${term},referencia.ilike.${term}`);
     }
   }
 

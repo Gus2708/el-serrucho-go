@@ -24,6 +24,7 @@ export type Producto = {
   descripcion:    string;
   unidad:         string;
   codigo_barras:  string;
+  referencia?:    string; // supplier reference field
   costo:          number;
   precio_venta:   number;
   existencia:     number;
