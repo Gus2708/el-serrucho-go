@@ -124,24 +124,24 @@ export default function ProductoDetail() {
             </Text>
             <View style={styles.codeRow}>
               <Text style={[styles.label, { color: colors.textMuted }]}>Código interno</Text>
-              <Text style={[styles.code, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>{producto.codigo_interno}</Text>
+              <Text style={[styles.code, { color: colors.primary, flex: 1, textAlign: 'right', marginLeft: 16 }]} numberOfLines={1} adjustsFontSizeToFit>{producto.codigo_interno}</Text>
             </View>
             {producto.codigo_barras ? (
               <View style={styles.codeRow}>
                 <Text style={[styles.label, { color: colors.textMuted }]}>Código de barras</Text>
-                <Text style={[styles.code, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>{producto.codigo_barras}</Text>
+                <Text style={[styles.code, { color: colors.textMuted, flex: 1, textAlign: 'right', marginLeft: 16 }]} numberOfLines={1} adjustsFontSizeToFit>{producto.codigo_barras}</Text>
               </View>
             ) : null}
             {producto.referencia ? (
               <View style={styles.codeRow}>
                 <Text style={[styles.label, { color: colors.textMuted }]}>Referencia</Text>
-                <Text style={[styles.code, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>{producto.referencia}</Text>
+                <Text style={[styles.code, { color: colors.textMuted, flex: 1, textAlign: 'right', marginLeft: 16 }]} numberOfLines={1} adjustsFontSizeToFit>{producto.referencia}</Text>
               </View>
             ) : null}
             {producto.unidad ? (
               <View style={styles.codeRow}>
                 <Text style={[styles.label, { color: colors.textMuted }]}>Unidad</Text>
-                <Text style={[styles.value, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{producto.unidad}</Text>
+                <Text style={[styles.value, { color: colors.text, flex: 1, textAlign: 'right', marginLeft: 16 }]} numberOfLines={1} adjustsFontSizeToFit>{producto.unidad}</Text>
               </View>
             ) : null}
           </View>
