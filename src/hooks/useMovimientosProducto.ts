@@ -108,6 +108,9 @@ async function fetchMovimientos(codigoProducto: string): Promise<MovimientoProdu
   // 3. Mapear Ventas (Salidas)
   if (salesData) {
     salesData.forEach((s: any) => {
+      // Ignorar ventas que no tengan cabecera activa (status != 1) o que tengan cantidad igual a 0
+      if (!s.ventas || Number(s.cantidad || 0) === 0) return;
+
       const dateStr = s.ventas?.fecha_emision || s.created_at;
       const dateObj = new Date(dateStr);
       const ts      = isNaN(dateObj.getTime()) ? 0 : dateObj.getTime();
