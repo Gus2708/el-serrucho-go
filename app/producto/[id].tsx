@@ -8,19 +8,61 @@ const screenHeight = Dimensions.get('window').height;
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { CurrencyText } from '../../src/components/CurrencyText';
 import { supabase, Producto } from '../../src/lib/supabase';
-import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
+import { useMovimientosProducto, MovimientoProducto } from '../../src/hooks/useMovimientosProducto';
+import { VentaDetailModal } from '../../src/components/VentaDetailModal';
+import { VentaHoy } from '../../src/hooks/useVentasHoy';
+import { buildPdfHtml, printHtml, DraftItem } from '../../src/utils/pdfGenerator';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 
 export default function ProductoDetail() {
   const { colors, tokens, formatUSD } = useTheme();
   const router  = useRouter();
   const { id }  = useLocalSearchParams<{ id: string }>();
-  const addItem = useOrdenCambio(s => s.addItem);
-  const items   = useOrdenCambio(s => s.items);
+  const queryClient = useQueryClient();
+  const [isSaving, setIsSaving] = useState(false);
+  const [adjustmentNote, setAdjustmentNote] = useState('');
+
+  const { data: movimientos, isLoading: isLoadingMovs } = useMovimientosProducto(id);
+
+  const [selectedVentaId, setSelectedVentaId] = useState<number | null>(null);
+
+  const { data: selectedVenta, isLoading: isLoadingVenta } = useQuery({
+    queryKey: ['venta-hoy-single', selectedVentaId],
+    queryFn: async () => {
+      if (!selectedVentaId) return null;
+      const { data, error } = await supabase
+        .from('vw_ventas_usd')
+        .select('*')
+        .eq('venta_id', selectedVentaId)
+        .single();
+
+      if (error) throw error;
+
+      return {
+        ...data,
+        id:                          data.venta_id,
+        total_usd:                   Number(data.total_usd   ?? 0),
+        ganancia_total_usd:          Number(data.ganancia_total_usd ?? 0),
+        items_count:                 Number(data.lines_count ?? data.items_count ?? 0),
+        total_neto_usd:              Number(data.total_neto_usd     ?? 0),
+        total_bruto_usd:             Number(data.total_bruto_usd    ?? 0),
+        total_impuesto_usd:          Number(data.total_impuesto_usd ?? 0),
+        original_total_neto_ves:     Number(data.original_total_neto_ves     ?? 0),
+        original_total_impuesto_ves: Number(data.original_total_impuesto_ves ?? 0),
+        nombre_cliente:              data.nombre_cliente ?? 'Cliente Genérico',
+        metodo_pago:                 data.metodo_pago ?? null,
+        id_unico:                    data.id_unico ?? null,
+      } as VentaHoy;
+    },
+    enabled: !!selectedVentaId,
+    staleTime: 60_000,
+  });
 
   const [showAddSheet, setShowAddSheet] = useState(false);
   const [newQty,       setNewQty]       = useState('');
@@ -184,49 +226,52 @@ export default function ProductoDetail() {
             })}
           </Text>
 
-          {/* Add to draft order / Edit */}
-          {items.some(i => i.codigo_producto === producto.codigo_interno) ? (
-            <View style={{ gap: 10, marginHorizontal: 16, marginTop: 8 }}>
-              <Pressable
-                style={({ pressed }) => [styles.addBtn, { marginHorizontal: 0, marginTop: 0, backgroundColor: colors.primaryFaded, borderColor: colors.primary }, pressed && { opacity: 0.75 }]}
-                onPress={() => {
-                const existingItem = items.find(i => i.codigo_producto === producto.codigo_interno);
-                  setNewQty(existingItem ? String(existingItem.nueva_existencia) : '');
-                  setShowAddSheet(true);
-                }}
-              >
-                <Feather name="edit-2" size={16} color={colors.primary} />
-                <Text style={[styles.addBtnText, { color: colors.primary }]}>
-                  Editar cantidad en borrador
-                </Text>
-              </Pressable>
+          {/* Adjust Existence CTA */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.addBtn,
+              { backgroundColor: colors.primaryFaded, borderColor: colors.primary },
+              pressed && { opacity: 0.75 }
+            ]}
+            onPress={() => {
+              setNewQty('');
+              setAdjustmentNote('');
+              setErrorMsg(null);
+              setShowAddSheet(true);
+            }}
+          >
+            <Feather name="sliders" size={16} color={colors.primary} />
+            <Text style={[styles.addBtnText, { color: colors.primary }]}>
+              Ajustar existencia
+            </Text>
+          </Pressable>
 
-              <Pressable
-                style={({ pressed }) => [styles.addBtn, { marginHorizontal: 0, marginTop: 0, backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.75 }]}
-                onPress={() => router.navigate('/ordenes')}
-              >
-                <Feather name="file-text" size={16} color={colors.textMuted} />
-                <Text style={[styles.addBtnText, { color: colors.textMuted }]}>
-                  Ir al borrador
-                </Text>
-              </Pressable>
-            </View>
-          ) : (
-            <Pressable
-              style={({ pressed }) => [styles.addBtn, { backgroundColor: colors.primaryFaded, borderColor: colors.primary }, pressed && { opacity: 0.75 }]}
-              onPress={() => {
-                setNewQty('');
-                setErrorMsg(null);
-                setShowAddSheet(true);
-              }}
-            >
-              <Feather name="plus" size={16} color={colors.primary} />
-              <Text style={[styles.addBtnText, { color: colors.primary }]}>
-                Agregar al borrador
-              </Text>
-            </Pressable>
-          )}
+          {/* Historial de movimientos */}
+          <HistorialMovimientos 
+            movimientos={movimientos} 
+            isLoading={isLoadingMovs} 
+            colors={colors} 
+            onSelectVenta={setSelectedVentaId}
+          />
         </ScrollView>
+
+        {/* Modal de Detalle de Venta */}
+        <VentaDetailModal 
+          venta={selectedVenta ?? null} 
+          onClose={() => setSelectedVentaId(null)} 
+        />
+
+        {/* Indicador de carga para VentaDetailModal */}
+        <Modal 
+          visible={!!selectedVentaId && isLoadingVenta} 
+          transparent 
+          animationType="fade"
+          onRequestClose={() => setSelectedVentaId(null)}
+        >
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        </Modal>
 
         {/* Add to order sheet */}
         <Modal
@@ -344,9 +389,25 @@ export default function ProductoDetail() {
                 </View>
               )}
 
+              <Text style={[styles.sheetLabel, { color: colors.textMuted, marginTop: 12 }]}>
+                Nota / Observación (opcional):
+              </Text>
+              <TextInput
+                style={[styles.noteInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                placeholder="Ej. Entrada de proveedor, producto roto..."
+                placeholderTextColor={colors.textDim}
+                value={adjustmentNote}
+                onChangeText={setAdjustmentNote}
+                maxLength={100}
+                returnKeyType="done"
+              />
+
               <Pressable
-                style={({ pressed }) => [styles.sheetBtn, { backgroundColor: colors.primary }, pressed && { opacity: 0.75 }]}
-                onPress={() => {
+                style={({ pressed }) => [styles.sheetBtn, { backgroundColor: colors.primary }, (isSaving || pressed) && { opacity: 0.75 }]}
+                disabled={isSaving}
+                onPress={async () => {
+                  if (isSaving) return;
+
                   const inputVal = parseFloat(newQty);
                   if (isNaN(inputVal)) {
                     setErrorMsg('Ingresa un número válido');
@@ -364,20 +425,144 @@ export default function ProductoDetail() {
                   }
 
                   setErrorMsg(null);
+                  setIsSaving(true);
 
-                  addItem({
-                    codigo_producto:   producto.codigo_interno,
-                    descripcion:       producto.descripcion,
-                    existencia_actual: producto.existencia,
-                    nueva_existencia:  finalQty,
-                    nota:              '',
-                  });
-                  setShowAddSheet(false);
+                  try {
+                    // 1. Get authenticated user ID
+                    const { data: { user } } = await supabase.auth.getUser();
+                    if (!user) {
+                      throw new Error('Usuario no autenticado');
+                    }
+
+                    const noteText = adjustmentNote.trim() || 'Ajuste rápido';
+
+                    // 2. Create the change order header (initially draft/borrador)
+                    const { data: orden, error: ordenError } = await supabase
+                      .from('ordenes_cambio')
+                      .insert({
+                        creado_por: user.id,
+                        nota: noteText,
+                        status: 'borrador',
+                      })
+                      .select('id')
+                      .single();
+
+                    if (ordenError || !orden) {
+                      throw ordenError ?? new Error('No se pudo crear la orden de cambio');
+                    }
+
+                    // 3. Create the change order item
+                    const { error: itemError } = await supabase
+                      .from('ordenes_cambio_items')
+                      .insert({
+                        orden_id: orden.id,
+                        codigo_producto: producto.codigo_interno,
+                        descripcion: producto.descripcion,
+                        existencia_actual: producto.existencia,
+                        nueva_existencia: finalQty,
+                        nota: noteText,
+                      });
+
+                    if (itemError) {
+                      throw itemError;
+                    }
+
+                    // 4. Retrieve creator's display name
+                    const { data: profileData } = await supabase
+                      .from('profiles')
+                      .select('display_name')
+                      .eq('id', user.id)
+                      .single();
+                    const creadoPor = profileData?.display_name || undefined;
+
+                    // 5. Generate HTML
+                    const draftItem: DraftItem = {
+                      codigo_producto: producto.codigo_interno,
+                      descripcion: producto.descripcion,
+                      existencia_actual: producto.existencia,
+                      nueva_existencia: finalQty,
+                      nota: noteText,
+                    };
+                    const html = buildPdfHtml([draftItem], noteText, orden.id, creadoPor);
+
+                    // 6. Handle print/share depending on platform
+                    if (Platform.OS === 'web') {
+                      // Trigger clean isolated print
+                      await printHtml(html);
+
+                      // Update order status to emitted
+                      await supabase
+                        .from('ordenes_cambio')
+                        .update({ status: 'emitido' })
+                        .eq('id', orden.id);
+                    } else {
+                      // Native: Print to file and upload to Supabase storage
+                      const { uri } = await Print.printToFileAsync({ html });
+                      const fileName = `orden-${orden.id}-${Date.now()}.pdf`;
+                      const fileData = await fetch(uri).then(r => r.blob());
+
+                      const { error: uploadError } = await supabase.storage
+                        .from('change-orders')
+                        .upload(fileName, fileData, { contentType: 'application/pdf' });
+
+                      if (!uploadError) {
+                        const { data: signedData } = await supabase.storage
+                          .from('change-orders')
+                          .createSignedUrl(fileName, 60 * 60 * 24 * 365);
+
+                        await supabase
+                          .from('ordenes_cambio')
+                          .update({ status: 'emitido', pdf_url: signedData?.signedUrl ?? null })
+                          .eq('id', orden.id);
+                      } else {
+                        // Fallback: update status even if upload failed
+                        await supabase
+                          .from('ordenes_cambio')
+                          .update({ status: 'emitido' })
+                          .eq('id', orden.id);
+                      }
+
+                      // Open Native Share sheet
+                      const canShare = await Sharing.isAvailableAsync();
+                      if (canShare) {
+                        await Sharing.shareAsync(uri, { mimeType: 'application/pdf' });
+                      }
+                    }
+
+                    // 7. Enqueue a remote sync command to tell POS to update the stock
+                    await supabase
+                      .from('comandos_remotos')
+                      .insert([{
+                        comando: 'sync_inventory',
+                        status: 'pendiente',
+                      }]);
+
+                    notify('Éxito', 'Ajuste guardado. Sincronizando stock...');
+                    
+                    // 8. Invalidate queries to reload details, history & sync badge
+                    queryClient.invalidateQueries({ queryKey: ['producto', id] });
+                    queryClient.invalidateQueries({ queryKey: ['movimientos-producto', id] });
+                    queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+
+                    // 9. Reset and close modal
+                    setAdjustmentNote('');
+                    setNewQty('');
+                    closeSheet();
+                  } catch (e: any) {
+                    console.error('Error al emitir ajuste:', e);
+                    setErrorMsg(e.message ?? 'Error inesperado al guardar el ajuste');
+                  } finally {
+                    setIsSaving(false);
+                  }
                 }}
               >
-                <Text style={[styles.sheetBtnText, { color: colors.onPrimary }]}>
-                  Confirmar
-                </Text>
+                {isSaving ? (
+                  <ActivityIndicator color={colors.onPrimary} />
+                ) : (
+                  <Text style={[styles.sheetBtnText, { color: colors.onPrimary }]}>
+                    Confirmar
+                  </Text>
+                )}
               </Pressable>
               </ScrollView>
             </Animated.View>
@@ -444,6 +629,131 @@ function StockDisplay({ producto, colors }: { producto: Producto; colors: any })
           {isEmpty ? 'Sin stock' : isLow ? 'Stock bajo' : 'En stock'}
         </Text>
       </View>
+    </View>
+  );
+}
+
+interface HistorialMovimientosProps {
+  movimientos?:   MovimientoProducto[];
+  isLoading:      boolean;
+  colors:         any;
+  onSelectVenta:  (ventaId: number) => void;
+}
+
+function HistorialMovimientos({
+  movimientos,
+  isLoading,
+  colors,
+  onSelectVenta,
+}: HistorialMovimientosProps): React.JSX.Element {
+  return (
+    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border, marginTop: 10, paddingBottom: 6 }]}>
+      <Text style={[styles.sectionLabel, { color: colors.textMuted, marginBottom: 12 }]}>
+        Historial de movimientos
+      </Text>
+
+      {isLoading ? (
+        <View style={styles.movCenter}>
+          <ActivityIndicator size="small" color={colors.primary} />
+        </View>
+      ) : !movimientos || movimientos.length === 0 ? (
+        <View style={styles.movCenter}>
+          <Text style={[styles.emptyText, { color: colors.textDim }]}>
+            Sin movimientos registrados
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.movementsList}>
+          {movimientos.map((mov, index) => {
+            const isVenta = mov.tipo === 'venta';
+            const isIngreso = mov.tipo === 'ingreso';
+            
+            let iconName: any = 'sliders';
+            let iconColor = colors.textMuted; 
+            let badgeBg = iconColor + '12';
+            let qtyColor = colors.text;
+            let labelText = '';
+
+            if (isVenta) {
+              iconName = 'arrow-down-right';
+              iconColor = colors.danger;
+              badgeBg = iconColor + '12';
+              qtyColor = colors.danger;
+              labelText = `${mov.cantidad}`;
+            } else if (isIngreso) {
+              iconName = 'plus';
+              iconColor = colors.success;
+              badgeBg = iconColor + '12';
+              qtyColor = colors.success;
+              labelText = `+${mov.cantidad}`;
+            } else {
+              iconName = 'sliders';
+              iconColor = mov.cantidad > 0 ? colors.success : colors.danger;
+              badgeBg = iconColor + '12';
+              qtyColor = iconColor;
+              labelText = mov.cantidad > 0 ? `+${mov.cantidad}` : `${mov.cantidad}`;
+            }
+
+            const rowContent = (
+              <>
+                <View style={[styles.movIconContainer, { backgroundColor: badgeBg }]}>
+                  <Feather name={iconName} size={14} color={iconColor} />
+                </View>
+
+                <View style={styles.movInfo}>
+                  <Text style={[styles.movText, { color: colors.text }]} numberOfLines={1}>
+                    {mov.referencia}
+                  </Text>
+                  {mov.nota ? (
+                    <Text style={[styles.movNota, { color: colors.textMuted }]} numberOfLines={1}>
+                      {mov.nota}
+                    </Text>
+                  ) : null}
+                </View>
+
+                <View style={styles.movRightCol}>
+                  <Text style={[styles.movQtyText, { color: qtyColor }]}>
+                    {labelText}
+                  </Text>
+                  <Text style={[styles.movDateText, { color: colors.textDim }]}>
+                    {mov.fechaFormateada}
+                  </Text>
+                </View>
+              </>
+            );
+
+            if (isVenta) {
+              return (
+                <Pressable
+                  key={mov.id}
+                  onPress={() => {
+                    if (mov.ventaId) onSelectVenta(mov.ventaId);
+                  }}
+                  style={({ pressed }) => [
+                    styles.movRow,
+                    pressed && { opacity: 0.6, backgroundColor: colors.border + '18' },
+                    index < movimientos.length - 1 && { borderBottomWidth: 0.5, borderColor: colors.border }
+                  ]}
+                >
+                  {rowContent}
+                </Pressable>
+              );
+            }
+
+            return (
+              <View 
+                key={mov.id} 
+                style={[
+                  styles.movRow, 
+                  index < movimientos.length - 1 && { borderBottomWidth: 0.5, borderColor: colors.border }
+                ]}
+              >
+                {rowContent}
+              </View>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 }
@@ -679,5 +989,69 @@ const styles = StyleSheet.create({
   previewValue: {
     fontSize: 16,
     fontFamily: 'JetBrainsMono_700Bold',
+  },
+  movCenter: {
+    paddingVertical: 20,
+    alignItems:      'center',
+    justifyContent:  'center',
+  },
+  emptyText: {
+    fontSize:   13,
+    fontFamily: 'JetBrainsMono_400Regular',
+  },
+  movementsList: {
+    gap: 0,
+  },
+  movRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    paddingVertical: 10,
+  },
+  movIconContainer: {
+    width:          32,
+    height:         32,
+    borderRadius:   16,
+    alignItems:     'center',
+    justifyContent: 'center',
+    marginRight:    12,
+  },
+  movInfo: {
+    flex: 1,
+  },
+  movText: {
+    fontSize:   13,
+    fontFamily: 'JetBrainsMono_500Medium',
+    flex: 1,
+    marginRight: 8,
+  },
+  movNota: {
+    fontSize:   11,
+    fontFamily: 'JetBrainsMono_400Regular',
+    marginTop:  2,
+  },
+  movRightCol: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  movQtyText: {
+    fontFamily: 'JetBrainsMono_700Bold',
+    fontSize: 14,
+    textAlign: 'right',
+  },
+  movDateText: {
+    fontFamily: 'JetBrainsMono_400Regular',
+    fontSize: 10,
+    marginTop: 2,
+    textAlign: 'right',
+  },
+  noteInput: {
+    borderRadius: 12,
+    borderWidth: 0.5,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 14,
+    fontFamily: 'JetBrainsMono_400Regular',
+    marginTop: 6,
   },
 });
