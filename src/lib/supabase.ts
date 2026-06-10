@@ -182,14 +182,7 @@ export type ProfitHourlyRow = {
   ganancia:      number;
 };
 
-export type AlertaStockRow = {
-  codigo_interno: string;
-  descripcion:    string;
-  existencia:     number;
-  costo:          number;
-  precio_venta:   number;
-  tipo_alerta:    'sin_stock' | 'stock_negativo' | 'margen_negativo' | 'stock_muerto';
-};
+
 
 export type TopProductoRow = {
   codigo_producto:   string;

@@ -10,7 +10,7 @@ const TABS: { name: string; icon: keyof typeof Feather.glyphMap; label: string }
   { name: 'index',      icon: 'home',         label: 'Inicio'     },
   { name: 'ventas',     icon: 'shopping-bag', label: 'Ventas'     },
   { name: 'inventario', icon: 'package',      label: 'Inventario' },
-  { name: 'alertas',    icon: 'bell',         label: 'Alertas'    },
+  { name: 'notificaciones', icon: 'bell',      label: 'Notificaciones' },
   { name: 'reportes',   icon: 'bar-chart',    label: 'Reportes'   },
   { name: 'ordenes',    icon: 'file-text',    label: 'Órdenes'    },
 ];

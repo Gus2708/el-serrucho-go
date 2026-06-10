@@ -337,12 +337,12 @@ export default function Index() {
                   },
                   pressed && { opacity: 0.7 },
                 ]}
-                onPress={() => router.push('/atenciones' as any)}
+                onPress={() => router.push('/(tabs)/notificaciones' as any)}
               >
                 <Feather
-                  name="message-circle"
+                  name="bell"
                   size={18}
-                  color={pendingCount > 0 ? '#25D366' : colors.textMuted}
+                  color={pendingCount > 0 ? colors.primary : colors.textMuted}
                 />
               </Pressable>
               {pendingCount > 0 && (
@@ -351,13 +351,6 @@ export default function Index() {
                 </View>
               )}
             </View>
-
-            <Pressable
-              style={({ pressed }) => [styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.7 }]}
-              onPress={() => router.push('/(tabs)/alertas')}
-            >
-              <Feather name="bell" size={18} color={colors.textMuted} />
-            </Pressable>
 
             <Pressable
               style={({ pressed }) => [styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.7 }]}

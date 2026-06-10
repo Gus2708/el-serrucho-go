@@ -1,30 +1,29 @@
 import * as React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Pressable,
   ActivityIndicator,
-  InteractionManager,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
 import Svg, { Path } from 'react-native-svg';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { supabase, AtencionPendiente } from '../src/lib/supabase';
-import { useTheme } from '../src/theme/ThemeContext';
-import { useUserRole } from '../src/hooks/useUserRole';
-import { useAtenciones } from '../src/hooks/useAtenciones';
-import { notify } from '../src/lib/notify';
-import { requestNotificationPermission } from '../src/utils/notifications';
+import { supabase, AtencionPendiente } from '../../src/lib/supabase';
+import { useTheme } from '../../src/theme/ThemeContext';
+import { useUserRole } from '../../src/hooks/useUserRole';
+import { useAtenciones } from '../../src/hooks/useAtenciones';
+import { useInventarioStore } from '../../src/hooks/useInventarioStore';
+import { notify } from '../../src/lib/notify';
+import { requestNotificationPermission } from '../../src/utils/notifications';
 
-// Icono SVG personalizado de WhatsApp para alinearse con las pautas de diseño nativo sin agregar fuentes de terceros
+// Icono SVG personalizado de WhatsApp
 function WhatsAppIcon({ size = 22, color = '#25D366' }: { size?: number; color?: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -36,7 +35,7 @@ function WhatsAppIcon({ size = 22, color = '#25D366' }: { size?: number; color?:
   );
 }
 
-// Sub-componente para refrescar el tiempo transcurrido en tiempo real en la card
+// Sub-componente para refrescar el tiempo transcurrido en vivo
 function TimeAgoText({ creadoEn }: { creadoEn: string }) {
   const { colors } = useTheme();
   const [timeStr, setTimeStr] = useState('');
@@ -62,7 +61,7 @@ function TimeAgoText({ creadoEn }: { creadoEn: string }) {
     }
 
     calculate();
-    const interval = setInterval(calculate, 30_000); // recalcular cada 30 segundos
+    const interval = setInterval(calculate, 30_000);
     return () => clearInterval(interval);
   }, [creadoEn]);
 
@@ -73,30 +72,46 @@ function TimeAgoText({ creadoEn }: { creadoEn: string }) {
   );
 }
 
-export default function Atenciones() {
+export default function Notificaciones() {
   const { colors } = useTheme();
-  const router = useRouter();
   const queryClient = useQueryClient();
+  const listRef = useRef<FlashList<any>>(null);
+  
   const { data: userAuth } = useUserRole();
   const { data: listData = [], isLoading, refetch } = useAtenciones();
+  const { scrollOffsetNotificaciones, setScrollOffsetNotificaciones } = useInventarioStore();
 
   const [claimingId, setClaimingId] = useState<number | null>(null);
-  const [isReady, setIsReady] = useState(false);
 
-  // Solicitar permiso de notificaciones en PWA / Web cuando entra a la pantalla
+  // Solicitar permiso de notificaciones al montar la pestaña
   useEffect(() => {
     requestNotificationPermission();
-    const task = InteractionManager.runAfterInteractions(() => {
-      setIsReady(true);
-    });
-    return () => task.cancel();
   }, []);
 
-  // Handler de reclamo de atención (Paso 4 - Concurrencia y RLS)
+  // Restaurar posición de scroll al enfocar la pestaña
+  useFocusEffect(
+    useCallback(() => {
+      if (scrollOffsetNotificaciones > 0 && listRef.current) {
+        const timer = setTimeout(() => {
+          listRef.current?.scrollToOffset({ offset: scrollOffsetNotificaciones, animated: false });
+        }, 100);
+        return () => clearTimeout(timer);
+      }
+    }, [scrollOffsetNotificaciones])
+  );
+
+  // Guardar posición de scroll
+  const handleScroll = (event: any) => {
+    const offset = event.nativeEvent.contentOffset.y;
+    if (offset >= 0) {
+      setScrollOffsetNotificaciones(offset);
+    }
+  };
+
+  // Handler de reclamo de atención
   async function handleClaim(id: number, nombre: string) {
     if (claimingId !== null) return;
     
-    // Validar pre-requisito: empleado logueado y activo
     if (!userAuth || !userAuth.is_active) {
       notify('Acceso Restringido', 'Debes tener un usuario activo para atender clientes.');
       return;
@@ -111,7 +126,6 @@ export default function Atenciones() {
     setClaimingId(id);
 
     try {
-      // Intenta marcarlo como atendido solo si aún sigue en estado 'pendiente'
       const { data, error } = await supabase
         .from('atenciones_pendientes')
         .update({
@@ -125,16 +139,13 @@ export default function Atenciones() {
 
       if (error) throw error;
 
-      // Si data contiene registros, ganamos la carrera de concurrencia
       if (data && data.length > 0) {
         notify('Cliente Asignado', `Ahora estás atendiendo a ${nombre}.`);
-        // Actualizar la cache de forma optimista
         queryClient.setQueryData<AtencionPendiente[]>(['atenciones-pendientes'], (prev) =>
           prev ? prev.filter((item) => item.id !== id) : []
         );
         queryClient.invalidateQueries({ queryKey: ['atenciones-count'] });
       } else {
-        // 0 filas afectadas -> otro empleado tomó el cliente un instante antes
         notify('No disponible', 'Esta atención ya fue tomada por otro compañero.');
         refetch();
       }
@@ -145,18 +156,9 @@ export default function Atenciones() {
     }
   }
 
-  // Quitar el sufijo de whatsapp
   function formatPhone(phone: string): string {
     if (!phone) return '';
     return phone.replace('@c.us', '');
-  }
-
-  if (isLoading || !isReady) {
-    return (
-      <View style={[styles.centered, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
   }
 
   return (
@@ -165,83 +167,86 @@ export default function Atenciones() {
 
       {/* Header */}
       <View style={styles.header}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.backBtn,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-            pressed && { opacity: 0.7 },
-          ]}
-          onPress={() => router.back()}
-        >
-          <Feather name="chevron-left" size={22} color={colors.text} />
-        </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
-          COLA DE ATENCIONES
+        <Text style={[styles.title, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
+          Notificaciones
         </Text>
-        <View style={{ width: 38 }} />
+        {!isLoading && listData.length > 0 && (
+          <View style={[styles.badge, { backgroundColor: colors.danger + '22', borderColor: colors.danger + '55' }]}>
+            <Text style={[styles.badgeText, { color: colors.danger }]}>{listData.length}</Text>
+          </View>
+        )}
       </View>
 
-      {/* Lista */}
-      <FlashList
-        data={listData}
-        estimatedItemSize={110}
-        keyExtractor={(item) => `atencion-${item.id}`}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 40 }}
-        refreshing={isLoading}
-        onRefresh={refetch}
-        ListEmptyComponent={() => (
-          <View style={styles.emptyContainer}>
-            <Feather name="check-circle" size={48} color={colors.success} style={{ marginBottom: 12, opacity: 0.8 }} />
-            <Text style={[styles.emptyTextTitle, { color: colors.text }]}>Sin pendientes</Text>
-            <Text style={[styles.emptyTextSub, { color: colors.textMuted }]}>
-              ¡Todo al día! No hay solicitudes de atención en este momento.
-            </Text>
-          </View>
-        )}
-        renderItem={({ item }) => (
-          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <View style={styles.cardHeader}>
-              <View style={styles.clientInfo}>
-                <View style={styles.clientNameRow}>
-                  <WhatsAppIcon size={18} />
-                  <Text style={[styles.clientName, { color: colors.text }]} numberOfLines={1}>
-                    {item.nombre || 'Cliente sin nombre'}
-                  </Text>
-                </View>
-                <Text style={[styles.clientPhone, { color: colors.textMuted }]}>
-                  +{formatPhone(item.telefono)}
-                </Text>
-              </View>
-              <TimeAgoText creadoEn={item.creado_en} />
-            </View>
-
-            <View style={styles.reasonBox}>
-              <Text style={[styles.reasonText, { color: colors.text }]} numberOfLines={3}>
-                {item.motivo || 'Solicita atención humana en chat.'}
+      {/* Renderizado condicional en base a isLoading - Elimina el Spinner Infinito */}
+      {isLoading && listData.length === 0 ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
+        <FlashList
+          ref={listRef}
+          data={listData}
+          estimatedItemSize={110}
+          keyExtractor={(item) => `atencion-${item.id}`}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 110 }}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          refreshing={isLoading}
+          onRefresh={refetch}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyContainer}>
+              <Feather name="check-circle" size={48} color={colors.success} style={{ marginBottom: 12, opacity: 0.8 }} />
+              <Text style={[styles.emptyTextTitle, { color: colors.text }]}>Sin pendientes</Text>
+              <Text style={[styles.emptyTextSub, { color: colors.textMuted }]}>
+                ¡Todo al día! No hay solicitudes de atención en este momento.
               </Text>
             </View>
+          )}
+          renderItem={({ item }) => (
+            <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={styles.cardHeader}>
+                <View style={styles.clientInfo}>
+                  <View style={styles.clientNameRow}>
+                    <WhatsAppIcon size={18} />
+                    <Text style={[styles.clientName, { color: colors.text }]} numberOfLines={1}>
+                      {item.nombre || 'Cliente sin nombre'}
+                    </Text>
+                  </View>
+                  <Text style={[styles.clientPhone, { color: colors.textMuted }]}>
+                    +{formatPhone(item.telefono)}
+                  </Text>
+                </View>
+                <TimeAgoText creadoEn={item.creado_en} />
+              </View>
 
-            <Pressable
-              style={({ pressed }) => [
-                styles.claimBtn,
-                { backgroundColor: colors.primary },
-                claimingId === item.id && { opacity: 0.7 },
-                pressed && { opacity: 0.8 },
-              ]}
-              disabled={claimingId !== null}
-              onPress={() => handleClaim(item.id, item.nombre || formatPhone(item.telefono))}
-            >
-              {claimingId === item.id ? (
-                <ActivityIndicator color={colors.onPrimary} size="small" />
-              ) : (
-                <Text style={[styles.claimBtnText, { color: colors.onPrimary }]}>
-                  ATENDER CLIENTE
+              <View style={styles.reasonBox}>
+                <Text style={[styles.reasonText, { color: colors.text }]} numberOfLines={3}>
+                  {item.motivo || 'Solicita atención humana en chat.'}
                 </Text>
-              )}
-            </Pressable>
-          </View>
-        )}
-      />
+              </View>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.claimBtn,
+                  { backgroundColor: colors.primary },
+                  claimingId === item.id && { opacity: 0.7 },
+                  pressed && { opacity: 0.8 },
+                ]}
+                disabled={claimingId !== null}
+                onPress={() => handleClaim(item.id, item.nombre || formatPhone(item.telefono))}
+              >
+                {claimingId === item.id ? (
+                  <ActivityIndicator color={colors.onPrimary} size="small" />
+                ) : (
+                  <Text style={[styles.claimBtnText, { color: colors.onPrimary }]}>
+                    ATENDER CLIENTE
+                  </Text>
+                )}
+              </Pressable>
+            </View>
+          )}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -252,28 +257,27 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 10,
     paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 20,
+    paddingTop: 12,
+    paddingBottom: 10,
   },
-  backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 13,
-    borderWidth: 0.5,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 14,
+  title: {
+    fontSize: 26,
     fontFamily: 'JetBrainsMono_700Bold',
-    letterSpacing: 2,
-    flex: 1,
-    textAlign: 'center',
+  },
+  badge: {
+    borderRadius: 999,
+    borderWidth: 0.5,
+    paddingVertical: 3,
+    paddingHorizontal: 9,
+  },
+  badgeText: {
+    fontSize: 13,
+    fontFamily: 'JetBrainsMono_700Bold',
   },
   
-  // Card atenciones
+  // Card
   card: {
     padding: 16,
     borderRadius: 20,
@@ -304,7 +308,7 @@ const styles = StyleSheet.create({
   clientPhone: {
     fontSize: 12,
     fontFamily: 'JetBrainsMono_500Medium',
-    paddingLeft: 26, // alineado con el texto de WhatsApp
+    paddingLeft: 26,
   },
   timeAgo: {
     fontSize: 11,

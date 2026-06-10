@@ -8,7 +8,7 @@ interface InventarioState {
   scrollOffsetReportes: number;
   scrollOffsetVentas: number;
   scrollOffsetDashboard: number;
-  scrollOffsetAlertas: number;
+  scrollOffsetNotificaciones: number;
   scrollOffsetOrdenes: number;
   setSearch: (search: string) => void;
   setFilter: (filter: StockFilter) => void;
@@ -16,7 +16,7 @@ interface InventarioState {
   setScrollOffsetReportes: (offset: number) => void;
   setScrollOffsetVentas: (offset: number) => void;
   setScrollOffsetDashboard: (offset: number) => void;
-  setScrollOffsetAlertas: (offset: number) => void;
+  setScrollOffsetNotificaciones: (offset: number) => void;
   setScrollOffsetOrdenes: (offset: number) => void;
   reset: () => void;
 }
@@ -28,7 +28,7 @@ export const useInventarioStore = create<InventarioState>((set) => ({
   scrollOffsetReportes: 0,
   scrollOffsetVentas: 0,
   scrollOffsetDashboard: 0,
-  scrollOffsetAlertas: 0,
+  scrollOffsetNotificaciones: 0,
   scrollOffsetOrdenes: 0,
   setSearch: (search) => set({ search }),
   setFilter: (filter) => set({ filter }),
@@ -36,7 +36,7 @@ export const useInventarioStore = create<InventarioState>((set) => ({
   setScrollOffsetReportes: (scrollOffsetReportes) => set({ scrollOffsetReportes }),
   setScrollOffsetVentas: (scrollOffsetVentas) => set({ scrollOffsetVentas }),
   setScrollOffsetDashboard: (scrollOffsetDashboard) => set({ scrollOffsetDashboard }),
-  setScrollOffsetAlertas: (scrollOffsetAlertas) => set({ scrollOffsetAlertas }),
+  setScrollOffsetNotificaciones: (scrollOffsetNotificaciones) => set({ scrollOffsetNotificaciones }),
   setScrollOffsetOrdenes: (scrollOffsetOrdenes) => set({ scrollOffsetOrdenes }),
   reset: () => set({ 
     search: '', 
@@ -45,7 +45,7 @@ export const useInventarioStore = create<InventarioState>((set) => ({
     scrollOffsetReportes: 0,
     scrollOffsetVentas: 0,
     scrollOffsetDashboard: 0,
-    scrollOffsetAlertas: 0,
+    scrollOffsetNotificaciones: 0,
     scrollOffsetOrdenes: 0
   }),
 }));

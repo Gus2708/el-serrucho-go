@@ -48,7 +48,6 @@ export function useRealtimeSync() {
         { event: '*', schema: 'public', table: 'productos' },
         (payload) => {
           queryClient.invalidateQueries({ queryKey: ['productos'] });
-          queryClient.invalidateQueries({ queryKey: ['alertas-stock'] });
           queryClient.invalidateQueries({ queryKey: ['sync-status'] });
           queryClient.invalidateQueries({ queryKey: ['velocidad'] });
         }

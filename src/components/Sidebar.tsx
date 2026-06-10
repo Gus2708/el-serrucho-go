@@ -13,8 +13,7 @@ const TABS: { name: string; route: string; icon: keyof typeof Feather.glyphMap; 
   { name: 'index',      route: '/',            icon: 'home',         label: 'Inicio'     },
   { name: 'ventas',     route: '/ventas',      icon: 'shopping-bag', label: 'Ventas'     },
   { name: 'inventario', route: '/inventario',  icon: 'package',      label: 'Inventario' },
-  { name: 'alertas',    route: '/alertas',     icon: 'bell',         label: 'Alertas'    },
-  { name: 'atenciones', route: '/atenciones',  icon: 'message-circle', label: 'Atenciones' },
+  { name: 'notificaciones', route: '/notificaciones', icon: 'bell',   label: 'Notificaciones' },
   { name: 'reportes',   route: '/reportes',    icon: 'bar-chart',    label: 'Reportes'   },
   { name: 'ordenes',    route: '/ordenes',     icon: 'file-text',    label: 'Órdenes'    },
 ];
@@ -65,12 +64,12 @@ export function Sidebar() {
               <Feather
                 name={tab.icon}
                 size={18}
-                color={active ? colors.primary : (tab.name === 'atenciones' && pendingCount > 0 ? '#25D366' : colors.textMuted)}
+                color={active ? colors.primary : (tab.name === 'notificaciones' && pendingCount > 0 ? '#25D366' : colors.textMuted)}
               />
               <Text style={[styles.label, { color: active ? colors.primary : colors.textMuted }]}>
                 {tab.label}
               </Text>
-              {tab.name === 'atenciones' && pendingCount > 0 && (
+              {tab.name === 'notificaciones' && pendingCount > 0 && (
                 <View style={[styles.sidebarBadge, { backgroundColor: colors.danger }]}>
                   <Text style={styles.sidebarBadgeText}>{pendingCount}</Text>
                 </View>
