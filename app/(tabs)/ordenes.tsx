@@ -31,6 +31,7 @@ import { buildPdfHtml, buildPresupuestoPdfHtml, printHtml } from '../../src/util
 import PresupuestoView from '../../src/components/PresupuestoView';
 import FallasView from '../../src/components/FallasView';
 import { usePresupuestosHistory } from '../../src/hooks/usePresupuestosHistory';
+import { OrdenCambioDetailModal } from '../../src/components/OrdenCambioDetailModal';
 
 type Tab = 'ajuste' | 'presupuesto' | 'historial' | 'fallas';
 
@@ -301,6 +302,7 @@ function HistorialView({ queryClient }: { queryClient: any }) {
   const scrollRef = useRef<ScrollView>(null);
   
   const [subTab, setSubTab] = useState<'ajuste' | 'presupuesto'>('ajuste');
+  const [selectedOrden, setSelectedOrden] = useState<any | null>(null);
   const { data: userAuth } = useUserRole();
   const isAdmin = userAuth?.role === 'admin';
   const currentUserId = userAuth?.profile?.id;
@@ -563,9 +565,18 @@ function HistorialView({ queryClient }: { queryClient: any }) {
             const status = o.status || 'emitido';
 
             return (
-              <View
+              <Pressable
                 key={o.id}
-                style={[styles.histCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                style={({ pressed }) => [
+                  styles.histCard, 
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  pressed && { opacity: 0.75 }
+                ]}
+                onPress={() => {
+                  if (!isPresupuesto) {
+                    setSelectedOrden(o);
+                  }
+                }}
               >
                 <View style={styles.histTop}>
                   <Text style={[styles.histId, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
@@ -642,12 +653,16 @@ function HistorialView({ queryClient }: { queryClient: any }) {
                     </Pressable>
                   )}
                 </View>
-              </View>
+              </Pressable>
             );
           })}
           <View style={{ height: 150 }} />
         </ScrollView>
       )}
+      <OrdenCambioDetailModal
+        orden={selectedOrden}
+        onClose={() => setSelectedOrden(null)}
+      />
     </View>
   );
 }
