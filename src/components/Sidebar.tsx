@@ -5,6 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useTheme } from '../theme/ThemeContext';
 import { useUserRole } from '../hooks/useUserRole';
+import { useAtencionesCount } from '../hooks/useAtenciones';
 
 const logo = require('../assets/img/EL SERRUCHO go.png');
 
@@ -13,6 +14,7 @@ const TABS: { name: string; route: string; icon: keyof typeof Feather.glyphMap; 
   { name: 'ventas',     route: '/ventas',      icon: 'shopping-bag', label: 'Ventas'     },
   { name: 'inventario', route: '/inventario',  icon: 'package',      label: 'Inventario' },
   { name: 'alertas',    route: '/alertas',     icon: 'bell',         label: 'Alertas'    },
+  { name: 'atenciones', route: '/atenciones',  icon: 'message-circle', label: 'Atenciones' },
   { name: 'reportes',   route: '/reportes',    icon: 'bar-chart',    label: 'Reportes'   },
   { name: 'ordenes',    route: '/ordenes',     icon: 'file-text',    label: 'Órdenes'    },
 ];
@@ -27,6 +29,7 @@ export function Sidebar() {
   const router    = useRouter();
   const pathname  = usePathname();
   const { data: userAuth } = useUserRole();
+  const { data: pendingCount = 0 } = useAtencionesCount();
   const isAdmin = userAuth?.role === 'admin';
 
   const visibleTabs = TABS; // Reportes ya está adaptado para empleados
@@ -62,11 +65,16 @@ export function Sidebar() {
               <Feather
                 name={tab.icon}
                 size={18}
-                color={active ? colors.primary : colors.textMuted}
+                color={active ? colors.primary : (tab.name === 'atenciones' && pendingCount > 0 ? '#25D366' : colors.textMuted)}
               />
               <Text style={[styles.label, { color: active ? colors.primary : colors.textMuted }]}>
                 {tab.label}
               </Text>
+              {tab.name === 'atenciones' && pendingCount > 0 && (
+                <View style={[styles.sidebarBadge, { backgroundColor: colors.danger }]}>
+                  <Text style={styles.sidebarBadgeText}>{pendingCount}</Text>
+                </View>
+              )}
               {active && <View style={[styles.activeDot, { backgroundColor: colors.primary }]} />}
             </Pressable>
           );
@@ -124,6 +132,21 @@ const styles = StyleSheet.create({
     flex:       1,
     fontSize:   13,
     fontFamily: 'JetBrainsMono_500Medium',
+  },
+  sidebarBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    marginRight: 6,
+  },
+  sidebarBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontFamily: 'JetBrainsMono_700Bold',
+    lineHeight: 10,
   },
   activeDot: {
     width:        5,

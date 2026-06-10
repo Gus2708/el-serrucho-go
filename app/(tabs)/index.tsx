@@ -30,6 +30,7 @@ import { SparklineChart } from '../../src/components/SparklineChart';
 import { GananciaChart } from '../../src/components/GananciaChart';
 import { getLocalDateStr, getDateDaysAgo } from '../../src/lib/supabase';
 import { TasaCard } from '../../src/components/TasaCard';
+import { useAtencionesCount } from '../../src/hooks/useAtenciones';
 
 const logo = require('../../src/assets/img/EL SERRUCHO go.png');
 
@@ -174,6 +175,7 @@ export default function Index() {
   const { data: hourlyHoy   = [], isLoading: loadingHourlyHoy  } = useProfitHourly(todayStr,    period === 'dia');
   const { data: hourlyAyer  = [], isLoading: loadingHourlyAyer } = useProfitHourly(yesterdayStr, period === 'ayer');
   const { data: userAuth, isLoading: loadingRole } = useUserRole();
+  const { data: pendingCount = 0 } = useAtencionesCount();
   const role = userAuth?.role ?? 'empleado';
   const profile = userAuth?.profile;
   const isAdmin = role === 'admin';
@@ -325,6 +327,31 @@ export default function Index() {
           </View>
           
           <View style={styles.headerActions}>
+            <View style={styles.iconBtnContainer}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.iconBtn,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: pendingCount > 0 ? colors.primary + '50' : colors.border,
+                  },
+                  pressed && { opacity: 0.7 },
+                ]}
+                onPress={() => router.push('/atenciones' as any)}
+              >
+                <Feather
+                  name="message-circle"
+                  size={18}
+                  color={pendingCount > 0 ? '#25D366' : colors.textMuted}
+                />
+              </Pressable>
+              {pendingCount > 0 && (
+                <View style={[styles.badgeIndicator, { backgroundColor: colors.danger }]}>
+                  <Text style={styles.badgeIndicatorText}>{pendingCount}</Text>
+                </View>
+              )}
+            </View>
+
             <Pressable
               style={({ pressed }) => [styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.7 }]}
               onPress={() => router.push('/(tabs)/alertas')}
@@ -620,6 +647,26 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
     gap: 8,
+  },
+  iconBtnContainer: {
+    position: 'relative',
+  },
+  badgeIndicator: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeIndicatorText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontFamily: 'JetBrainsMono_700Bold',
+    lineHeight: 10,
   },
 
   greeting: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10 },

@@ -132,6 +132,18 @@ export type Profile = {
   updated_at:   string;
 };
 
+export type AtencionPendiente = {
+  id:           number;
+  telefono:     string;
+  nombre:       string;
+  motivo:       string;
+  creado_en:    string;
+  status:       'pendiente' | 'atendido';
+  atendido_en:  string | null;
+  atendido_por: string | null;
+};
+
+
 // ── View row types ────────────────────────────────────────────────────────────
 
 export type ProfitSummaryRow = {

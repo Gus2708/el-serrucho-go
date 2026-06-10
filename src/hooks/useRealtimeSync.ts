@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { playNotificationSound, showLocalNotification } from '../utils/notifications';
 
 /**
  * Hook global que centraliza todas las suscripciones de Realtime.
@@ -11,6 +12,20 @@ export function useRealtimeSync() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
+    // ── Realtime RLS Authentication ──────────────────────────────────────────
+    // Sincronizar el token del empleado autenticado con el cliente de Realtime
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.access_token) {
+        supabase.realtime.setAuth(session.access_token);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.access_token) {
+        supabase.realtime.setAuth(session.access_token);
+      }
+    });
+
     const channel = supabase
       .channel('global-db-changes')
       // 1. ESCUCHAR VENTAS (Dashboard, Listado, Reportes)
@@ -70,11 +85,35 @@ export function useRealtimeSync() {
           queryClient.invalidateQueries({ queryKey: ['ordenes-history'] });
         }
       )
+      // 7. ESCUCHAR ATENCIONES PENDIENTES (WhatsApp)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'atenciones_pendientes' },
+        (payload) => {
+          queryClient.invalidateQueries({ queryKey: ['atenciones-pendientes'] });
+          queryClient.invalidateQueries({ queryKey: ['atenciones-count'] });
+
+          // Si es un cliente nuevo pidiendo atención
+          if (payload.eventType === 'INSERT' && payload.new && payload.new.status === 'pendiente') {
+            const { nombre, telefono, motivo } = payload.new;
+            const cleanTel = telefono ? telefono.replace('@c.us', '') : '';
+            
+            // Sonar timbre y alertar
+            playNotificationSound();
+            showLocalNotification(
+              `🔔 WhatsApp: ${nombre || cleanTel}`,
+              `Motivo: ${motivo || 'Solicita atención'}`
+            );
+          }
+        }
+      )
 
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
+      subscription.unsubscribe();
     };
   }, [queryClient]);
 }
+
