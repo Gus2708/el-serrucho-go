@@ -2,37 +2,13 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { PresupuestoItem } from './usePresupuestoStore';
 
-const N8N_URL = process.env.EXPO_PUBLIC_N8N_URL;
-
 /**
- * Realiza el envío POST al webhook de n8n para notificar el envío de la ayuda.
- */
-async function postWebhook(solicitudId: number) {
-  if (!N8N_URL) {
-    throw new Error('La variable de entorno EXPO_PUBLIC_N8N_URL no está definida.');
-  }
-
-  // Sanitizar URL removiendo slash final si lo tiene
-  const baseUrl = N8N_URL.endsWith('/') ? N8N_URL.slice(0, -1) : N8N_URL;
-  const url = `${baseUrl}/webhook/reenviar-ayuda`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ solicitud_id: solicitudId }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error al enviar webhook: ${response.status} ${response.statusText}`);
-  }
-
-  return response;
-}
-
-/**
- * Hook para resolver solicitudes de ayuda y reintentar su envío.
+ * Resuelve una solicitud de ayuda del bot: guarda los productos elegidos y la marca 'resuelto'.
+ *
+ * El REENVÍO al cliente lo hace n8n por su cuenta: un workflow consulta cada 15s las solicitudes
+ * en estado 'resuelto' (aún no enviadas) y las reenvía por WhatsApp. La app NO llama a n8n —
+ * el puente es Supabase (no requiere exponer n8n a internet ni EXPO_PUBLIC_N8N_URL). Si el envío
+ * fallara, n8n reintenta solo en el siguiente ciclo.
  */
 export function useResolverSolicitud() {
   const queryClient = useQueryClient();
@@ -47,8 +23,10 @@ export function useResolverSolicitud() {
       empleadoId: string;
       items: PresupuestoItem[];
     }) => {
-      // 1. Concurrency Check: Update solicitudes_ayuda only if status is 'pendiente'
-      const { data: updatedData, error: updateError } = await supabase
+      if (items.length === 0) throw new Error('Elige al menos un producto');
+
+      // 1. Reclamar la solicitud (solo si sigue 'pendiente') — evita doble resolución.
+      const { data: updated, error: updError } = await supabase
         .from('solicitudes_ayuda')
         .update({
           status: 'resuelto',
@@ -59,39 +37,32 @@ export function useResolverSolicitud() {
         .eq('status', 'pendiente')
         .select();
 
-      if (updateError) throw updateError;
-      if (!updatedData || updatedData.length === 0) {
-        throw new Error('La solicitud ya no está pendiente o fue resuelta por otro empleado.');
+      if (updError) throw updError;
+      if (!updated || updated.length === 0) {
+        throw new Error('La solicitud ya fue resuelta por otro empleado.');
       }
 
-      // 2. Insert items into solicitudes_ayuda_items
-      if (items.length > 0) {
-        const { error: itemsError } = await supabase
-          .from('solicitudes_ayuda_items')
-          .insert(
-            items.map(item => ({
-              solicitud_id: solicitudId,
-              codigo_producto: item.producto.codigo_interno,
-              descripcion: item.producto.descripcion,
-              cantidad: item.cantidad,
-              precio_unitario: item.precio_unitario,
-            }))
-          );
+      // 2. Guardar los productos elegidos. n8n (poll cada 15s) los tomará y reenviará al cliente.
+      const { error: itemsError } = await supabase
+        .from('solicitudes_ayuda_items')
+        .insert(
+          items.map(item => ({
+            solicitud_id: solicitudId,
+            codigo_producto: item.producto.codigo_interno,
+            descripcion: item.producto.descripcion,
+            cantidad: item.cantidad,
+            precio_unitario: item.precio_unitario,
+          }))
+        );
 
-        if (itemsError) throw itemsError;
+      // Si fallara guardar los items, revertir la reclamación para poder reintentar.
+      if (itemsError) {
+        await supabase
+          .from('solicitudes_ayuda')
+          .update({ status: 'pendiente', resuelto_por: null, resuelto_en: null })
+          .eq('id', solicitudId);
+        throw itemsError;
       }
-
-      // 3. POST to webhook
-      await postWebhook(solicitudId);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['solicitudes-pendientes'] });
-    },
-  });
-
-  const reintentarMutation = useMutation({
-    mutationFn: async (solicitudId: number) => {
-      await postWebhook(solicitudId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['solicitudes-pendientes'] });
@@ -99,13 +70,13 @@ export function useResolverSolicitud() {
   });
 
   return {
-    resolverSolicitud: async (solicitudId: number, empleadoId: string, items: PresupuestoItem[]) => {
-      return resolverMutation.mutateAsync({ solicitudId, empleadoId, items });
-    },
-    reintentarEnvio: async (solicitudId: number) => {
-      return reintentarMutation.mutateAsync(solicitudId);
+    resolverSolicitud: (solicitudId: number, empleadoId: string, items: PresupuestoItem[]) =>
+      resolverMutation.mutateAsync({ solicitudId, empleadoId, items }),
+    // El reenvío es automático (n8n reintenta solo cada 15s); esto solo refresca la lista.
+    reintentarEnvio: async (_solicitudId: number) => {
+      queryClient.invalidateQueries({ queryKey: ['solicitudes-pendientes'] });
     },
     isResolving: resolverMutation.isPending,
-    isReintentando: reintentarMutation.isPending,
+    isReintentando: false,
   };
 }
