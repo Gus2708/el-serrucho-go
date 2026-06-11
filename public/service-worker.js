@@ -3,7 +3,7 @@
 // Strategy: Offline-First App Shell + Network-First Data
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const STATIC_CACHE  = `serrucho-static-${CACHE_VERSION}`;
 const DATA_CACHE    = `serrucho-data-${CACHE_VERSION}`;
 const FONT_CACHE    = `serrucho-fonts-${CACHE_VERSION}`;
@@ -228,4 +228,44 @@ self.addEventListener('message', (event) => {
   if (event.data === 'skipWaiting') {
     self.skipWaiting();
   }
+});
+
+// ── Web Push ────────────────────────────────────────────────────────────────
+// Recibe el push del servidor (Edge Function send-push) y muestra la notificación
+// AUNQUE la app esté cerrada o en segundo plano.
+self.addEventListener('push', (event) => {
+  let data = { title: 'El Serrucho GO', body: '', url: '/' };
+  try {
+    if (event.data) data = Object.assign(data, event.data.json());
+  } catch (e) {
+    if (event.data) data.body = event.data.text();
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/elserruchogo512x512.png',
+      badge: '/elserruchogo512x512.png',
+      data: { url: data.url || '/' },
+      vibrate: [200, 100, 200],
+      tag: 'serrucho-' + (data.url || 'notif'),
+      renotify: true,
+    })
+  );
+});
+
+// Al tocar la notificación: enfocar la app (o abrirla) en la pantalla correspondiente.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) {
+          if ('navigate' in client) { try { client.navigate(targetUrl); } catch (e) {} }
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
+    })
+  );
 });
