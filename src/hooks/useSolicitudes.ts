@@ -27,5 +27,8 @@ export function useSolicitudes() {
       return filtered as SolicitudAyuda[];
     },
     staleTime: 0, // Se actualizará mediante invalidación en Supabase Realtime
+    // Red de seguridad: si Realtime falla, la lista igual se refresca sola cada 20s.
+    refetchInterval: 20000,
+    refetchIntervalInBackground: false,
   });
 }
