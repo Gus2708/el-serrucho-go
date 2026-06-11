@@ -10,7 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
 import Svg, { Path } from 'react-native-svg';
 import { useQueryClient } from '@tanstack/react-query';
@@ -19,6 +19,7 @@ import { supabase, AtencionPendiente } from '../../src/lib/supabase';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { useUserRole } from '../../src/hooks/useUserRole';
 import { useAtenciones } from '../../src/hooks/useAtenciones';
+import { useSolicitudes } from '../../src/hooks/useSolicitudes';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { notify } from '../../src/lib/notify';
 import { requestNotificationPermission } from '../../src/utils/notifications';
@@ -74,11 +75,14 @@ function TimeAgoText({ creadoEn }: { creadoEn: string }) {
 
 export default function Notificaciones() {
   const { colors } = useTheme();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const listRef = useRef<FlashList<any>>(null);
   
   const { data: userAuth } = useUserRole();
   const { data: listData = [], isLoading, refetch } = useAtenciones();
+  const { data: solicitudes = [] } = useSolicitudes();
+  const pendingSolicitudesCount = solicitudes.filter(s => s.status === 'pendiente').length;
   const { scrollOffsetNotificaciones, setScrollOffsetNotificaciones } = useInventarioStore();
 
   const [claimingId, setClaimingId] = useState<number | null>(null);
@@ -167,14 +171,33 @@ export default function Notificaciones() {
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
-          Notificaciones
-        </Text>
-        {!isLoading && listData.length > 0 && (
-          <View style={[styles.badge, { backgroundColor: colors.danger + '22', borderColor: colors.danger + '55' }]}>
-            <Text style={[styles.badgeText, { color: colors.danger }]}>{listData.length}</Text>
-          </View>
-        )}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+          <Text style={[styles.title, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
+            Notificaciones
+          </Text>
+          {!isLoading && listData.length > 0 && (
+            <View style={[styles.badge, { backgroundColor: colors.danger + '22', borderColor: colors.danger + '55' }]}>
+              <Text style={[styles.badgeText, { color: colors.danger }]}>{listData.length}</Text>
+            </View>
+          )}
+        </View>
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.botBtn,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+            pressed && { opacity: 0.8 }
+          ]}
+          onPress={() => router.push('/solicitudes' as any)}
+        >
+          <Feather name="help-circle" size={16} color={colors.primary} />
+          <Text style={[styles.botBtnText, { color: colors.text }]}>SOLICITUDES BOT</Text>
+          {pendingSolicitudesCount > 0 && (
+            <View style={[styles.botBadge, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.botBadgeText, { color: colors.bg }]}>{pendingSolicitudesCount}</Text>
+            </View>
+          )}
+        </Pressable>
       </View>
 
       {/* Renderizado condicional en base a isLoading - Elimina el Spinner Infinito */}
@@ -356,5 +379,30 @@ const styles = StyleSheet.create({
     fontFamily: 'JetBrainsMono_400Regular',
     textAlign: 'center',
     lineHeight: 18,
+  },
+  botBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 0.5,
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  botBtnText: {
+    fontSize: 11,
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
+  botBadge: {
+    borderRadius: 999,
+    minWidth: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  botBadgeText: {
+    fontSize: 10,
+    fontFamily: 'JetBrainsMono_700Bold',
   },
 });

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../src/theme/ThemeContext';
 import { useProductos, isPlaceholder } from '../src/hooks/useProductos';
@@ -10,6 +10,9 @@ import { Producto } from '../src/lib/supabase';
 import { usePresupuestoStore } from '../src/hooks/usePresupuestoStore';
 import { useDeviceSize } from '../src/hooks/useDeviceSize';
 import { BarcodeScannerModal } from '../src/components/BarcodeScannerModal';
+import { useUserRole } from '../src/hooks/useUserRole';
+import { useResolverSolicitud } from '../src/hooks/useResolverSolicitud';
+import { confirm, notify } from '../src/lib/notify';
 
 export default function SeleccionarProductos() {
   const { colors, formatUSD } = useTheme();
@@ -19,6 +22,57 @@ export default function SeleccionarProductos() {
   const [scannerVisible, setScannerVisible] = useState(false);
   
   const { items, addItem, updateItemQuantity, removeItem } = usePresupuestoStore();
+  const { solicitudId } = useLocalSearchParams<{ solicitudId?: string }>();
+  const { data: userAuth } = useUserRole();
+  const { resolverSolicitud, isResolving } = useResolverSolicitud();
+  const insets = useSafeAreaInsets();
+
+  const handleBack = () => {
+    if (solicitudId && items.length > 0) {
+      confirm({
+        title: 'Cancelar selección',
+        message: '¿Estás seguro de que quieres salir? Se perderán los productos seleccionados.',
+        confirmText: 'Salir',
+        cancelText: 'Continuar',
+        destructive: true,
+        onConfirm: () => {
+          usePresupuestoStore.getState().reset();
+          router.replace('/solicitudes' as any);
+        }
+      });
+    } else {
+      if (solicitudId) {
+        usePresupuestoStore.getState().reset();
+        router.replace('/solicitudes' as any);
+      } else {
+        router.replace({ pathname: '/(tabs)/ordenes', params: { tab: 'presupuesto' } });
+      }
+    }
+  };
+
+  const handleSendToClient = async () => {
+    if (!solicitudId) return;
+
+    if (!userAuth || !userAuth.is_active) {
+      notify('Acceso Restringido', 'Debes tener un usuario activo para resolver solicitudes.');
+      return;
+    }
+
+    const empleadoId = userAuth.profile?.id;
+    if (!empleadoId) {
+      notify('Error', 'No se pudo obtener el identificador del empleado.');
+      return;
+    }
+
+    try {
+      await resolverSolicitud(parseInt(solicitudId, 10), empleadoId, items);
+      usePresupuestoStore.getState().reset();
+      notify('Éxito', 'La solicitud ha sido resuelta y los productos enviados al cliente.');
+      router.replace('/solicitudes' as any);
+    } catch (e: any) {
+      notify('Error al enviar', e.message || 'Ocurrió un error al enviar.');
+    }
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -136,10 +190,12 @@ export default function SeleccionarProductos() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={['top', 'bottom']}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Pressable onPress={() => router.replace({ pathname: '/(tabs)/ordenes', params: { tab: 'presupuesto' } })} style={styles.btnBack}>
+        <Pressable onPress={handleBack} style={styles.btnBack}>
           <Feather name="chevron-down" size={28} color={colors.text} />
         </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Añadir Productos</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>
+          {solicitudId ? 'Seleccionar Productos' : 'Añadir Productos'}
+        </Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -186,7 +242,8 @@ export default function SeleccionarProductos() {
         renderItem={renderProducto}
         estimatedItemSize={110}
         contentContainerStyle={{
-          ...styles.listContainer,
+          paddingTop: 10,
+          paddingBottom: solicitudId ? 140 : 60,
           ...(isDesktop ? styles.listContainerDesktop : {}),
         }}
         onEndReached={() => {
@@ -214,6 +271,54 @@ export default function SeleccionarProductos() {
           setScannerVisible(false);
         }}
       />
+
+      {/* Submit bar if solicitudId is present */}
+      {solicitudId && items.length > 0 && (
+        <View style={[
+          styles.submitBar, 
+          { 
+            backgroundColor: colors.surface, 
+            borderColor: colors.border,
+            bottom: isDesktop ? undefined : (Platform.OS === 'web' ? 0 : insets.bottom),
+            position: isDesktop ? 'relative' : 'absolute',
+          },
+          isDesktop && styles.submitBarWeb
+        ]}>
+          <View style={styles.submitInfo}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.submitCount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
+                {items.length} ítem{items.length > 1 ? 's' : ''}
+              </Text>
+              <Text style={[styles.submitTotal, { color: colors.primary }]} numberOfLines={1}>
+                {formatUSD(totalAmount)}
+              </Text>
+            </View>
+            <Pressable onPress={() => usePresupuestoStore.getState().reset()} style={({ pressed }) => pressed && { opacity: 0.7 }}>
+              <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>Limpiar</Text>
+            </Pressable>
+          </View>
+          <Pressable
+            style={({ pressed }) => [
+              styles.submitBtn, 
+              { backgroundColor: colors.primary }, 
+              (isResolving || pressed) && { opacity: 0.75 }
+            ]}
+            onPress={handleSendToClient}
+            disabled={isResolving}
+          >
+            {isResolving ? (
+              <ActivityIndicator color={colors.onPrimary} size="small" />
+            ) : (
+              <>
+                <Feather name="send" size={16} color={colors.onPrimary} />
+                <Text style={[styles.submitBtnText, { color: colors.onPrimary }]} numberOfLines={1} adjustsFontSizeToFit>
+                  ENVIAR A CLIENTE
+                </Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -372,5 +477,55 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 50,
     fontSize: 16,
+  },
+  submitBar: {
+    padding: 16,
+    borderTopWidth: 0.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    left: 0,
+    right: 0,
+  },
+  submitBarWeb: {
+    maxWidth: 1200,
+    width: '100%',
+    alignSelf: 'center',
+    borderRadius: 20,
+    borderWidth: 0.5,
+    marginBottom: 16,
+  },
+  submitInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  submitCount: {
+    fontSize: 13,
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
+  submitTotal: {
+    fontSize: 14,
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
+  clearText: {
+    fontSize: 11,
+    fontFamily: 'JetBrainsMono_700Bold',
+    textDecorationLine: 'underline',
+  },
+  submitBtn: {
+    height: 48,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  submitBtnText: {
+    fontSize: 11,
+    fontFamily: 'JetBrainsMono_700Bold',
+    letterSpacing: 0.5,
   },
 });

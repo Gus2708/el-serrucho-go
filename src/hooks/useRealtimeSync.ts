@@ -97,11 +97,29 @@ export function useRealtimeSync() {
             const { nombre, telefono, motivo } = payload.new;
             const cleanTel = telefono ? telefono.replace('@c.us', '') : '';
             
-            // Sonar timbre y alertar
             playNotificationSound();
             showLocalNotification(
               `🔔 WhatsApp: ${nombre || cleanTel}`,
               `Motivo: ${motivo || 'Solicita atención'}`
+            );
+          }
+        }
+      )
+      // 8. ESCUCHAR SOLICITUDES DE AYUDA (Bot)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'solicitudes_ayuda' },
+        (payload) => {
+          queryClient.invalidateQueries({ queryKey: ['solicitudes-pendientes'] });
+
+          if (payload.eventType === 'INSERT' && payload.new && payload.new.status === 'pendiente') {
+            const { nombre, telefono, consulta } = payload.new;
+            const cleanTel = telefono ? telefono.replace('@c.us', '') : '';
+
+            playNotificationSound();
+            showLocalNotification(
+              `🙋 Solicitud de Ayuda: ${nombre || cleanTel}`,
+              `Consulta: ${consulta || 'Sin consulta'}`
             );
           }
         }

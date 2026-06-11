@@ -143,6 +143,19 @@ export type AtencionPendiente = {
   atendido_por: string | null;
 };
 
+export type SolicitudAyuda = {
+  id:           number;
+  telefono:     string;
+  nombre:       string | null;
+  consulta:     string | null;
+  motivo:       string;
+  status:       'pendiente' | 'resuelto' | 'enviado' | 'descartado';
+  creado_en:    string;
+  resuelto_en:  string | null;
+  resuelto_por: string | null;
+  enviado_en:   string | null;
+};
+
 
 // ── View row types ────────────────────────────────────────────────────────────
 
