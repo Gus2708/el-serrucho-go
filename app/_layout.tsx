@@ -129,11 +129,13 @@ function AuthGuard({ session, ready }: { session: Session | null; ready: boolean
 
 import { useRealtimeSync } from '../src/hooks/useRealtimeSync';
 import { usePushNotifications } from '../src/hooks/usePushNotifications';
+import { useForegroundRefresh } from '../src/hooks/useForegroundRefresh';
 import { useSessionEnforcer } from '../src/hooks/useSessionEnforcer';
 
 function RealtimeInitializer({ children }: { children: React.ReactNode }) {
   useRealtimeSync();
   usePushNotifications();
+  useForegroundRefresh();
   return <>{children}</>;
 }
 
