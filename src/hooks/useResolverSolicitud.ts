@@ -69,9 +69,45 @@ export function useResolverSolicitud() {
     },
   });
 
+  // Resuelve la solicitud respondiendo "no lo hay": la marca 'resuelto' con
+  // no_disponible=true y SIN productos. n8n lee la bandera y avisa al cliente
+  // que el producto no está disponible (en vez de enviar una lista de productos).
+  const noDisponibleMutation = useMutation({
+    mutationFn: async ({
+      solicitudId,
+      empleadoId,
+    }: {
+      solicitudId: number;
+      empleadoId: string;
+    }) => {
+      const { data: updated, error: updError } = await supabase
+        .from('solicitudes_ayuda')
+        .update({
+          status: 'resuelto',
+          no_disponible: true,
+          resuelto_por: empleadoId,
+          resuelto_en: new Date().toISOString(),
+        })
+        .eq('id', solicitudId)
+        .eq('status', 'pendiente')
+        .select();
+
+      if (updError) throw updError;
+      if (!updated || updated.length === 0) {
+        throw new Error('La solicitud ya fue resuelta por otro empleado.');
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['solicitudes-pendientes'] });
+    },
+  });
+
   return {
     resolverSolicitud: (solicitudId: number, empleadoId: string, items: PresupuestoItem[]) =>
       resolverMutation.mutateAsync({ solicitudId, empleadoId, items }),
+    marcarNoDisponible: (solicitudId: number, empleadoId: string) =>
+      noDisponibleMutation.mutateAsync({ solicitudId, empleadoId }),
+    isMarcandoNoDisponible: noDisponibleMutation.isPending,
     // El reenvío es automático (n8n reintenta solo cada 15s); esto solo refresca la lista.
     reintentarEnvio: async (_solicitudId: number) => {
       queryClient.invalidateQueries({ queryKey: ['solicitudes-pendientes'] });

@@ -24,7 +24,7 @@ export default function SeleccionarProductos() {
   const { items, addItem, updateItemQuantity, removeItem } = usePresupuestoStore();
   const { solicitudId } = useLocalSearchParams<{ solicitudId?: string }>();
   const { data: userAuth } = useUserRole();
-  const { resolverSolicitud, isResolving } = useResolverSolicitud();
+  const { resolverSolicitud, isResolving, marcarNoDisponible, isMarcandoNoDisponible } = useResolverSolicitud();
   const insets = useSafeAreaInsets();
 
   const handleBack = () => {
@@ -72,6 +72,38 @@ export default function SeleccionarProductos() {
     } catch (e: any) {
       notify('Error al enviar', e.message || 'Ocurrió un error al enviar.');
     }
+  };
+
+  const handleNoDisponible = () => {
+    if (!solicitudId) return;
+
+    if (!userAuth || !userAuth.is_active) {
+      notify('Acceso Restringido', 'Debes tener un usuario activo para resolver solicitudes.');
+      return;
+    }
+
+    const empleadoId = userAuth.profile?.id;
+    if (!empleadoId) {
+      notify('Error', 'No se pudo obtener el identificador del empleado.');
+      return;
+    }
+
+    confirm({
+      title: 'Avisar que no lo hay',
+      message: 'Se le notificará al cliente que el producto no está disponible. ¿Continuar?',
+      confirmText: 'Sí, no lo hay',
+      cancelText: 'Cancelar',
+      onConfirm: async () => {
+        try {
+          await marcarNoDisponible(parseInt(solicitudId, 10), empleadoId);
+          usePresupuestoStore.getState().reset();
+          notify('Listo', 'Se le avisó al cliente que el producto no está disponible.');
+          router.replace('/solicitudes' as any);
+        } catch (e: any) {
+          notify('Error', e.message || 'No se pudo procesar la solicitud.');
+        }
+      },
+    });
   };
 
   useEffect(() => {
@@ -271,6 +303,44 @@ export default function SeleccionarProductos() {
           setScannerVisible(false);
         }}
       />
+
+      {/* "No lo hay": resolver sin productos cuando no se eligió ninguno */}
+      {solicitudId && items.length === 0 && (
+        <View style={[
+          styles.submitBar,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            bottom: isDesktop ? undefined : (Platform.OS === 'web' ? 0 : insets.bottom),
+            position: isDesktop ? 'relative' : 'absolute',
+          },
+          isDesktop && styles.submitBarWeb,
+        ]}>
+          <Text style={[styles.noDispHint, { color: colors.textMuted }]} numberOfLines={2}>
+            ¿No encontraste el producto? Avísale al cliente.
+          </Text>
+          <Pressable
+            style={({ pressed }) => [
+              styles.submitBtn,
+              { backgroundColor: colors.danger + '15', borderWidth: 0.5, borderColor: colors.danger + '40' },
+              (isMarcandoNoDisponible || pressed) && { opacity: 0.75 },
+            ]}
+            onPress={handleNoDisponible}
+            disabled={isMarcandoNoDisponible}
+          >
+            {isMarcandoNoDisponible ? (
+              <ActivityIndicator color={colors.danger} size="small" />
+            ) : (
+              <>
+                <Feather name="slash" size={16} color={colors.danger} />
+                <Text style={[styles.submitBtnText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
+                  NO LO HAY
+                </Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+      )}
 
       {/* Submit bar if solicitudId is present */}
       {solicitudId && items.length > 0 && (
@@ -500,6 +570,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
+  },
+  noDispHint: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: 'JetBrainsMono_500Medium',
+    lineHeight: 16,
   },
   submitCount: {
     fontSize: 13,

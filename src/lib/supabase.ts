@@ -149,11 +149,12 @@ export type SolicitudAyuda = {
   nombre:       string | null;
   consulta:     string | null;
   motivo:       string;
-  status:       'pendiente' | 'resuelto' | 'enviado' | 'descartado';
-  creado_en:    string;
-  resuelto_en:  string | null;
-  resuelto_por: string | null;
-  enviado_en:   string | null;
+  status:        'pendiente' | 'resuelto' | 'enviado' | 'descartado';
+  no_disponible: boolean;
+  creado_en:     string;
+  resuelto_en:   string | null;
+  resuelto_por:  string | null;
+  enviado_en:    string | null;
 };
 
 
