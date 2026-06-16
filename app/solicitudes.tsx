@@ -1,12 +1,6 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -17,7 +11,7 @@ import { SolicitudAyuda } from '../src/lib/supabase';
 import { useTheme } from '../src/theme/ThemeContext';
 import { useSolicitudes } from '../src/hooks/useSolicitudes';
 import { useResolverSolicitud } from '../src/hooks/useResolverSolicitud';
-import { notify } from '../src/lib/notify';
+import { notify, confirm } from '../src/lib/notify';
 
 // Sub-componente para refrescar el tiempo transcurrido en vivo
 function TimeAgoText({ creadoEn }: { creadoEn: string }) {
@@ -60,9 +54,26 @@ export default function Solicitudes() {
   const { colors } = useTheme();
   const router = useRouter();
   const { data: solicitudes = [], isLoading, refetch } = useSolicitudes();
-  const { reintentarEnvio } = useResolverSolicitud();
-  
+  const { reintentarEnvio, descartarSolicitud, descartandoId } = useResolverSolicitud();
+
   const [retryingId, setRetryingId] = useState<number | null>(null);
+
+  function handleDiscard(id: number) {
+    confirm({
+      title: 'Descartar solicitud',
+      message: '¿Ignorar esta solicitud sin responder al cliente?',
+      confirmText: 'Descartar',
+      cancelText: 'Cancelar',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await descartarSolicitud(id);
+        } catch (e: any) {
+          notify('Error', e.message || 'No se pudo descartar la solicitud.');
+        }
+      },
+    });
+  }
 
   async function handleRetry(id: number) {
     if (retryingId !== null) return;
@@ -142,6 +153,23 @@ export default function Solicitudes() {
                     </Text>
                   </View>
                   <TimeAgoText creadoEn={item.creado_en} />
+                  {isPendiente && (
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.discardBtn,
+                        { borderColor: colors.border },
+                        (descartandoId === item.id || pressed) && { opacity: 0.5 },
+                      ]}
+                      onPress={() => handleDiscard(item.id)}
+                      disabled={descartandoId === item.id}
+                      hitSlop={8}
+                    >
+                      {descartandoId === item.id
+                        ? <ActivityIndicator size={14} color={colors.textMuted} />
+                        : <Feather name="x" size={14} color={colors.textMuted} />
+                      }
+                    </Pressable>
+                  )}
                 </View>
 
                 <View style={styles.detailsBox}>
@@ -256,6 +284,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'JetBrainsMono_600SemiBold',
     textAlign: 'right',
+  },
+  discardBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    borderWidth: 0.5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   detailsBox: {
     backgroundColor: 'rgba(255, 255, 255, 0.03)',

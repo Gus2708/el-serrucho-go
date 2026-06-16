@@ -102,12 +102,31 @@ export function useResolverSolicitud() {
     },
   });
 
+  const descartarMutation = useMutation({
+    mutationFn: async (solicitudId: number) => {
+      const { error } = await supabase
+        .from('solicitudes_ayuda')
+        .update({ status: 'descartado' })
+        .eq('id', solicitudId)
+        .eq('status', 'pendiente');
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['solicitudes-pendientes'] });
+    },
+  });
+
   return {
     resolverSolicitud: (solicitudId: number, empleadoId: string, items: PresupuestoItem[]) =>
       resolverMutation.mutateAsync({ solicitudId, empleadoId, items }),
     marcarNoDisponible: (solicitudId: number, empleadoId: string) =>
       noDisponibleMutation.mutateAsync({ solicitudId, empleadoId }),
     isMarcandoNoDisponible: noDisponibleMutation.isPending,
+    descartarSolicitud: (solicitudId: number) =>
+      descartarMutation.mutateAsync(solicitudId),
+    isDescartando: descartarMutation.isPending,
+    descartandoId: descartarMutation.isPending ? (descartarMutation.variables as number) : null,
     // El reenvío es automático (n8n reintenta solo cada 15s); esto solo refresca la lista.
     reintentarEnvio: async (_solicitudId: number) => {
       queryClient.invalidateQueries({ queryKey: ['solicitudes-pendientes'] });
