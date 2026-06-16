@@ -15,16 +15,16 @@ import { FlashList } from '@shopify/flash-list';
 import Svg, { Path } from 'react-native-svg';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { supabase, AtencionPendiente } from '../../src/lib/supabase';
+import { supabase, AtencionPendiente, SolicitudAyuda } from '../../src/lib/supabase';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { useUserRole } from '../../src/hooks/useUserRole';
 import { useAtenciones } from '../../src/hooks/useAtenciones';
 import { useSolicitudes } from '../../src/hooks/useSolicitudes';
+import { useResolverSolicitud } from '../../src/hooks/useResolverSolicitud';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
-import { notify } from '../../src/lib/notify';
+import { notify, confirm } from '../../src/lib/notify';
 import { requestNotificationPermission } from '../../src/utils/notifications';
 
-// Icono SVG personalizado de WhatsApp
 function WhatsAppIcon({ size = 22, color = '#25D366' }: { size?: number; color?: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -36,7 +36,6 @@ function WhatsAppIcon({ size = 22, color = '#25D366' }: { size?: number; color?:
   );
 }
 
-// Sub-componente para refrescar el tiempo transcurrido en vivo
 function TimeAgoText({ creadoEn }: { creadoEn: string }) {
   const { colors } = useTheme();
   const [timeStr, setTimeStr] = useState('');
@@ -45,32 +44,18 @@ function TimeAgoText({ creadoEn }: { creadoEn: string }) {
     function calculate() {
       const elapsed = Date.now() - new Date(creadoEn).getTime();
       const mins = Math.floor(elapsed / 60_000);
-      if (mins < 1) {
-        setTimeStr('Hace un instante');
-        return;
-      }
-      if (mins < 60) {
-        setTimeStr(`Esperando hace ${mins}m`);
-        return;
-      }
+      if (mins < 1) { setTimeStr('Hace un instante'); return; }
+      if (mins < 60) { setTimeStr(`Esperando hace ${mins}m`); return; }
       const hrs = Math.floor(mins / 60);
-      if (hrs < 24) {
-        setTimeStr(`Esperando hace ${hrs}h`);
-        return;
-      }
+      if (hrs < 24) { setTimeStr(`Esperando hace ${hrs}h`); return; }
       setTimeStr(`Esperando hace ${Math.floor(hrs / 24)}d`);
     }
-
     calculate();
     const interval = setInterval(calculate, 30_000);
     return () => clearInterval(interval);
   }, [creadoEn]);
 
-  return (
-    <Text style={[styles.timeAgo, { color: colors.warning }]}>
-      {timeStr}
-    </Text>
-  );
+  return <Text style={[styles.timeAgo, { color: colors.warning }]}>{timeStr}</Text>;
 }
 
 export default function Notificaciones() {
@@ -78,21 +63,23 @@ export default function Notificaciones() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const listRef = useRef<FlashList<any>>(null);
-  
+
   const { data: userAuth } = useUserRole();
-  const { data: listData = [], isLoading, refetch } = useAtenciones();
-  const { data: solicitudes = [] } = useSolicitudes();
-  const pendingSolicitudesCount = solicitudes.filter(s => s.status === 'pendiente').length;
+  const { data: atenciones = [], isLoading: atencionesLoading, refetch: refetchAtenciones } = useAtenciones();
+  const { data: solicitudes = [], isLoading: solicitudesLoading, refetch: refetchSolicitudes } = useSolicitudes();
+  const { descartarSolicitud, descartandoId } = useResolverSolicitud();
   const { scrollOffsetNotificaciones, setScrollOffsetNotificaciones } = useInventarioStore();
 
+  const [activeTab, setActiveTab] = useState<'atenciones' | 'solicitudes'>('atenciones');
   const [claimingId, setClaimingId] = useState<number | null>(null);
+  const [retryingId, setRetryingId] = useState<number | null>(null);
 
-  // Solicitar permiso de notificaciones al montar la pestaña
+  const pendingSolicitudesCount = solicitudes.filter(s => s.status === 'pendiente').length;
+
   useEffect(() => {
     requestNotificationPermission();
   }, []);
 
-  // Restaurar posición de scroll al enfocar la pestaña
   useFocusEffect(
     useCallback(() => {
       if (scrollOffsetNotificaciones > 0 && listRef.current) {
@@ -104,45 +91,30 @@ export default function Notificaciones() {
     }, [scrollOffsetNotificaciones])
   );
 
-  // Guardar posición de scroll
   const handleScroll = (event: any) => {
     const offset = event.nativeEvent.contentOffset.y;
-    if (offset >= 0) {
-      setScrollOffsetNotificaciones(offset);
-    }
+    if (offset >= 0) setScrollOffsetNotificaciones(offset);
   };
 
-  // Handler de reclamo de atención
   async function handleClaim(id: number, nombre: string) {
     if (claimingId !== null) return;
-    
-    if (!userAuth || !userAuth.is_active) {
+    if (!userAuth?.is_active) {
       notify('Acceso Restringido', 'Debes tener un usuario activo para atender clientes.');
       return;
     }
-
     const employeeId = userAuth.profile?.id;
-    if (!employeeId) {
-      notify('Error', 'No se pudo obtener el identificador del empleado.');
-      return;
-    }
+    if (!employeeId) { notify('Error', 'No se pudo obtener el identificador del empleado.'); return; }
 
     setClaimingId(id);
-
     try {
       const { data, error } = await supabase
         .from('atenciones_pendientes')
-        .update({
-          status: 'atendido',
-          atendido_en: new Date().toISOString(),
-          atendido_por: employeeId,
-        })
+        .update({ status: 'atendido', atendido_en: new Date().toISOString(), atendido_por: employeeId })
         .eq('id', id)
         .eq('status', 'pendiente')
         .select();
 
       if (error) throw error;
-
       if (data && data.length > 0) {
         notify('Cliente Asignado', `Ahora estás atendiendo a ${nombre}.`);
         queryClient.setQueryData<AtencionPendiente[]>(['atenciones-pendientes'], (prev) =>
@@ -151,7 +123,7 @@ export default function Notificaciones() {
         queryClient.invalidateQueries({ queryKey: ['atenciones-count'] });
       } else {
         notify('No disponible', 'Esta atención ya fue tomada por otro compañero.');
-        refetch();
+        refetchAtenciones();
       }
     } catch (e: any) {
       notify('Error al reclamar', e.message || 'Ocurrió un error inesperado');
@@ -160,10 +132,39 @@ export default function Notificaciones() {
     }
   }
 
-  function formatPhone(phone: string): string {
-    if (!phone) return '';
-    return phone.replace('@c.us', '');
+  function handleDiscard(id: number) {
+    confirm({
+      title: 'Descartar solicitud',
+      message: '¿Ignorar esta solicitud sin responder al cliente?',
+      confirmText: 'Descartar',
+      cancelText: 'Cancelar',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await descartarSolicitud(id);
+        } catch (e: any) {
+          notify('Error', e.message || 'No se pudo descartar la solicitud.');
+        }
+      },
+    });
   }
+
+  async function handleRetry(id: number) {
+    if (retryingId !== null) return;
+    setRetryingId(id);
+    try {
+      await refetchSolicitudes();
+    } finally {
+      setRetryingId(null);
+    }
+  }
+
+  function formatPhone(phone: string): string {
+    return phone ? phone.replace('@c.us', '') : '';
+  }
+
+  const isLoading = activeTab === 'atenciones' ? atencionesLoading : solicitudesLoading;
+  const listData = activeTab === 'atenciones' ? atenciones : solicitudes;
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
@@ -171,61 +172,97 @@ export default function Notificaciones() {
 
       {/* Header */}
       <View style={styles.header}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-          <Text style={[styles.title, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
-            Notificaciones
-          </Text>
-          {!isLoading && listData.length > 0 && (
-            <View style={[styles.badge, { backgroundColor: colors.danger + '22', borderColor: colors.danger + '55' }]}>
-              <Text style={[styles.badgeText, { color: colors.danger }]}>{listData.length}</Text>
-            </View>
-          )}
-        </View>
+        <Text style={[styles.title, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
+          Notificaciones
+        </Text>
+        {/* Tab switcher */}
+        <View style={[styles.tabSwitcher, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.tabBtn,
+              activeTab === 'atenciones' && { backgroundColor: colors.primary },
+              pressed && activeTab !== 'atenciones' && { opacity: 0.7 },
+            ]}
+            onPress={() => setActiveTab('atenciones')}
+          >
+            <Text style={[
+              styles.tabBtnText,
+              { color: activeTab === 'atenciones' ? colors.onPrimary : colors.textMuted },
+            ]}>
+              ATENCIONES
+            </Text>
+            {atenciones.length > 0 && (
+              <View style={[
+                styles.tabBadge,
+                { backgroundColor: activeTab === 'atenciones' ? colors.onPrimary + '33' : colors.danger + '33' },
+              ]}>
+                <Text style={[
+                  styles.tabBadgeText,
+                  { color: activeTab === 'atenciones' ? colors.onPrimary : colors.danger },
+                ]}>
+                  {atenciones.length}
+                </Text>
+              </View>
+            )}
+          </Pressable>
 
-        <Pressable
-          style={({ pressed }) => [
-            styles.botBtn,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-            pressed && { opacity: 0.8 }
-          ]}
-          onPress={() => router.push('/solicitudes' as any)}
-        >
-          <Feather name="help-circle" size={16} color={colors.primary} />
-          <Text style={[styles.botBtnText, { color: colors.text }]}>SOLICITUDES BOT</Text>
-          {pendingSolicitudesCount > 0 && (
-            <View style={[styles.botBadge, { backgroundColor: colors.primary }]}>
-              <Text style={[styles.botBadgeText, { color: colors.bg }]}>{pendingSolicitudesCount}</Text>
-            </View>
-          )}
-        </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.tabBtn,
+              activeTab === 'solicitudes' && { backgroundColor: colors.primary },
+              pressed && activeTab !== 'solicitudes' && { opacity: 0.7 },
+            ]}
+            onPress={() => setActiveTab('solicitudes')}
+          >
+            <Text style={[
+              styles.tabBtnText,
+              { color: activeTab === 'solicitudes' ? colors.onPrimary : colors.textMuted },
+            ]}>
+              BOT
+            </Text>
+            {pendingSolicitudesCount > 0 && (
+              <View style={[
+                styles.tabBadge,
+                { backgroundColor: activeTab === 'solicitudes' ? colors.onPrimary + '33' : colors.primary + '33' },
+              ]}>
+                <Text style={[
+                  styles.tabBadgeText,
+                  { color: activeTab === 'solicitudes' ? colors.onPrimary : colors.primary },
+                ]}>
+                  {pendingSolicitudesCount}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+        </View>
       </View>
 
-      {/* Renderizado condicional en base a isLoading - Elimina el Spinner Infinito */}
       {isLoading && listData.length === 0 ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      ) : (
+      ) : activeTab === 'atenciones' ? (
+        /* ── Lista de Atenciones ── */
         <FlashList
           ref={listRef}
-          data={listData}
+          data={atenciones}
           estimatedItemSize={110}
           keyExtractor={(item) => `atencion-${item.id}`}
           contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 110 }}
           onScroll={handleScroll}
           scrollEventThrottle={16}
-          refreshing={isLoading}
-          onRefresh={refetch}
+          refreshing={atencionesLoading}
+          onRefresh={refetchAtenciones}
           ListEmptyComponent={() => (
             <View style={styles.emptyContainer}>
               <Feather name="check-circle" size={48} color={colors.success} style={{ marginBottom: 12, opacity: 0.8 }} />
               <Text style={[styles.emptyTextTitle, { color: colors.text }]}>Sin pendientes</Text>
               <Text style={[styles.emptyTextSub, { color: colors.textMuted }]}>
-                ¡Todo al día! No hay solicitudes de atención en este momento.
+                ¡Todo al día! No hay clientes esperando atención.
               </Text>
             </View>
           )}
-          renderItem={({ item }) => (
+          renderItem={({ item }: { item: AtencionPendiente }) => (
             <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={styles.cardHeader}>
                 <View style={styles.clientInfo}>
@@ -250,7 +287,7 @@ export default function Notificaciones() {
 
               <Pressable
                 style={({ pressed }) => [
-                  styles.claimBtn,
+                  styles.actionBtn,
                   { backgroundColor: colors.primary },
                   claimingId === item.id && { opacity: 0.7 },
                   pressed && { opacity: 0.8 },
@@ -258,16 +295,113 @@ export default function Notificaciones() {
                 disabled={claimingId !== null}
                 onPress={() => handleClaim(item.id, item.nombre || formatPhone(item.telefono))}
               >
-                {claimingId === item.id ? (
-                  <ActivityIndicator color={colors.onPrimary} size="small" />
-                ) : (
-                  <Text style={[styles.claimBtnText, { color: colors.onPrimary }]}>
-                    ATENDER CLIENTE
-                  </Text>
-                )}
+                {claimingId === item.id
+                  ? <ActivityIndicator color={colors.onPrimary} size="small" />
+                  : <Text style={[styles.actionBtnText, { color: colors.onPrimary }]}>ATENDER CLIENTE</Text>
+                }
               </Pressable>
             </View>
           )}
+        />
+      ) : (
+        /* ── Lista de Solicitudes Bot ── */
+        <FlashList
+          data={solicitudes}
+          estimatedItemSize={150}
+          keyExtractor={(item) => `solicitud-${item.id}`}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 110 }}
+          refreshing={solicitudesLoading}
+          onRefresh={refetchSolicitudes}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyContainer}>
+              <Feather name="help-circle" size={48} color={colors.success} style={{ marginBottom: 12, opacity: 0.8 }} />
+              <Text style={[styles.emptyTextTitle, { color: colors.text }]}>Sin solicitudes</Text>
+              <Text style={[styles.emptyTextSub, { color: colors.textMuted }]}>
+                No hay solicitudes de ayuda pendientes en este momento.
+              </Text>
+            </View>
+          )}
+          renderItem={({ item }: { item: SolicitudAyuda }) => {
+            const isPendiente = item.status === 'pendiente';
+            const motivoLabel = item.motivo === 'no_encontrado' ? 'No encontrado' : 'Refutado';
+            return (
+              <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.clientInfo}>
+                    <Text style={[styles.clientName, { color: colors.text }]} numberOfLines={1}>
+                      {item.nombre || formatPhone(item.telefono)}
+                    </Text>
+                    <Text style={[styles.clientPhone, { color: colors.textMuted }]}>
+                      +{formatPhone(item.telefono)}
+                    </Text>
+                  </View>
+                  <TimeAgoText creadoEn={item.creado_en} />
+                  {isPendiente && (
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.discardBtn,
+                        { borderColor: colors.border },
+                        (descartandoId === item.id || pressed) && { opacity: 0.5 },
+                      ]}
+                      onPress={() => handleDiscard(item.id)}
+                      disabled={descartandoId === item.id}
+                      hitSlop={8}
+                    >
+                      {descartandoId === item.id
+                        ? <ActivityIndicator size={14} color={colors.textMuted} />
+                        : <Feather name="x" size={14} color={colors.textMuted} />
+                      }
+                    </Pressable>
+                  )}
+                </View>
+
+                <View style={styles.reasonBox}>
+                  <Text style={[styles.motivoText, { color: colors.primary }]}>
+                    Motivo: {motivoLabel}
+                  </Text>
+                  {item.consulta && (
+                    <Text style={[styles.reasonText, { color: colors.text }]}>
+                      Consulta: {item.consulta}
+                    </Text>
+                  )}
+                </View>
+
+                {isPendiente ? (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.actionBtn,
+                      { backgroundColor: colors.primary },
+                      pressed && { opacity: 0.8 },
+                    ]}
+                    onPress={() => router.push({
+                      pathname: '/seleccionar-productos',
+                      params: { solicitudId: item.id.toString() },
+                    } as any)}
+                  >
+                    <Text style={[styles.actionBtnText, { color: colors.onPrimary }]}>
+                      ELEGIR PRODUCTO(S)
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.actionBtn,
+                      { backgroundColor: colors.border },
+                      retryingId === item.id && { opacity: 0.7 },
+                      pressed && { opacity: 0.8 },
+                    ]}
+                    disabled={retryingId === item.id}
+                    onPress={() => handleRetry(item.id)}
+                  >
+                    {retryingId === item.id
+                      ? <ActivityIndicator color={colors.text} size="small" />
+                      : <Text style={[styles.actionBtnText, { color: colors.text }]}>REINTENTAR ENVÍO</Text>
+                    }
+                  </Pressable>
+                )}
+              </View>
+            );
+          }}
         />
       )}
     </SafeAreaView>
@@ -280,6 +414,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 10,
     paddingHorizontal: 16,
     paddingTop: 12,
@@ -289,17 +424,36 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontFamily: 'JetBrainsMono_700Bold',
   },
-  badge: {
-    borderRadius: 999,
+  tabSwitcher: {
+    flexDirection: 'row',
+    borderRadius: 12,
     borderWidth: 0.5,
-    paddingVertical: 3,
-    paddingHorizontal: 9,
+    overflow: 'hidden',
   },
-  badgeText: {
-    fontSize: 13,
+  tabBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  tabBtnText: {
+    fontSize: 10,
+    fontFamily: 'JetBrainsMono_700Bold',
+    letterSpacing: 0.5,
+  },
+  tabBadge: {
+    borderRadius: 999,
+    minWidth: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  tabBadgeText: {
+    fontSize: 9,
     fontFamily: 'JetBrainsMono_700Bold',
   },
-  
   // Card
   card: {
     padding: 16,
@@ -338,29 +492,41 @@ const styles = StyleSheet.create({
     fontFamily: 'JetBrainsMono_600SemiBold',
     textAlign: 'right',
   },
+  discardBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    borderWidth: 0.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   reasonBox: {
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
     borderRadius: 12,
     padding: 12,
+    gap: 6,
+  },
+  motivoText: {
+    fontSize: 13,
+    fontFamily: 'JetBrainsMono_700Bold',
   },
   reasonText: {
     fontSize: 13,
     fontFamily: 'JetBrainsMono_400Regular',
     lineHeight: 18,
   },
-  claimBtn: {
+  actionBtn: {
     height: 44,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 4,
   },
-  claimBtnText: {
+  actionBtnText: {
     fontSize: 12,
     fontFamily: 'JetBrainsMono_700Bold',
     letterSpacing: 0.5,
   },
-
   // Vacío
   emptyContainer: {
     flex: 1,
@@ -379,30 +545,5 @@ const styles = StyleSheet.create({
     fontFamily: 'JetBrainsMono_400Regular',
     textAlign: 'center',
     lineHeight: 18,
-  },
-  botBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: 0.5,
-    borderRadius: 12,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-  },
-  botBtnText: {
-    fontSize: 11,
-    fontFamily: 'JetBrainsMono_700Bold',
-  },
-  botBadge: {
-    borderRadius: 999,
-    minWidth: 16,
-    height: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-  },
-  botBadgeText: {
-    fontSize: 10,
-    fontFamily: 'JetBrainsMono_700Bold',
   },
 });

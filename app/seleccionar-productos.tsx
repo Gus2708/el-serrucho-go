@@ -37,13 +37,13 @@ export default function SeleccionarProductos() {
         destructive: true,
         onConfirm: () => {
           usePresupuestoStore.getState().reset();
-          router.replace('/solicitudes' as any);
+          router.replace('/(tabs)/notificaciones' as any);
         }
       });
     } else {
       if (solicitudId) {
         usePresupuestoStore.getState().reset();
-        router.replace('/solicitudes' as any);
+        router.replace('/(tabs)/notificaciones' as any);
       } else {
         router.replace({ pathname: '/(tabs)/ordenes', params: { tab: 'presupuesto' } });
       }
@@ -68,7 +68,7 @@ export default function SeleccionarProductos() {
       await resolverSolicitud(parseInt(solicitudId, 10), empleadoId, items);
       usePresupuestoStore.getState().reset();
       notify('Éxito', 'La solicitud ha sido resuelta y los productos enviados al cliente.');
-      router.replace('/solicitudes' as any);
+      router.replace('/(tabs)/notificaciones' as any);
     } catch (e: any) {
       notify('Error al enviar', e.message || 'Ocurrió un error al enviar.');
     }
@@ -98,7 +98,7 @@ export default function SeleccionarProductos() {
           await marcarNoDisponible(parseInt(solicitudId, 10), empleadoId);
           usePresupuestoStore.getState().reset();
           notify('Listo', 'Se le avisó al cliente que el producto no está disponible.');
-          router.replace('/solicitudes' as any);
+          router.replace('/(tabs)/notificaciones' as any);
         } catch (e: any) {
           notify('Error', e.message || 'No se pudo procesar la solicitud.');
         }
