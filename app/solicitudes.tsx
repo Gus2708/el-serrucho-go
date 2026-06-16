@@ -95,7 +95,7 @@ export default function Solicitudes() {
             { backgroundColor: colors.surface, borderColor: colors.border },
             pressed && { opacity: 0.7 }
           ]}
-          onPress={() => router.back()}
+          onPress={() => router.replace('/(tabs)/notificaciones' as any)}
         >
           <Feather name="chevron-left" size={22} color={colors.text} />
         </Pressable>
