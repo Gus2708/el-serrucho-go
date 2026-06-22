@@ -49,9 +49,9 @@ const SHARED_STYLES = `
   @page { margin: 10mm; }
   @media print {
     body { background: white !important; padding: 0 !important; margin: 0 !important; }
-    .ticket { 
-      box-shadow: none !important; 
-      border: 1px solid var(--border-light) !important; 
+    .ticket {
+      box-shadow: none !important;
+      border: 1px solid var(--border-light) !important;
       max-width: 100% !important;
       border-radius: 0 !important;
     }
@@ -359,11 +359,58 @@ const SHARED_STYLES = `
   }
 `;
 
+/* ─── Shared document shell ──────────────────────────────── */
+interface PdfDocumentOptions {
+  docBadge:    string;
+  metaCards:   string;
+  noteHtml:    string;
+  tableHtml:   string;
+  footerLeft:  string;
+  footerRight: string;
+}
+
+function buildPdfDocument(opts: PdfDocumentOptions): string {
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<style>${SHARED_STYLES}</style>
+</head>
+<body>
+  <div class="ticket">
+
+    <div class="header">
+      <div class="brand">
+        <span class="brand-name">EL SERRUCHO</span>
+        <span class="brand-accent"></span>
+      </div>
+      <div class="doc-badge">${opts.docBadge}</div>
+    </div>
+
+    <div class="meta-grid">
+      ${opts.metaCards}
+    </div>
+
+    ${opts.noteHtml}
+
+    ${opts.tableHtml}
+
+    <div class="footer">
+      <span class="footer-left">${opts.footerLeft}</span>
+      <span class="footer-dot"></span>
+      <span class="footer-right">${opts.footerRight}</span>
+    </div>
+
+  </div>
+</body>
+</html>`;
+}
+
 /* ─── Inventory Adjustment PDF ──────────────────────────── */
 export function buildPdfHtml(items: DraftItem[], nota: string, orderId: number, creadoPor?: string): string {
   const now = new Date().toLocaleString('es-VE');
 
-  const rows = items.map((item, i) => {
+  const rows = items.map((item) => {
     const delta = item.nueva_existencia - item.existencia_actual;
     const sign  = delta >= 0 ? '+' : '';
     const cls   = delta >= 0 ? 'col-delta-pos' : 'col-delta-neg';
@@ -379,25 +426,7 @@ export function buildPdfHtml(items: DraftItem[], nota: string, orderId: number, 
       </tr>`;
   }).join('');
 
-  return `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<style>${SHARED_STYLES}</style>
-</head>
-<body>
-  <div class="ticket">
-
-    <div class="header">
-      <div class="brand">
-        <span class="brand-name">EL SERRUCHO</span>
-        <span class="brand-accent"></span>
-      </div>
-      <div class="doc-badge">ORDEN #${String(orderId).padStart(5, '0')}</div>
-    </div>
-
-    <div class="meta-grid">
+  const metaCards = `
       <div class="meta-card">
         <span class="meta-label">Fecha y Hora</span>
         <span class="meta-value">${now}</span>
@@ -414,15 +443,15 @@ export function buildPdfHtml(items: DraftItem[], nota: string, orderId: number, 
       <div class="meta-card">
         <span class="meta-label">Tipo de Documento</span>
         <span class="meta-value">Validación de Inventario</span>
-      </div>`}
-    </div>
+      </div>`}`;
 
-    ${nota ? `
+  const noteHtml = nota ? `
     <div class="note-box">
       <strong>Observaciones</strong>
       ${nota}
-    </div>` : ''}
+    </div>` : '';
 
+  const tableHtml = `
     <table>
       <thead>
         <tr>
@@ -435,17 +464,16 @@ export function buildPdfHtml(items: DraftItem[], nota: string, orderId: number, 
         </tr>
       </thead>
       <tbody>${rows}</tbody>
-    </table>
+    </table>`;
 
-    <div class="footer">
-      <span class="footer-left">EL SERRUCHO v1.1.0</span>
-      <span class="footer-dot"></span>
-      <span class="footer-right">VALIDACIÓN DE INVENTARIO</span>
-    </div>
-
-  </div>
-</body>
-</html>`;
+  return buildPdfDocument({
+    docBadge:    `ORDEN #${String(orderId).padStart(5, '0')}`,
+    metaCards,
+    noteHtml,
+    tableHtml,
+    footerLeft:  'EL SERRUCHO v1.1.0',
+    footerRight: 'VALIDACIÓN DE INVENTARIO',
+  });
 }
 
 /* ─── Budget / Presupuesto PDF ──────────────────────────── */
@@ -458,7 +486,7 @@ export function buildPresupuestoPdfHtml(
 ): string {
   const now = new Date().toLocaleString('es-VE');
 
-  const rows = items.map((item, i) => {
+  const rows = items.map((item) => {
     const code = item.producto ? item.producto.codigo_interno : item.codigo_producto;
     const desc = item.producto ? item.producto.descripcion : item.descripcion;
     return `
@@ -475,7 +503,6 @@ export function buildPresupuestoPdfHtml(
     .reduce((acc, item) => acc + item.cantidad * item.precio_unitario, 0)
     .toFixed(2);
 
-  /* ── Client info card ── */
   const clienteCard = cliente
     ? `
       <div class="meta-card" style="flex:1.2;">
@@ -492,39 +519,21 @@ export function buildPresupuestoPdfHtml(
         <span class="meta-value">Cliente Casual</span>
       </div>`;
 
-  return `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<style>${SHARED_STYLES}</style>
-</head>
-<body>
-  <div class="ticket">
-
-    <div class="header">
-      <div class="brand">
-        <span class="brand-name">EL SERRUCHO</span>
-        <span class="brand-accent"></span>
-      </div>
-      <div class="doc-badge">PRESUPUESTO #${String(presupuestoId).padStart(5, '0')}</div>
-    </div>
-
-    <div class="meta-grid">
+  const metaCards = `
       ${clienteCard}
       <div class="meta-card">
         <span class="meta-label">Fecha de Emisión</span>
         <span class="meta-value">${now}</span>
         ${creadoPor ? `<span class="meta-label" style="margin-top:4px;">Creado por</span><span class="meta-value">${creadoPor}</span>` : ''}
-      </div>
-    </div>
+      </div>`;
 
-    ${nota ? `
+  const noteHtml = nota ? `
     <div class="note-box">
       <strong>Observaciones</strong>
       ${nota}
-    </div>` : ''}
+    </div>` : '';
 
+  const tableHtml = `
     <table>
       <thead>
         <tr>
@@ -543,17 +552,16 @@ export function buildPresupuestoPdfHtml(
           <td class="total-amount">$${totalUsd}</td>
         </tr>
       </tbody>
-    </table>
+    </table>`;
 
-    <div class="footer">
-      <span class="footer-left">EL SERRUCHO v1.1.0</span>
-      <span class="footer-dot"></span>
-      <span class="footer-right">DOCUMENTO NO FISCAL</span>
-    </div>
-
-  </div>
-</body>
-</html>`;
+  return buildPdfDocument({
+    docBadge:    `PRESUPUESTO #${String(presupuestoId).padStart(5, '0')}`,
+    metaCards,
+    noteHtml,
+    tableHtml,
+    footerLeft:  'EL SERRUCHO v1.1.0',
+    footerRight: 'DOCUMENTO NO FISCAL',
+  });
 }
 
 /* ─── Sale / Venta PDF ──────────────────────────── */
@@ -587,25 +595,7 @@ export function buildVentaPdfHtml(
     ? Number(venta.total_impuesto_usd)
     : totalUSD - baseUSD;
 
-  return `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<style>${SHARED_STYLES}</style>
-</head>
-<body>
-  <div class="ticket">
-
-    <div class="header">
-      <div class="brand">
-        <span class="brand-name">EL SERRUCHO</span>
-        <span class="brand-accent"></span>
-      </div>
-      <div class="doc-badge">RECIBO DE VENTA ${venta.documento || `#${venta.venta_id || venta.id}`}</div>
-    </div>
-
-    <div class="meta-grid">
+  const metaCards = `
       <div class="meta-card" style="flex:1.2;">
         <span class="meta-label">Cliente</span>
         <span class="meta-value">${venta.nombre_cliente || 'Cliente Casual'}</span>
@@ -617,9 +607,9 @@ export function buildVentaPdfHtml(
       <div class="meta-card">
         <span class="meta-label">Método de Pago</span>
         <span class="meta-value">${venta.metodo_pago || 'No especificado'}</span>
-      </div>
-    </div>
+      </div>`;
 
+  const tableHtml = `
     <table>
       <thead>
         <tr>
@@ -648,17 +638,16 @@ export function buildVentaPdfHtml(
           <td class="total-amount" style="font-size: 22px; color: var(--accent-dark);">$${totalUSD.toFixed(2)}</td>
         </tr>
       </tbody>
-    </table>
+    </table>`;
 
-    <div class="footer">
-      <span class="footer-left">EL SERRUCHO v1.1.0</span>
-      <span class="footer-dot"></span>
-      <span class="footer-right">RECIBO DE VENTA - DOCUMENTO NO FISCAL</span>
-    </div>
-
-  </div>
-</body>
-</html>`;
+  return buildPdfDocument({
+    docBadge:    `RECIBO DE VENTA ${venta.documento || `#${venta.venta_id || venta.id}`}`,
+    metaCards,
+    noteHtml:    '',
+    tableHtml,
+    footerLeft:  'EL SERRUCHO v1.1.0',
+    footerRight: 'RECIBO DE VENTA - DOCUMENTO NO FISCAL',
+  });
 }
 
 /**
