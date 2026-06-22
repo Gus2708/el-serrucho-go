@@ -5,6 +5,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
 import { buildPdfHtml, DraftItem } from '../utils/pdfGenerator';
+import { uploadPdfAndGetUrl } from '../lib/pdfStorage';
 
 interface OrdenStore {
   items:     DraftItem[];
