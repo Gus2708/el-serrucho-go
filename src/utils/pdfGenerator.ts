@@ -292,29 +292,84 @@ const SHARED_STYLES = `
     white-space: nowrap;
   }
 
-  /* ── Total row (presupuesto) ─────────────────── */
-  .total-row td {
-    border-bottom: none;
+  /* ── Total section (outside table — page-break safe) ── */
+  .total-section {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--sp-8);
+    padding: var(--sp-4) 0 var(--sp-6);
     border-top: 2px solid var(--ink);
-    padding-top: var(--sp-4);
-    background: var(--white) !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .total-section-multi {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    padding: var(--sp-4) 0 var(--sp-6);
+    border-top: 2px solid var(--ink);
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .total-line {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+
+  .total-line-grand {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--sp-8);
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
   }
 
   .total-label {
     font-weight: 700;
-    font-size: 14px;
-    text-align: right;
+    font-size: 13px;
     color: var(--ink);
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    min-width: 100px;
+    text-align: right;
   }
 
   .total-amount {
     font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
     font-weight: 700;
-    font-size: 18px;
-    text-align: right;
+    font-size: 20px;
     color: var(--ink);
+    text-align: right;
+    min-width: 130px;
+  }
+
+  .total-amount-lg {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    font-size: 26px;
+    color: var(--accent-dark);
+    text-align: right;
+    min-width: 130px;
+  }
+
+  .total-label-lg {
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--accent-dark);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    min-width: 100px;
+    text-align: right;
   }
 
   /* ── Footer ──────────────────────────────────── */
@@ -355,6 +410,10 @@ const SHARED_STYLES = `
       max-width: none;
       width: 100%;
       border-radius: 0;
+    }
+    table {
+      overflow: visible !important;
+      border-radius: 0 !important;
     }
   }
 `;
@@ -417,12 +476,12 @@ export function buildPdfHtml(items: DraftItem[], nota: string, orderId: number, 
 
     return `
       <tr>
-        <td class="col-code">${item.codigo_producto}</td>
-        <td class="col-desc">${item.descripcion}</td>
+        <td class="col-code">${escHtml(item.codigo_producto ?? '')}</td>
+        <td class="col-desc">${escHtml(item.descripcion ?? '')}</td>
         <td class="col-num-muted">${item.existencia_actual}</td>
         <td class="col-num">${item.nueva_existencia}</td>
         <td class="${cls}">${sign}${delta}</td>
-        <td class="col-note">${item.nota || '—'}</td>
+        <td class="col-note">${escHtml(item.nota || '—')}</td>
       </tr>`;
   }).join('');
 
@@ -476,6 +535,14 @@ export function buildPdfHtml(items: DraftItem[], nota: string, orderId: number, 
   });
 }
 
+function escHtml(str: string): string {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 /* ─── Budget / Presupuesto PDF ──────────────────────────── */
 export function buildPresupuestoPdfHtml(
   cliente: Cliente | null,
@@ -489,18 +556,20 @@ export function buildPresupuestoPdfHtml(
   const rows = items.map((item) => {
     const code = item.producto ? item.producto.codigo_interno : item.codigo_producto;
     const desc = item.producto ? item.producto.descripcion : item.descripcion;
+    const qty   = Number(item.cantidad) || 0;
+    const price = Number(item.precio_unitario) || 0;
     return `
       <tr>
-        <td class="col-code">${code}</td>
-        <td class="col-desc">${desc}</td>
-        <td class="col-num">${item.cantidad}</td>
-        <td class="col-money">$${item.precio_unitario.toFixed(2)}</td>
-        <td class="col-money-bold">$${(item.cantidad * item.precio_unitario).toFixed(2)}</td>
+        <td class="col-code">${escHtml(code ?? '')}</td>
+        <td class="col-desc">${escHtml(desc ?? '')}</td>
+        <td class="col-num">${qty}</td>
+        <td class="col-money">$${price.toFixed(2)}</td>
+        <td class="col-money-bold">$${(qty * price).toFixed(2)}</td>
       </tr>`;
   }).join('');
 
   const totalUsd = items
-    .reduce((acc, item) => acc + item.cantidad * item.precio_unitario, 0)
+    .reduce((acc, item) => acc + (Number(item.cantidad) || 0) * (Number(item.precio_unitario) || 0), 0)
     .toFixed(2);
 
   const clienteCard = cliente
@@ -544,15 +613,13 @@ export function buildPresupuestoPdfHtml(
           <th style="text-align:right;">Subtotal</th>
         </tr>
       </thead>
-      <tbody>
-        ${rows}
-        <tr class="total-row">
-          <td colspan="3"></td>
-          <td class="total-label">Total USD</td>
-          <td class="total-amount">$${totalUsd}</td>
-        </tr>
-      </tbody>
-    </table>`;
+      <tbody>${rows}</tbody>
+    </table>
+
+    <div class="total-section">
+      <span class="total-label">Total USD</span>
+      <span class="total-amount">$${totalUsd}</span>
+    </div>`;
 
   return buildPdfDocument({
     docBadge:    `PRESUPUESTO #${String(presupuestoId).padStart(5, '0')}`,
@@ -580,9 +647,9 @@ export function buildVentaPdfHtml(
 
   const rows = items.map((item) => `
     <tr>
-      <td class="col-code">${item.codigo_producto}</td>
-      <td class="col-desc">${item.descripcion}</td>
-      <td class="col-num">${item.cantidad}</td>
+      <td class="col-code">${escHtml(item.codigo_producto ?? '')}</td>
+      <td class="col-desc">${escHtml(item.descripcion ?? '')}</td>
+      <td class="col-num">${Number(item.cantidad) || 0}</td>
       <td class="col-money">$${Number(item.precio_unitario_usd).toFixed(2)}</td>
       <td class="col-money-bold">$${Number(item.subtotal_usd).toFixed(2)}</td>
     </tr>`).join('');
@@ -620,25 +687,23 @@ export function buildVentaPdfHtml(
           <th style="text-align:right;">Subtotal</th>
         </tr>
       </thead>
-      <tbody>
-        ${rows}
-        <tr class="total-row">
-          <td colspan="3"></td>
-          <td class="total-label">Subtotal</td>
-          <td class="total-amount">$${baseUSD.toFixed(2)}</td>
-        </tr>
-        <tr>
-          <td colspan="3"></td>
-          <td class="total-label">IVA (16%)</td>
-          <td class="total-amount">$${ivaUSD.toFixed(2)}</td>
-        </tr>
-        <tr class="total-row">
-          <td colspan="3"></td>
-          <td class="total-label" style="font-size: 16px; color: var(--accent-dark);">Total USD</td>
-          <td class="total-amount" style="font-size: 22px; color: var(--accent-dark);">$${totalUSD.toFixed(2)}</td>
-        </tr>
-      </tbody>
-    </table>`;
+      <tbody>${rows}</tbody>
+    </table>
+
+    <div class="total-section-multi">
+      <div class="total-line">
+        <span class="total-label">Subtotal</span>
+        <span class="total-amount">$${baseUSD.toFixed(2)}</span>
+      </div>
+      <div class="total-line">
+        <span class="total-label">IVA (16%)</span>
+        <span class="total-amount">$${ivaUSD.toFixed(2)}</span>
+      </div>
+      <div class="total-line-grand">
+        <span class="total-label-lg">Total USD</span>
+        <span class="total-amount-lg">$${totalUSD.toFixed(2)}</span>
+      </div>
+    </div>`;
 
   return buildPdfDocument({
     docBadge:    `RECIBO DE VENTA ${venta.documento || `#${venta.venta_id || venta.id}`}`,

@@ -7,6 +7,24 @@
       "skillPath": "plugins/expo/skills/building-native-ui/SKILL.md",
       "computedHash": "a0316d2ce842d2dd8067a144e339cf502329dc7701f9f5122268fdb3d4c980f7"
     },
+    "code-simplifier": {
+      "source": "workspace/skills",
+      "sourceType": "local",
+      "skillPath": ".claude/skills/code-simplifier/SKILL.md",
+      "computedHash": "bf42c79457d1606217f03dbe859aaef130498fb282679058c665db40a3e45254"
+    },
+    "context-engineering": {
+      "source": "davidkimai/Context-Engineering",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/context-engineering/SKILL.md",
+      "computedHash": "557edcdd62b9ff094633fbc9049f1ac02b6a11902f289f9b66d4f4d43d7c1a98"
+    },
+    "improve": {
+      "source": "shadcn/improve",
+      "sourceType": "github",
+      "skillPath": "skills/improve/SKILL.md",
+      "computedHash": "553713a1b9af40ec50c4018f75b8974bf728fe5abc8e125b748e2d718d5c31ea"
+    },
     "react-native-best-practices": {
       "source": "callstackincubator/agent-skills",
       "sourceType": "github",
@@ -18,18 +36,6 @@
       "sourceType": "github",
       "skillPath": "skills/react-native-skills/SKILL.md",
       "computedHash": "41d24eafa7c3d82e270439808f7cfbc4d51aeb2d14f2809a2267c16275784d06"
-    },
-    "context-engineering": {
-      "source": "davidkimai/Context-Engineering",
-      "sourceType": "github",
-      "skillPath": ".claude/skills/context-engineering/SKILL.md",
-      "computedHash": "557edcdd62b9ff094633fbc9049f1ac02b6a11902f289f9b66d4f4d43d7c1a98"
-    },
-    "code-simplifier": {
-      "source": "workspace/skills",
-      "sourceType": "local",
-      "skillPath": ".claude/skills/code-simplifier/SKILL.md",
-      "computedHash": "bf42c79457d1606217f03dbe859aaef130498fb282679058c665db40a3e45254"
     }
   }
 }
