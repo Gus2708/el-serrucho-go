@@ -9,6 +9,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../src/lib/supabase';
+import { clearRoleCache } from '../src/hooks/useUserRole';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
 import * as Font from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
@@ -304,6 +305,7 @@ export default function RootLayout() {
         queryClient.invalidateQueries({ queryKey: ['user-role'] });
       } else if (event === 'SIGNED_OUT') {
         queryClient.clear();
+        clearRoleCache();
       }
     });
 
