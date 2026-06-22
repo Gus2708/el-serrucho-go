@@ -4,6 +4,20 @@ import { Platform } from 'react-native';
 
 const WIDGET_URL = process.env.EXPO_PUBLIC_WIDGET_API_URL || 'http://192.168.1.143:5000';
 
+type ActiveCommand = {
+  id:             number;
+  comando:        string;
+  status:         string;
+  creado_en:      string;
+  runningMinutes: number;
+};
+
+type SyncStatusResult = {
+  lastSync:      Date | null;
+  minutesAgo:    number | null;
+  activeCommand: ActiveCommand | null;
+};
+
 export type SyncMode = 'sync_all' | 'sync_inventory' | 'sync_sales';
 
 export function useSyncStatus() {
@@ -92,7 +106,9 @@ export function useSyncStatus() {
   };
 }
 
-async function fetchSyncStatus() {
+async function fetchSyncStatus(): Promise<SyncStatusResult> {
+  // Narrow select: only the timestamp column is needed.
+  // Do NOT widen this to select('*') — this query runs every 3–30 seconds.
   // 1. Obtener última actualización de productos
   const { data: prodData } = await supabase
     .from('productos')
