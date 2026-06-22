@@ -3,12 +3,26 @@ import { Platform } from 'react-native';
 import { supabase, Profile } from '../lib/supabase';
 
 // ── Offline cache for user role (Web/PWA only) ────────────────────────────────
-const ROLE_CACHE_KEY = 'serrucho:user-role';
+const ROLE_CACHE_KEY    = 'serrucho:user-role';
+const ROLE_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+type CachedRole = {
+  role:      'admin' | 'empleado';
+  is_active: boolean;
+  profile:   Profile | null;
+  cachedAt:  number;
+};
 
 function saveRoleToLocal(data: { role: string; is_active: boolean; profile: Profile | null }) {
   if (Platform.OS !== 'web') return;
   try {
-    localStorage.setItem(ROLE_CACHE_KEY, JSON.stringify(data));
+    const entry: CachedRole = {
+      role:      data.role as 'admin' | 'empleado',
+      is_active: data.is_active,
+      profile:   data.profile,
+      cachedAt:  Date.now(),
+    };
+    localStorage.setItem(ROLE_CACHE_KEY, JSON.stringify(entry));
   } catch {}
 }
 
@@ -17,7 +31,13 @@ function loadRoleFromLocal(): { role: 'admin' | 'empleado'; is_active: boolean; 
   try {
     const raw = localStorage.getItem(ROLE_CACHE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw);
+    const parsed: CachedRole = JSON.parse(raw);
+    if (!parsed.cachedAt) return null;
+    if (Date.now() - parsed.cachedAt > ROLE_CACHE_TTL_MS) {
+      localStorage.removeItem(ROLE_CACHE_KEY);
+      return null;
+    }
+    return { role: parsed.role, is_active: parsed.is_active, profile: parsed.profile };
   } catch {
     return null;
   }
@@ -105,4 +125,9 @@ export function useUserRole(userId?: string) {
     gcTime:    30 * 60_000,
     retry: false,
   });
+}
+
+export function clearRoleCache() {
+  if (Platform.OS !== 'web') return;
+  try { localStorage.removeItem(ROLE_CACHE_KEY); } catch {}
 }
