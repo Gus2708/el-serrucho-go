@@ -32,6 +32,7 @@ import PresupuestoView from '../../src/components/PresupuestoView';
 import FallasView from '../../src/components/FallasView';
 import { usePresupuestosHistory } from '../../src/hooks/usePresupuestosHistory';
 import { OrdenCambioDetailModal } from '../../src/components/OrdenCambioDetailModal';
+import { DraftRestoreBanner } from '../../src/components/DraftRestoreBanner';
 
 type Tab = 'ajuste' | 'presupuesto' | 'historial' | 'fallas';
 
@@ -84,6 +85,9 @@ function BorradorView({ router }: { router: any }) {
   const { items, nota, isLoading, removeItem, updateItem, setNota, clear, submit } = useOrdenCambio();
 
   const [session, setSession] = useState<string | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  const showBanner = items.length > 0 && !bannerDismissed;
 
   // Lazy-load userId once
   async function getUserId(): Promise<string> {
@@ -258,9 +262,9 @@ function BorradorView({ router }: { router: any }) {
       {/* Submit bar */}
       {items.length > 0 && (
         <View style={[
-          styles.submitBar, 
-          { 
-            backgroundColor: colors.surface, 
+          styles.submitBar,
+          {
+            backgroundColor: colors.surface,
             borderColor: colors.border,
             bottom: isDesktop ? undefined : (Platform.OS === 'web' ? 82 : insets.bottom + 82),
             position: isDesktop ? 'relative' : 'absolute',
@@ -289,6 +293,18 @@ function BorradorView({ router }: { router: any }) {
             }
           </Pressable>
         </View>
+      )}
+
+      {showBanner && (
+        <DraftRestoreBanner
+          itemCount={items.length}
+          nota={nota || undefined}
+          onRestore={() => setBannerDismissed(true)}
+          onDiscard={() => {
+            clear();
+            setBannerDismissed(true);
+          }}
+        />
       )}
     </View>
   );
