@@ -1,11 +1,10 @@
 import { create } from 'zustand';
 import { supabase, Producto } from '../lib/supabase';
 import { uploadPdfAndGetUrl } from '../lib/pdfStorage';
-import { Alert, Platform } from 'react-native';
+import { Platform } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { buildPresupuestoPdfHtml } from '../utils/pdfGenerator';
-import { uploadPdfAndGetUrl } from '../lib/pdfStorage';
 
 export type Cliente = {
   codigo_cliente: string;
@@ -30,7 +29,7 @@ type PresupuestoStore = {
   setNota: (nota: string) => void;
   addItem: (producto: Producto, cantidad: number) => void;
   updateItemQuantity: (codigo_producto: string, cantidad: number) => void;
-  updateItemPrice: (codigo_producto: string, precio: number) => void;
+  updateItemPrice: (codigo_producto: string, precio: number) => string | null;
   removeItem: (codigo_producto: string) => void;
   reset: () => void;
   submit: () => Promise<{ presupuestoId: number; html?: string } | null>; // Returns the generated presupuesto ID and HTML if web
@@ -86,13 +85,21 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
   },
 
   updateItemPrice: (codigo_producto, precio) => {
+    const item  = get().items.find(i => i.producto.codigo_interno === codigo_producto);
+    const costo = item?.producto.costo ?? 0;
+
     set((state) => ({
-      items: state.items.map(i => 
-        i.producto.codigo_interno === codigo_producto 
-          ? { ...i, precio_unitario: precio } 
+      items: state.items.map(i =>
+        i.producto.codigo_interno === codigo_producto
+          ? { ...i, precio_unitario: precio }
           : i
-      )
+      ),
     }));
+
+    if (item && costo > 0 && precio < costo) {
+      return `Precio por debajo del costo ($${costo.toFixed(2)})`;
+    }
+    return null;
   },
 
   removeItem: (codigo_producto) => {
