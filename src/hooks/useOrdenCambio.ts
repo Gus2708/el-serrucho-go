@@ -4,6 +4,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
 import { buildPdfHtml, DraftItem } from '../utils/pdfGenerator';
+import { uploadPdfAndGetUrl } from '../lib/pdfStorage';
 
 interface OrdenStore {
   items:     DraftItem[];
@@ -100,23 +101,14 @@ export const useOrdenCambio = create<OrdenStore>((set, get) => ({
         // Native: generate a real PDF file and share it
         const { uri } = await Print.printToFileAsync({ html });
 
-        // 4. Upload to Supabase Storage
+        // 4. Upload PDF to Storage
         const fileName = `orden-${orden.id}-${Date.now()}.pdf`;
-        const fileData = await fetch(uri).then(r => r.blob());
-        const { error: uploadError } = await supabase.storage
-          .from('change-orders')
-          .upload(fileName, fileData, { contentType: 'application/pdf' });
+        const pdfUrl = await uploadPdfAndGetUrl(uri, fileName);
 
-        if (!uploadError) {
-          const { data: signedData } = await supabase.storage
-            .from('change-orders')
-            .createSignedUrl(fileName, 60 * 60 * 24 * 365);
-
-          await supabase
-            .from('ordenes_cambio')
-            .update({ status: 'emitido', pdf_url: signedData?.signedUrl ?? null })
-            .eq('id', orden.id);
-        }
+        await supabase
+          .from('ordenes_cambio')
+          .update({ status: 'emitido', pdf_url: pdfUrl })
+          .eq('id', orden.id);
 
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) await Sharing.shareAsync(uri, { mimeType: 'application/pdf' });
