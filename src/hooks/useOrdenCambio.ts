@@ -1,11 +1,11 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
 import { uploadPdfAndGetUrl } from '../lib/pdfStorage';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
 import { buildPdfHtml, DraftItem } from '../utils/pdfGenerator';
-import { uploadPdfAndGetUrl } from '../lib/pdfStorage';
 
 interface OrdenStore {
   items:     DraftItem[];
@@ -19,33 +19,35 @@ interface OrdenStore {
   submit:        (userId: string) => Promise<{ orderId: number; html?: string }>;
 }
 
-export const useOrdenCambio = create<OrdenStore>((set, get) => ({
-  items:     [],
-  nota:      '',
-  isLoading: false,
+export const useOrdenCambio = create<OrdenStore>()(
+  persist(
+    (set, get) => ({
+      items:     [],
+      nota:      '',
+      isLoading: false,
 
-  addItem: (item) => {
-    const { items } = get();
-    const existing = items.find(i => i.codigo_producto === item.codigo_producto);
-    if (existing) {
-      set({ items: items.map(i => i.codigo_producto === item.codigo_producto ? item : i) });
-    } else {
-      set({ items: [...items, item] });
-    }
-  },
+      addItem: (item) => {
+        const { items } = get();
+        const existing = items.find(i => i.codigo_producto === item.codigo_producto);
+        if (existing) {
+          set({ items: items.map(i => i.codigo_producto === item.codigo_producto ? item : i) });
+        } else {
+          set({ items: [...items, item] });
+        }
+      },
 
-  removeItem: (codigo) => {
-    set({ items: get().items.filter(i => i.codigo_producto !== codigo) });
-  },
+      removeItem: (codigo) => {
+        set({ items: get().items.filter(i => i.codigo_producto !== codigo) });
+      },
 
-  updateItem: (codigo, updates) => {
-    set({ items: get().items.map(i => i.codigo_producto === codigo ? { ...i, ...updates } : i) });
-  },
+      updateItem: (codigo, updates) => {
+        set({ items: get().items.map(i => i.codigo_producto === codigo ? { ...i, ...updates } : i) });
+      },
 
-  setNota: (nota) => set({ nota }),
+      setNota: (nota) => set({ nota }),
 
-  clear: () => set({ items: [], nota: '' }),
-  submit: async (userId: string) => {
+      clear: () => set({ items: [], nota: '' }),
+      submit: async (userId: string) => {
     const { items, nota } = get();
     set({ isLoading: true });
 
@@ -134,4 +136,18 @@ export const useOrdenCambio = create<OrdenStore>((set, get) => ({
       throw err;
     }
   },
-}));
+    }),
+    {
+      name:    'serrucho:orden-cambio-draft',
+      storage: createJSONStorage(() =>
+        Platform.OS === 'web'
+          ? localStorage
+          : { getItem: () => null, setItem: () => {}, removeItem: () => {} }
+      ),
+      partialize: (state) => ({
+        items: state.items,
+        nota:  state.nota,
+      }),
+    }
+  )
+);
