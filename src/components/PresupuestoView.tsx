@@ -8,6 +8,7 @@ import { usePresupuestoStore } from '../hooks/usePresupuestoStore';
 import { supabase } from '../lib/supabase';
 import { notify, confirm } from '../lib/notify';
 import { printHtml } from '../utils/pdfGenerator';
+import { MarginWarningBadge } from './MarginWarningBadge';
 
 export default function PresupuestoView({ router }: { router: any }) {
   const { colors, formatUSD } = useTheme();
@@ -15,6 +16,7 @@ export default function PresupuestoView({ router }: { router: any }) {
   const { isDesktop } = useDeviceSize();
   const { items, cliente, nota, removeItem, updateItemQuantity, updateItemPrice, setNota, reset, submit } = usePresupuestoStore();
   const [isLoading, setIsLoading] = useState(false);
+  const [priceWarnings, setPriceWarnings] = useState<Record<string, string | null>>({});
 
   const [session, setSession] = useState<string | null>(null);
 
@@ -124,7 +126,14 @@ export default function PresupuestoView({ router }: { router: any }) {
                       </Text>
                     </View>
                     <Pressable
-                      onPress={() => removeItem(item.producto.codigo_interno)}
+                      onPress={() => {
+                        removeItem(item.producto.codigo_interno);
+                        setPriceWarnings(prev => {
+                          const next = { ...prev };
+                          delete next[item.producto.codigo_interno];
+                          return next;
+                        });
+                      }}
                       hitSlop={12}
                       style={({ pressed }) => [styles.removeBtn, pressed && { opacity: 0.5, backgroundColor: colors.border + '33', borderRadius: 4 }]}
                     >
@@ -187,12 +196,14 @@ export default function PresupuestoView({ router }: { router: any }) {
                             value={String(item.precio_unitario)}
                             onChangeText={v => {
                               if (v === '' || v === '.') {
-                                updateItemPrice(item.producto.codigo_interno, 0);
+                                const w = updateItemPrice(item.producto.codigo_interno, 0);
+                                setPriceWarnings(prev => ({ ...prev, [item.producto.codigo_interno]: w }));
                                 return;
                               }
                               const p = parseFloat(v);
                               if (!isNaN(p) && p >= 0) {
-                                updateItemPrice(item.producto.codigo_interno, p);
+                                const w = updateItemPrice(item.producto.codigo_interno, p);
+                                setPriceWarnings(prev => ({ ...prev, [item.producto.codigo_interno]: w }));
                               }
                             }}
                             selectTextOnFocus
@@ -209,11 +220,13 @@ export default function PresupuestoView({ router }: { router: any }) {
                               onPress={() => {
                                 if (isMarkupApplied) {
                                   // Reset to original price
-                                  updateItemPrice(item.producto.codigo_interno, originalPrice);
+                                  const w = updateItemPrice(item.producto.codigo_interno, originalPrice);
+                                  setPriceWarnings(prev => ({ ...prev, [item.producto.codigo_interno]: w }));
                                 } else {
                                   // Apply +40%
-                                  const newPrice = originalPrice * 1.4;
-                                  updateItemPrice(item.producto.codigo_interno, parseFloat(newPrice.toFixed(2)));
+                                  const newPrice = parseFloat((originalPrice * 1.4).toFixed(2));
+                                  const w = updateItemPrice(item.producto.codigo_interno, newPrice);
+                                  setPriceWarnings(prev => ({ ...prev, [item.producto.codigo_interno]: w }));
                                 }
                               }}
                               style={({ pressed }) => [
@@ -238,6 +251,14 @@ export default function PresupuestoView({ router }: { router: any }) {
                       </View>
                     </View>
                   </View>
+
+                  {/* Margin warning — shown when quoted price is below cost */}
+                  {priceWarnings[item.producto.codigo_interno] && (
+                    <MarginWarningBadge
+                      costoMinimo={item.producto.costo}
+                      formatUSD={formatUSD}
+                    />
+                  )}
 
                   {/* Row 2: Subtotal aligned right */}
                   <View style={styles.subtotalRow}>
