@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
 import { uploadPdfAndGetUrl } from '../lib/pdfStorage';
 import * as Print from 'expo-print';
@@ -19,9 +18,7 @@ interface OrdenStore {
   submit:        (userId: string) => Promise<{ orderId: number; html?: string }>;
 }
 
-export const useOrdenCambio = create<OrdenStore>()(
-  persist(
-    (set, get) => ({
+export const useOrdenCambio = create<OrdenStore>()((set, get) => ({
       items:     [],
       nota:      '',
       isLoading: false,
@@ -136,18 +133,4 @@ export const useOrdenCambio = create<OrdenStore>()(
       throw err;
     }
   },
-    }),
-    {
-      name:    'serrucho:orden-cambio-draft',
-      storage: createJSONStorage(() =>
-        Platform.OS === 'web'
-          ? localStorage
-          : { getItem: () => null, setItem: () => {}, removeItem: () => {} }
-      ),
-      partialize: (state) => ({
-        items: state.items,
-        nota:  state.nota,
-      }),
-    }
-  )
-);
+}));
