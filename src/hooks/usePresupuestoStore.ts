@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { supabase, Producto } from '../lib/supabase';
+import { uploadPdfAndGetUrl } from '../lib/pdfStorage';
 import { Alert, Platform } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -162,24 +163,14 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
         // Native: generate a real PDF file and share it
         const { uri } = await Print.printToFileAsync({ html });
 
-        // 4. Upload to Supabase Storage
-        // Use 'change-orders' bucket or a dedicated one. Using 'change-orders' as a fallback since we know it exists.
+        // 4. Upload PDF to Storage
         const fileName = `presupuesto-${presupuesto.id}-${Date.now()}.pdf`;
-        const fileData = await fetch(uri).then(r => r.blob());
-        const { error: uploadError } = await supabase.storage
-          .from('change-orders')
-          .upload(fileName, fileData, { contentType: 'application/pdf' });
+        const pdfUrl = await uploadPdfAndGetUrl(uri, fileName);
 
-        if (!uploadError) {
-          const { data: signedData } = await supabase.storage
-            .from('change-orders')
-            .createSignedUrl(fileName, 60 * 60 * 24 * 365);
-
-          await supabase
-            .from('presupuestos')
-            .update({ pdf_url: signedData?.signedUrl ?? null })
-            .eq('id', presupuesto.id);
-        }
+        await supabase
+          .from('presupuestos')
+          .update({ pdf_url: pdfUrl })
+          .eq('id', presupuesto.id);
 
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) await Sharing.shareAsync(uri, { mimeType: 'application/pdf' });
