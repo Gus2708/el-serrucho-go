@@ -103,10 +103,12 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
 
   submit: async () => {
     const { cliente, items, nota } = get();
-    
+
     if (items.length === 0) {
       throw new Error('No hay productos en el presupuesto');
     }
+
+    let createdPresupuestoId: number | null = null;
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -136,6 +138,7 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
         .single();
 
       if (cabeceraError) throw cabeceraError;
+      createdPresupuestoId = presupuesto.id;
 
       // Insertar detalle
       const detalles = items.map(item => ({
@@ -187,6 +190,15 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
 
       return { presupuestoId: presupuesto.id, html };
     } catch (error: any) {
+      if (createdPresupuestoId !== null) {
+        await supabase
+          .from('presupuestos')
+          .delete()
+          .eq('id', createdPresupuestoId)
+          .then(({ error: delErr }) => {
+            if (delErr) console.warn('[usePresupuestoStore] cleanup failed:', delErr.message);
+          });
+      }
       console.error('Error enviando presupuesto:', error);
       throw error;
     }

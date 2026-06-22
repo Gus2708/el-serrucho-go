@@ -47,6 +47,8 @@ export const useOrdenCambio = create<OrdenStore>((set, get) => ({
     const { items, nota } = get();
     set({ isLoading: true });
 
+    let createdOrdenId: number | null = null;
+
     try {
       // 1. Create the change order header
       const { data: orden, error: ordenError } = await supabase
@@ -56,6 +58,7 @@ export const useOrdenCambio = create<OrdenStore>((set, get) => ({
         .single();
 
       if (ordenError || !orden) throw ordenError ?? new Error('No orden id');
+      createdOrdenId = orden.id;
 
       // 2. Insert all items
       const { error: itemsError } = await supabase
@@ -125,6 +128,15 @@ export const useOrdenCambio = create<OrdenStore>((set, get) => ({
       set({ isLoading: false });
       return { orderId: orden.id };
     } catch (err) {
+      if (createdOrdenId !== null) {
+        await supabase
+          .from('ordenes_cambio')
+          .delete()
+          .eq('id', createdOrdenId)
+          .then(({ error }) => {
+            if (error) console.warn('[useOrdenCambio] cleanup failed:', error.message);
+          });
+      }
       set({ isLoading: false });
       throw err;
     }
