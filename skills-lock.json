@@ -19,6 +19,12 @@
       "skillPath": ".claude/skills/context-engineering/SKILL.md",
       "computedHash": "557edcdd62b9ff094633fbc9049f1ac02b6a11902f289f9b66d4f4d43d7c1a98"
     },
+    "impeccable": {
+      "source": "pbakaus/impeccable",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/impeccable/SKILL.md",
+      "computedHash": "ff24732ed5dfe28d4415db0c86c0ef4406893b551cf837529e01ec1d1fefcb32"
+    },
     "improve": {
       "source": "shadcn/improve",
       "sourceType": "github",
