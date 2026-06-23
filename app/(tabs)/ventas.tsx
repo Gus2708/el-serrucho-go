@@ -72,23 +72,28 @@ export default function Ventas() {
   const queryClient = useQueryClient();
   const listRef = useRef<FlashList<any>>(null);
   const { isDesktop } = useDeviceSize();
-  const { scrollOffsetVentas, setScrollOffsetVentas } = useInventarioStore();
+  // Solo seleccionamos el setter (referencia estable). Suscribirse al valor
+  // `scrollOffsetVentas` re-renderizaba toda la pantalla en cada frame de
+  // scroll (~60 fps). El valor solo se necesita al recuperar foco, así que
+  // se lee con getState() sin suscripción.
+  const setScrollOffsetVentas = useInventarioStore(s => s.setScrollOffsetVentas);
   const [refreshing,    setRefreshing]    = useState(false);
   const [selectedVenta, setSelectedVenta] = useState<VentaHoy | null>(null);
   const [ventaToDelete, setVentaToDelete] = useState<string | null>(null);
   const [period,        setPeriod]        = useState<VentasPeriod>('hoy');
   const [hasDefaulted,  setHasDefaulted]  = useState(false);
 
-  // Restaurar scroll
+  // Restaurar scroll — leemos el offset guardado una sola vez al recuperar foco.
   useFocusEffect(
     useCallback(() => {
-      if (scrollOffsetVentas > 0 && listRef.current) {
+      const saved = useInventarioStore.getState().scrollOffsetVentas;
+      if (saved > 0 && listRef.current) {
         const timer = setTimeout(() => {
-          listRef.current?.scrollToOffset({ offset: scrollOffsetVentas, animated: false });
+          listRef.current?.scrollToOffset({ offset: saved, animated: false });
         }, 100);
         return () => clearTimeout(timer);
       }
-    }, [scrollOffsetVentas])
+    }, [])
   );
 
   // Guardar scroll

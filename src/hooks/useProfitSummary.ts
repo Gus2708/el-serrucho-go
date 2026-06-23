@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { supabase, ProfitSummaryRow, ProfitDailyRow, ProfitHourlyRow, getDateDaysAgo } from '../lib/supabase';
 
 export interface ProfitMonthlyRow {
@@ -16,6 +16,7 @@ export function useProfitSummary() {
     queryFn:  fetchProfitSummary,
     staleTime: 5 * 60_000,        // 5 min
     refetchInterval: 10 * 60_000, // background refresh every 10 min
+    placeholderData: keepPreviousData, // no parpadeo en refetch/refresh
   });
 }
 
@@ -58,6 +59,7 @@ export function useProfitDaily(days: 7 | 30 | 90 = 30, enabled: boolean = true) 
     queryFn:  () => fetchProfitDaily(days),
     staleTime: 5 * 60_000,
     enabled,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -84,6 +86,7 @@ export function useProfitMonthly() {
     queryKey: ['profit-monthly'],
     queryFn:  fetchProfitMonthly,
     staleTime: 10 * 60_000,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -110,6 +113,7 @@ export function useProfitHourly(dateStr: string, enabled: boolean = true) {
     queryFn:  () => fetchProfitHourly(dateStr),
     staleTime: 5 * 60_000,
     enabled,
+    placeholderData: keepPreviousData,
   });
 }
 

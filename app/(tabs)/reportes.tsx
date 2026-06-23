@@ -38,16 +38,15 @@ export default function Reportes() {
   const queryClient = useQueryClient();
   const scrollRef = useRef<ScrollView>(null);
   const { isDesktop } = useDeviceSize();
-  const { scrollOffsetReportes, setScrollOffsetReportes } = useInventarioStore();
+  // Solo seleccionamos el setter (referencia estable). Suscribirse al valor
+  // `scrollOffsetReportes` re-renderizaba toda la pantalla en cada frame de
+  // scroll (~60 fps). El valor solo se necesita al recuperar foco, así que
+  // se lee con getState() sin suscripción.
+  const setScrollOffsetReportes = useInventarioStore(s => s.setScrollOffsetReportes);
   const { width: screenW } = useWindowDimensions();
   const isNarrow = screenW < 420;
   const hasRestored = useRef(false);
-  const scrollOffsetRef = useRef(scrollOffsetReportes);
-
-  // Keep ref in sync without triggering effects
-  useEffect(() => {
-    scrollOffsetRef.current = scrollOffsetReportes;
-  }, [scrollOffsetReportes]);
+  const scrollOffsetRef = useRef(0);
 
   const [period,    setPeriod]    = useState<Period>(30);
   const [chartMode, setChartMode] = useState<ChartMode>('items');
@@ -62,9 +61,11 @@ export default function Reportes() {
   }, [roleData, isAdmin]);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Restaurar scroll al entrar (solo una vez por enfoque)
+  // Restaurar scroll al entrar (solo una vez por enfoque).
+  // Leemos el offset guardado una sola vez con getState() sin suscripción.
   useFocusEffect(
     useCallback(() => {
+      scrollOffsetRef.current = useInventarioStore.getState().scrollOffsetReportes;
       const offset = scrollOffsetRef.current;
       if (!hasRestored.current && offset > 0 && scrollRef.current) {
         const timer = setTimeout(() => {

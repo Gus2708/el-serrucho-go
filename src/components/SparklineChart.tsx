@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { LineChart, CurveType } from 'react-native-gifted-charts';
 import Svg, { Line as SvgLine, Rect as SvgRect } from 'react-native-svg';
@@ -12,6 +12,32 @@ interface Props {
   width?:  number;
   height?: number;
   viewMode?: 'dia' | 'ayer' | 'semana' | 'mes';
+}
+
+interface Tick {
+  idx:   number;
+  label: string;
+  x:     number;
+}
+
+interface ChartModel {
+  drawH:       number;
+  chartData:   { value: number; hideDataPoint?: boolean; dataPointColor?: string; dataPointRadius?: number; dataPointInnerColor?: string; dataPointInnerRadius?: number }[];
+  spacing:     number;
+  maxVal:      number;
+  minVal:      number;
+  baselineY:   number;
+  subgridYs:   number[];
+  hasLunch:    boolean;
+  lunchStartX: number;
+  lunchWidth:  number;
+  lunchCenter: number;
+  ticks:       Tick[];
+  tickWidth:   number;
+  showPeak:    boolean;
+  peakVal:     number;
+  peakDotY:    number;
+  labelLeft:   number;
 }
 
 const SCREEN_W     = Dimensions.get('window').width;
@@ -28,6 +54,10 @@ const LABEL_OFFSET = 16;        // separación visual entre label y dot
  *   - Peak destacado con dot + valor anotado encima (clamp para evitar clipping)
  *   - Banda "Receso" 1pm-2pm cuando los datos son por hora
  *   - Hour ticks ("8a", "12p", etc.) en el bottom para datos horarios
+ *
+ * Rendimiento: toda la geometría se computa una sola vez en un `useMemo`, y el
+ * componente está envuelto en `React.memo`. Esto evita reconstruir el path SVG
+ * de gifted-charts en cada render del dashboard (p. ej. durante el scroll).
  */
 
 /** Formato compacto de hora local (12-h con sufijo a/p). */
@@ -53,42 +83,19 @@ function formatDay(diaStr: string, totalPoints: number): string {
   // Vista mes → "4 May"
   return `${d} ${MONTHS_ES[m - 1]}`;
 }
-export function SparklineChart({ data, width, height = 70, viewMode }: Props) {
-  const { colors, formatUSD } = useTheme();
-  const w = width ?? SCREEN_W - 32;
 
-  // ── Detección de Día No Laborable (Domingo) ──
-  // Intentamos detectarlo por datos primero, y si no hay datos, por el viewMode
-  const isNonWorking = React.useMemo(() => {
-    if (data && data.length > 0 && 'hora' in data[0]) {
-      return new Date((data[0] as any).hora).getDay() === 0;
-    }
-    if (viewMode === 'dia') return new Date().getDay() === 0;
-    if (viewMode === 'ayer') {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      return yesterday.getDay() === 0;
-    }
-    return false;
-  }, [data, viewMode]);
+/** Construye toda la geometría del chart. Devuelve null si no hay datos. */
+function buildModel(
+  data: Props['data'],
+  w: number,
+  height: number,
+  primary: string,
+  surface: string,
+): ChartModel | null {
+  if (!data || !data.length) return null;
 
-  if (!data || !data.length) {
-    return (
-      <View style={[styles.wrap, { width: w, height }]}>
-        {isNonWorking && (
-          <View style={styles.nonWorkingOverlay} pointerEvents="none">
-            <Text style={[styles.nonWorkingText, { color: colors.textMuted }]}>
-              DÍA NO LABORABLE
-            </Text>
-          </View>
-        )}
-      </View>
-    );
-  }
-
-  // Chart drawing: el wrap mide `height` pero reservamos PAD arriba y abajo
-  // para que la curva no toque ni el borde superior (label) ni el inferior
-  // (respiración visual con el contenedor).
+  // El wrap mide `height` pero reservamos PAD arriba y abajo para que la curva
+  // no toque ni el borde superior (label) ni el inferior (respiración visual).
   const drawH = Math.max(40, height - TOP_PAD - BOTTOM_PAD);
 
   // Fidelidad de datos.
@@ -105,9 +112,9 @@ export function SparklineChart({ data, width, height = 70, viewMode }: Props) {
     if (i === peakIdx && showPeak) {
       return {
         value:                v,
-        dataPointColor:       colors.primary,
+        dataPointColor:       primary,
         dataPointRadius:      4,
-        dataPointInnerColor:  colors.surface,
+        dataPointInnerColor:  surface,
         dataPointInnerRadius: 1.5,
       };
     }
@@ -149,17 +156,17 @@ export function SparklineChart({ data, width, height = 70, viewMode }: Props) {
 
   // ── Time ticks ── (hora para datos horarios, día para diario)
   const isDaily = !isHourly && 'dia' in (data[0] as any);
-  const ticks: { idx: number; label: string; x: number }[] = [];
-  
+  const ticks: Tick[] = [];
+
   // Width de cada label (en 10pt): horas son cortas ("8a"), días más largos ("Lun 4").
   const tickWidth = isDaily ? 38 : 22; // Un poco más estrechos para que quepan más
 
   if ((isHourly || isDaily) && data.length > 1) {
     // Calculamos cuántos ticks caben sin solaparse (basado en tickWidth + margen)
-    const target = isDaily && data.length <= 8 
-      ? data.length 
+    const target = isDaily && data.length <= 8
+      ? data.length
       : Math.max(4, Math.floor(w / (tickWidth * 1.5))); // Más aire entre etiquetas
-    
+
     const minGap = Math.ceil((tickWidth * 1.3) / spacing); // Gap mínimo en índices para evitar solapamiento visual
     const indices: number[] = [0];
     let lastAdded = 0;
@@ -193,7 +200,71 @@ export function SparklineChart({ data, width, height = 70, viewMode }: Props) {
     });
   }
 
-  // El overlay ya se calculó arriba en el useMemo
+  return {
+    drawH,
+    chartData,
+    spacing,
+    maxVal,
+    minVal,
+    baselineY,
+    subgridYs,
+    hasLunch,
+    lunchStartX,
+    lunchWidth,
+    lunchCenter,
+    ticks,
+    tickWidth,
+    showPeak,
+    peakVal,
+    peakDotY,
+    labelLeft,
+  };
+}
+
+function SparklineChartBase({ data, width, height = 70, viewMode }: Props) {
+  const { colors, formatUSD } = useTheme();
+  const w = width ?? SCREEN_W - 32;
+
+  // ── Detección de Día No Laborable (Domingo) ──
+  // Intentamos detectarlo por datos primero, y si no hay datos, por el viewMode
+  const isNonWorking = useMemo(() => {
+    if (data && data.length > 0 && 'hora' in data[0]) {
+      return new Date((data[0] as any).hora).getDay() === 0;
+    }
+    if (viewMode === 'dia') return new Date().getDay() === 0;
+    if (viewMode === 'ayer') {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      return yesterday.getDay() === 0;
+    }
+    return false;
+  }, [data, viewMode]);
+
+  // Toda la geometría se computa una sola vez por cambio de datos/dimensiones.
+  const model = useMemo(
+    () => buildModel(data, w, height, colors.primary, colors.surface),
+    [data, w, height, colors.primary, colors.surface],
+  );
+
+  if (!model) {
+    return (
+      <View style={[styles.wrap, { width: w, height }]}>
+        {isNonWorking && (
+          <View style={styles.nonWorkingOverlay} pointerEvents="none">
+            <Text style={[styles.nonWorkingText, { color: colors.textMuted }]}>
+              DÍA NO LABORABLE
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  const {
+    drawH, chartData, spacing, maxVal, minVal, baselineY, subgridYs,
+    hasLunch, lunchStartX, lunchWidth, lunchCenter, ticks, tickWidth,
+    showPeak, peakVal, peakDotY, labelLeft,
+  } = model;
 
   return (
     <View style={[styles.wrap, { width: w, height }]}>
@@ -358,6 +429,14 @@ export function SparklineChart({ data, width, height = 70, viewMode }: Props) {
     </View>
   );
 }
+
+/**
+ * `React.memo`: el dashboard re-renderiza con frecuencia (refetch en background,
+ * cambio de período). Sin memo, cada render reconstruye el path SVG de
+ * gifted-charts. La comparación shallow por defecto basta: `data` es una
+ * referencia estable del cache de TanStack Query y solo cambia con datos nuevos.
+ */
+export const SparklineChart = React.memo(SparklineChartBase);
 
 const styles = StyleSheet.create({
   wrap: {

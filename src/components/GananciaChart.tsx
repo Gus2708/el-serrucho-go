@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { BarChart } from 'react-native-gifted-charts';
 import { useTheme } from '../theme/ThemeContext';
@@ -54,10 +54,49 @@ function formatBarDate(iso: string, totalPoints: number): string {
   return `${d} ${MONTHS_ES[m - 1]}`;
 }
 
-export function GananciaChart({ data, mode = 'ganancia' }: Props) {
+function GananciaChartBase({ data, mode = 'ganancia' }: Props) {
   const { colors } = useTheme();
 
-  if (!data.length) {
+  // Toda la agregación (slice, peak, promedio, barData) se computa una sola vez
+  // por cambio de datos/modo. El dashboard re-renderiza con frecuencia y, sin
+  // esto, gifted-charts reconstruiría las barras en cada render.
+  const model = useMemo(() => {
+    if (!data.length) return null;
+
+    const slice  = data.slice(-30);
+    const values = slice.map(d => (
+      mode === 'items' ? d.num_items : (mode === 'ganancia' ? d.ganancia : d.ingreso_bruto)
+    ));
+    const maxAbs = Math.max(...values.map(Math.abs), 1);
+
+    // Promedio sobre días con actividad (no infla con domingos cerrados)
+    const active = values.filter(v => Math.abs(v) > 0.01);
+    const avg    = active.length > 0
+      ? active.reduce((s, v) => s + v, 0) / active.length
+      : 0;
+
+    // Peak: día más fuerte del período
+    const peakIdx  = values.reduce(
+      (best, v, i) => (Math.abs(v) > Math.abs(values[best]) ? i : best),
+      0,
+    );
+    const peakVal  = values[peakIdx];
+    const peakDate = formatBarDate(slice[peakIdx].dia, slice.length);
+
+    const barData = slice.map(d => {
+      const raw   = mode === 'items' ? d.num_items : (mode === 'ganancia' ? d.ganancia : d.ingreso_bruto);
+      const isNeg = raw < 0;
+      return {
+        value:      Math.abs(raw),
+        label:      formatBarDate(d.dia, slice.length),
+        frontColor: isNeg ? colors.danger : colors.primary,
+      };
+    });
+
+    return { maxAbs, avg, peakVal, peakDate, barData };
+  }, [data, mode, colors.danger, colors.primary]);
+
+  if (!model) {
     return (
       <View style={[styles.empty, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Text style={[styles.emptyText, { color: colors.textMuted }]}>Sin datos para el período</Text>
@@ -65,35 +104,7 @@ export function GananciaChart({ data, mode = 'ganancia' }: Props) {
     );
   }
 
-  const slice  = data.slice(-30);
-  const values = slice.map(d => (
-    mode === 'items' ? d.num_items : (mode === 'ganancia' ? d.ganancia : d.ingreso_bruto)
-  ));
-  const maxAbs = Math.max(...values.map(Math.abs), 1);
-
-  // Promedio sobre días con actividad (no infla con domingos cerrados)
-  const active = values.filter(v => Math.abs(v) > 0.01);
-  const avg    = active.length > 0
-    ? active.reduce((s, v) => s + v, 0) / active.length
-    : 0;
-
-  // Peak: día más fuerte del período
-  const peakIdx  = values.reduce(
-    (best, v, i) => (Math.abs(v) > Math.abs(values[best]) ? i : best),
-    0,
-  );
-  const peakVal  = values[peakIdx];
-  const peakDate = formatBarDate(slice[peakIdx].dia, slice.length);
-
-  const barData = slice.map(d => {
-    const raw   = mode === 'items' ? d.num_items : (mode === 'ganancia' ? d.ganancia : d.ingreso_bruto);
-    const isNeg = raw < 0;
-    return {
-      value:      Math.abs(raw),
-      label:      formatBarDate(d.dia, slice.length),
-      frontColor: isNeg ? colors.danger : colors.primary,
-    };
-  });
+  const { maxAbs, avg, peakVal, peakDate, barData } = model;
 
   return (
     <View
@@ -176,6 +187,12 @@ export function GananciaChart({ data, mode = 'ganancia' }: Props) {
     </View>
   );
 }
+
+/**
+ * `React.memo`: el dashboard re-renderiza con frecuencia. La comparación shallow
+ * basta — `data` es referencia estable del cache de TanStack Query.
+ */
+export const GananciaChart = React.memo(GananciaChartBase);
 
 const styles = StyleSheet.create({
   wrap: {

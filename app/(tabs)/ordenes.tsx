@@ -314,9 +314,13 @@ function BorradorView({ router }: { router: any }) {
 
 function HistorialView({ queryClient }: { queryClient: any }) {
   const { colors } = useTheme();
-  const { scrollOffsetOrdenes, setScrollOffsetOrdenes } = useInventarioStore();
+  // Solo seleccionamos el setter (referencia estable). Suscribirse al valor
+  // `scrollOffsetOrdenes` re-renderizaba el historial en cada frame de
+  // scroll (~60 fps). El valor solo se necesita al recuperar foco, así que
+  // se lee con getState() sin suscripción.
+  const setScrollOffsetOrdenes = useInventarioStore(s => s.setScrollOffsetOrdenes);
   const scrollRef = useRef<ScrollView>(null);
-  
+
   const [subTab, setSubTab] = useState<'ajuste' | 'presupuesto'>('ajuste');
   const [selectedOrden, setSelectedOrden] = useState<any | null>(null);
   const { data: userAuth } = useUserRole();
@@ -369,16 +373,17 @@ function HistorialView({ queryClient }: { queryClient: any }) {
 
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<number | null>(null);
 
-  // Restaurar scroll
+  // Restaurar scroll — leemos el offset guardado una sola vez al recuperar foco.
   useFocusEffect(
     useCallback(() => {
-      if (scrollOffsetOrdenes > 0 && scrollRef.current) {
+      const saved = useInventarioStore.getState().scrollOffsetOrdenes;
+      if (saved > 0 && scrollRef.current) {
         const timer = setTimeout(() => {
-          scrollRef.current?.scrollTo({ y: scrollOffsetOrdenes, animated: false });
+          scrollRef.current?.scrollTo({ y: saved, animated: false });
         }, 100);
         return () => clearTimeout(timer);
       }
-    }, [scrollOffsetOrdenes])
+    }, [])
   );
 
   const handleViewPDF = async (o: any) => {
@@ -512,13 +517,13 @@ function HistorialView({ queryClient }: { queryClient: any }) {
     });
   };
 
-  // Guardar scroll
-  const handleScroll = (event: any) => {
+  // Guardar scroll (el setter de Zustand es estable, no provoca re-render aquí)
+  const handleScroll = useCallback((event: any) => {
     const offset = event.nativeEvent.contentOffset.y;
     if (offset >= 0) {
       setScrollOffsetOrdenes(offset);
     }
-  };
+  }, [setScrollOffsetOrdenes]);
 
   if (isLoading) {
     return <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>;

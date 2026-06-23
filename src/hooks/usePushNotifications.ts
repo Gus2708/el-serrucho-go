@@ -64,6 +64,8 @@ const EAS_PROJECT_ID = '63f510dd-b89a-4d82-87f7-37032b8039e0';
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),

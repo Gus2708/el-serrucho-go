@@ -53,8 +53,13 @@ async function fetchProductos(
   filter: StockFilter,
   offset: number,
 ): Promise<Producto[]> {
+  // margen_negativo usa una vista dedicada en la BD (IVA-aware, server-side).
+  // El resto usa productos_view.
+  const fromTable =
+    filter === 'margen_negativo' ? 'productos_margen_negativo_view' : 'productos_view';
+
   let query = supabase
-    .from('productos_view')
+    .from(fromTable)
     .select('*')
     .order('es_placeholder', { ascending: true })
     .order('descripcion')
@@ -67,7 +72,7 @@ async function fetchProductos(
       const clean = trimmed.replace(/\*/g, '').trim();
       const words = clean.split(/\s+/).filter(w => w.length > 0);
       const pattern = `%${words.join('%')}%`;
-      // NOTE: referencia no está en productos_view — solo buscar en columnas existentes
+      // NOTE: referencia no está en la vista — solo buscar en columnas existentes
       query = query.or(`descripcion.ilike.${pattern},codigo_interno.ilike.${pattern},codigo_barras.ilike.${pattern}`);
     } else if (/^\d{8,}$/.test(trimmed)) {
       // Modo código de barras: la búsqueda es solo dígitos largos (EAN-8/13, UPC, etc.)
@@ -77,7 +82,7 @@ async function fetchProductos(
     } else {
       // Strict mode: busca por prefijo en nombre y código
       const term = `${trimmed}%`;
-      // NOTE: referencia no está en productos_view — solo buscar en columnas existentes
+      // NOTE: referencia no está en la vista — solo buscar en columnas existentes
       query = query.or(`descripcion.ilike.${term},codigo_interno.ilike.${term},codigo_barras.ilike.${term}`);
     }
   }
@@ -89,23 +94,12 @@ async function fetchProductos(
     case 'stock_bajo':
       query = query.gt('existencia', 0).lte('existencia', 5);
       break;
-    case 'margen_negativo':
-      // col > col comparison not supported server-side; fetch page and filter
-      query = query.range(offset, offset + 199); // fetch bigger chunk for client filter
-      break;
+    // margen_negativo: la vista ya aplica el filtro IVA-aware (costo > precio_venta / 1.16).
+    // No se necesita condición adicional ni filtrado en cliente.
   }
 
   const { data, error } = await query;
   if (error) throw error;
 
-  let result = (data ?? []) as Producto[];
-
-  if (filter === 'margen_negativo') {
-    // IVA-aware: precio_venta incluye IVA 16%; costo viene sin IVA.
-    // Hay que comparar manzanas con manzanas dividiendo por 1.16.
-    // Ignoramos productos con precio_venta = 0 (basura sin sincronizar).
-    result = result.filter(p => p.precio_venta > 0 && p.costo > p.precio_venta / 1.16);
-  }
-
-  return result;
+  return (data ?? []) as Producto[];
 }

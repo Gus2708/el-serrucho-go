@@ -28,6 +28,7 @@ import { usePWAInstallStore } from '../../src/hooks/usePWAInstall';
 import { SyncBadge } from '../../src/components/SyncBadge';
 import { SparklineChart } from '../../src/components/SparklineChart';
 import { GananciaChart } from '../../src/components/GananciaChart';
+import { ChartSkeleton } from '../../src/components/ChartSkeleton';
 import { getLocalDateStr, getDateDaysAgo } from '../../src/lib/supabase';
 import { TasaCard } from '../../src/components/TasaCard';
 import { useAtencionesCount } from '../../src/hooks/useAtenciones';
@@ -134,7 +135,11 @@ export default function Index() {
   const router      = useRouter();
   const queryClient = useQueryClient();
   const scrollRef   = useRef<ScrollView>(null);
-  const { scrollOffsetDashboard, setScrollOffsetDashboard } = useInventarioStore();
+  // Solo seleccionamos el setter (referencia estable). Suscribirse al valor
+  // `scrollOffsetDashboard` re-renderizaba TODO el dashboard en cada frame de
+  // scroll (~60 fps), reconstruyendo los charts SVG. El valor solo se necesita
+  // al recuperar foco, así que se lee con getState() sin suscripción.
+  const setScrollOffsetDashboard = useInventarioStore(s => s.setScrollOffsetDashboard);
   const { width: screenW } = useWindowDimensions();
   const isDesktop = screenW >= 768;
   // BigCard outer width: on desktop it fills the content column minus margins
@@ -144,36 +149,38 @@ export default function Index() {
   const [userName,   setUserName]   = useState('');
   const [period,     setPeriod]     = useState<Period>(getDefaultPeriod());
 
-  // Restaurar scroll
+  // Restaurar scroll — leemos el offset guardado una sola vez al recuperar foco.
   useFocusEffect(
     useCallback(() => {
-      if (scrollOffsetDashboard > 0 && scrollRef.current) {
+      const saved = useInventarioStore.getState().scrollOffsetDashboard;
+      if (saved > 0 && scrollRef.current) {
         const timer = setTimeout(() => {
-          scrollRef.current?.scrollTo({ y: scrollOffsetDashboard, animated: false });
+          scrollRef.current?.scrollTo({ y: saved, animated: false });
         }, 100);
         return () => clearTimeout(timer);
       }
-    }, [scrollOffsetDashboard])
+    }, [])
   );
 
-  // Guardar scroll
-  const handleScroll = (event: any) => {
+  // Guardar scroll (el setter de Zustand es estable, no provoca re-render aquí)
+  const handleScroll = useCallback((event: any) => {
     const offset = event.nativeEvent.contentOffset.y;
     if (offset >= 0) {
       setScrollOffsetDashboard(offset);
     }
-  };
+  }, [setScrollOffsetDashboard]);
 
   const todayStr     = useMemo(() => getLocalDateStr(), []);
   const yesterdayStr = useMemo(() => getDateDaysAgo(1), []);
 
   const { data: summary,      isLoading: loadingSum    } = useProfitSummary();
   const { data: daily7  = [], isLoading: loadingDaily7 } = useProfitDaily(7);
-  // daily30 only needed when period === 'mes'; gate it.
-  const { data: daily30 = [], isLoading: loadingDaily30 } = useProfitDaily(30, period === 'mes');
-  // Hourly queries are expensive (24-bucket fill) — only run them when actually displayed.
-  const { data: hourlyHoy   = [], isLoading: loadingHourlyHoy  } = useProfitHourly(todayStr,    period === 'dia');
-  const { data: hourlyAyer  = [], isLoading: loadingHourlyAyer } = useProfitHourly(yesterdayStr, period === 'ayer');
+  // Prefetch de todos los períodos en paralelo al montar: los payloads son
+  // pequeños (≤30 filas / 1 día por hora) y así cambiar de pestaña es
+  // instantáneo (cache hit) en vez de disparar un fetch en frío al togglear.
+  const { data: daily30 = [], isLoading: loadingDaily30 } = useProfitDaily(30);
+  const { data: hourlyHoy   = [], isLoading: loadingHourlyHoy  } = useProfitHourly(todayStr);
+  const { data: hourlyAyer  = [], isLoading: loadingHourlyAyer } = useProfitHourly(yesterdayStr);
   const { data: userAuth, isLoading: loadingRole } = useUserRole();
   const { data: pendingCount = 0 } = useAtencionesCount();
   const role = userAuth?.role ?? 'empleado';
@@ -189,9 +196,19 @@ export default function Index() {
     }
   }, [profile]);
 
+  // Acotamos la invalidación solo a los datos del dashboard para que el
+  // pull-to-refresh no refetchee el inventario completo (7.200 productos).
   async function handleRefresh() {
     setRefreshing(true);
-    await queryClient.invalidateQueries();
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['profit-summary'] }),
+      queryClient.invalidateQueries({ queryKey: ['profit-daily'] }),
+      queryClient.invalidateQueries({ queryKey: ['profit-hourly'] }),
+      queryClient.invalidateQueries({ queryKey: ['sync-status'] }),
+      queryClient.invalidateQueries({ queryKey: ['tazas-actual'] }),
+      queryClient.invalidateQueries({ queryKey: ['atenciones-count'] }),
+      queryClient.invalidateQueries({ queryKey: ['user-role'] }),
+    ]);
     setRefreshing(false);
   }
 
@@ -443,7 +460,14 @@ export default function Index() {
               </View>
             )}
             {loadingChart
-              ? <View style={styles.chartPlaceholder} />
+              ? (
+                <View style={{
+                  marginHorizontal: -BIG_CARD_PADDING,
+                  marginBottom:     -BIG_CARD_PADDING,
+                }}>
+                  <ChartSkeleton height={140} />
+                </View>
+              )
               : (
                 // Sale del padding del bigCard para que la línea cubra todo
                 // el ancho del contenedor, de borde a borde, y el gradient
@@ -717,7 +741,6 @@ const styles = StyleSheet.create({
     borderWidth:      0.5,
   },
   warnText: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', flex: 1, lineHeight: 14 },
-  chartPlaceholder: { height: 150, marginTop: 14 },
 
   kpiGrid: {
     flexDirection:     'row',

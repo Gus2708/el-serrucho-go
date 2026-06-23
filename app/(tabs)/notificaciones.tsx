@@ -68,7 +68,11 @@ export default function Notificaciones() {
   const { data: atenciones = [], isLoading: atencionesLoading, refetch: refetchAtenciones } = useAtenciones();
   const { data: solicitudes = [], isLoading: solicitudesLoading, refetch: refetchSolicitudes } = useSolicitudes();
   const { descartarSolicitud, descartandoId } = useResolverSolicitud();
-  const { scrollOffsetNotificaciones, setScrollOffsetNotificaciones } = useInventarioStore();
+  // Solo seleccionamos el setter (referencia estable). Suscribirse al valor
+  // `scrollOffsetNotificaciones` re-renderizaba toda la pantalla en cada frame
+  // de scroll (~60 fps). El valor solo se necesita al recuperar foco, así que
+  // se lee con getState() sin suscripción.
+  const setScrollOffsetNotificaciones = useInventarioStore(s => s.setScrollOffsetNotificaciones);
 
   const [activeTab, setActiveTab] = useState<'atenciones' | 'solicitudes'>('atenciones');
   const [claimingId, setClaimingId] = useState<number | null>(null);
@@ -94,21 +98,24 @@ export default function Notificaciones() {
     }
   }
 
+  // Restaurar scroll — leemos el offset guardado una sola vez al recuperar foco.
   useFocusEffect(
     useCallback(() => {
-      if (scrollOffsetNotificaciones > 0 && listRef.current) {
+      const saved = useInventarioStore.getState().scrollOffsetNotificaciones;
+      if (saved > 0 && listRef.current) {
         const timer = setTimeout(() => {
-          listRef.current?.scrollToOffset({ offset: scrollOffsetNotificaciones, animated: false });
+          listRef.current?.scrollToOffset({ offset: saved, animated: false });
         }, 100);
         return () => clearTimeout(timer);
       }
-    }, [scrollOffsetNotificaciones])
+    }, [])
   );
 
-  const handleScroll = (event: any) => {
+  // Guardar scroll (el setter de Zustand es estable, no provoca re-render aquí)
+  const handleScroll = useCallback((event: any) => {
     const offset = event.nativeEvent.contentOffset.y;
     if (offset >= 0) setScrollOffsetNotificaciones(offset);
-  };
+  }, [setScrollOffsetNotificaciones]);
 
   async function handleClaim(id: number, nombre: string) {
     if (claimingId !== null) return;
