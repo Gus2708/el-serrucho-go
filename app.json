@@ -31,6 +31,14 @@
     "plugins": [
       "expo-router",
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/elserruchogo512x512.png",
+          "color": "#F5B200",
+          "sounds": []
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "Permite a El Serrucho GO acceder a tu cámara para escanear códigos de barras y QR.",
