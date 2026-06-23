@@ -2,7 +2,7 @@
   "expo": {
     "name": "El Serrucho GO",
     "slug": "el-serrucho-go",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/elserruchogo512x512.png",
     "userInterfaceStyle": "dark",

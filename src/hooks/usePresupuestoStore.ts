@@ -4,7 +4,8 @@ import { uploadPdfAndGetUrl } from '../lib/pdfStorage';
 import { Platform } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { buildPresupuestoPdfHtml } from '../utils/pdfGenerator';
+import * as FileSystem from 'expo-file-system';
+import { buildPresupuestoPdfHtml, getPresupuestoFilename } from '../utils/pdfGenerator';
 
 export type Cliente = {
   codigo_cliente: string;
@@ -174,9 +175,18 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
         // Native: generate a real PDF file and share it
         const { uri } = await Print.printToFileAsync({ html });
 
+        // Generate friendly name
+        const friendlyName = getPresupuestoFilename(cliente, presupuesto.id);
+        const localDestUri = `${FileSystem.cacheDirectory}${friendlyName}`;
+
+        // Copy the temporary PDF to the friendly name in the cache directory
+        await FileSystem.copyAsync({
+          from: uri,
+          to: localDestUri,
+        });
+
         // 4. Upload PDF to Storage
-        const fileName = `presupuesto-${presupuesto.id}-${Date.now()}.pdf`;
-        const pdfUrl = await uploadPdfAndGetUrl(uri, fileName);
+        const pdfUrl = await uploadPdfAndGetUrl(localDestUri, friendlyName);
 
         await supabase
           .from('presupuestos')
@@ -184,7 +194,16 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
           .eq('id', presupuesto.id);
 
         const canShare = await Sharing.isAvailableAsync();
-        if (canShare) await Sharing.shareAsync(uri, { mimeType: 'application/pdf' });
+        if (canShare) {
+          await Sharing.shareAsync(localDestUri, { mimeType: 'application/pdf' });
+        }
+
+        // Clean up the original temporary file
+        try {
+          await FileSystem.deleteAsync(uri, { idempotent: true });
+        } catch (cleanupError) {
+          console.warn('[usePresupuestoStore] failed to clean up temp file:', cleanupError);
+        }
       }
 
       return { presupuestoId: presupuesto.id, html };

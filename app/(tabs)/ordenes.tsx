@@ -20,6 +20,7 @@ import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
@@ -27,7 +28,7 @@ import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
 import { useOrdenesHistory } from '../../src/hooks/useOrdenesHistory';
 import { useUserRole } from '../../src/hooks/useUserRole';
 import { supabase } from '../../src/lib/supabase';
-import { buildPdfHtml, buildPresupuestoPdfHtml, printHtml } from '../../src/utils/pdfGenerator';
+import { buildPdfHtml, buildPresupuestoPdfHtml, printHtml, getPresupuestoFilename } from '../../src/utils/pdfGenerator';
 import PresupuestoView from '../../src/components/PresupuestoView';
 import FallasView from '../../src/components/FallasView';
 import { usePresupuestosHistory } from '../../src/hooks/usePresupuestosHistory';
@@ -396,6 +397,7 @@ function HistorialView({ queryClient }: { queryClient: any }) {
     setIsGeneratingPdf(o.id);
     try {
       let html = '';
+      let friendlyName = 'Documento.pdf';
       if (subTab === 'ajuste') {
         const { data: items, error } = await supabase
           .from('ordenes_cambio_items')
@@ -411,6 +413,7 @@ function HistorialView({ queryClient }: { queryClient: any }) {
           .single();
         const creadoPor = profileData?.display_name || undefined;
         html = buildPdfHtml(items as any[], o.nota, o.id, creadoPor);
+        friendlyName = `Ajuste_#${o.id}.pdf`;
       } else {
         const { data: header, error: headerErr } = await supabase
           .from('presupuestos')
@@ -439,13 +442,25 @@ function HistorialView({ queryClient }: { queryClient: any }) {
           creadoPorNombre = pData?.display_name || undefined;
         }
         html = buildPresupuestoPdfHtml(clienteObj as any, items as any[], header.nota || '', header.id, creadoPorNombre);
+        friendlyName = getPresupuestoFilename(clienteObj as any, header.id);
       }
       
       if (Platform.OS === 'web') {
         await printHtml(html);
       } else {
         const { uri } = await Print.printToFileAsync({ html });
-        await Sharing.shareAsync(uri, { mimeType: 'application/pdf' });
+        const localDestUri = `${FileSystem.cacheDirectory}${friendlyName}`;
+        await FileSystem.copyAsync({
+          from: uri,
+          to: localDestUri,
+        });
+        await Sharing.shareAsync(localDestUri, { mimeType: 'application/pdf' });
+        
+        try {
+          await FileSystem.deleteAsync(uri, { idempotent: true });
+        } catch (cleanupError) {
+          console.warn('[handleViewPDF] failed to clean up temp file:', cleanupError);
+        }
       }
     } catch (err: any) {
       notify('Error', 'No se pudo generar el PDF: ' + err.message);

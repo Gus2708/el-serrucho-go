@@ -47,3 +47,19 @@ describe('buildPresupuestoPdfHtml', () => {
     expect(html).toContain('PRESUPUESTO');
   });
 });
+
+describe('getPresupuestoFilename and sanitizeFilename', () => {
+  it('sanitizes filenames correctly', () => {
+    const { sanitizeFilename } = require('./pdfGenerator');
+    expect(sanitizeFilename('Maria José / C.A.')).toBe('Maria_José_CA');
+    expect(sanitizeFilename('   Juan   ')).toBe('Juan');
+    expect(sanitizeFilename('Abc!?@#$123')).toBe('Abc123');
+  });
+
+  it('generates the correct presupuesto filename with and without client', () => {
+    const { getPresupuestoFilename } = require('./pdfGenerator');
+    expect(getPresupuestoFilename(null, 123)).toBe('Presupuesto_#123.pdf');
+    expect(getPresupuestoFilename({ nombre: 'Maria' } as any, 3344343)).toBe('Presupuesto_Maria_#3344343.pdf');
+    expect(getPresupuestoFilename({ nombre: 'Ferretería El Sol C.A.' } as any, 99)).toBe('Presupuesto_Ferretería_El_Sol_CA_#99.pdf');
+  });
+});

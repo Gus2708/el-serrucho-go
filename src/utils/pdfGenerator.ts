@@ -1,6 +1,9 @@
 import { Platform } from 'react-native';
 import * as Print from 'expo-print';
-import { Cliente, PresupuestoItem } from '../hooks/usePresupuestoStore';
+import packageJson from '../../package.json';
+import { Cliente } from '../hooks/usePresupuestoStore';
+
+const appVersion = packageJson.version || '1.2.0';
 
 export interface DraftItem {
   codigo_producto:   string;
@@ -418,6 +421,20 @@ const SHARED_STYLES = `
   }
 `;
 
+/* ─── Filename and Title Helpers ────────────────────────── */
+export function sanitizeFilename(name: string): string {
+  return name
+    .trim()
+    .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s_-]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_');
+}
+
+export function getPresupuestoFilename(cliente: Cliente | null, presupuestoId: number): string {
+  const clientPart = cliente ? `_${sanitizeFilename(cliente.nombre)}` : '';
+  return `Presupuesto${clientPart}_#${presupuestoId}.pdf`;
+}
+
 /* ─── Shared document shell ──────────────────────────────── */
 interface PdfDocumentOptions {
   docBadge:    string;
@@ -426,6 +443,7 @@ interface PdfDocumentOptions {
   tableHtml:   string;
   footerLeft:  string;
   footerRight: string;
+  title?:      string;
 }
 
 function buildPdfDocument(opts: PdfDocumentOptions): string {
@@ -433,6 +451,7 @@ function buildPdfDocument(opts: PdfDocumentOptions): string {
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+${opts.title ? `<title>${opts.title}</title>` : ''}
 <style>${SHARED_STYLES}</style>
 </head>
 <body>
@@ -526,11 +545,12 @@ export function buildPdfHtml(items: DraftItem[], nota: string, orderId: number, 
     </table>`;
 
   return buildPdfDocument({
+    title:       `Ajuste_#${orderId}`,
     docBadge:    `ORDEN #${String(orderId).padStart(5, '0')}`,
     metaCards,
     noteHtml,
     tableHtml,
-    footerLeft:  'EL SERRUCHO v1.1.0',
+    footerLeft:  `EL SERRUCHO v${appVersion}`,
     footerRight: 'VALIDACIÓN DE INVENTARIO',
   });
 }
@@ -621,12 +641,15 @@ export function buildPresupuestoPdfHtml(
       <span class="total-amount">$${totalUsd}</span>
     </div>`;
 
+  const title = getPresupuestoFilename(cliente, presupuestoId).replace('.pdf', '');
+
   return buildPdfDocument({
+    title,
     docBadge:    `PRESUPUESTO #${String(presupuestoId).padStart(5, '0')}`,
     metaCards,
     noteHtml,
     tableHtml,
-    footerLeft:  'EL SERRUCHO v1.1.0',
+    footerLeft:  `EL SERRUCHO v${appVersion}`,
     footerRight: 'DOCUMENTO NO FISCAL',
   });
 }
@@ -705,12 +728,15 @@ export function buildVentaPdfHtml(
       </div>
     </div>`;
 
+  const title = `Recibo_Venta_${venta.documento || `#${venta.venta_id || venta.id}`}`;
+
   return buildPdfDocument({
+    title,
     docBadge:    `RECIBO DE VENTA ${venta.documento || `#${venta.venta_id || venta.id}`}`,
     metaCards,
     noteHtml:    '',
     tableHtml,
-    footerLeft:  'EL SERRUCHO v1.1.0',
+    footerLeft:  `EL SERRUCHO v${appVersion}`,
     footerRight: 'RECIBO DE VENTA - DOCUMENTO NO FISCAL',
   });
 }
