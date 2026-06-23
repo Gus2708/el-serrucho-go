@@ -1,3 +1,6 @@
+import { Platform } from 'react-native';
+import * as FileSystem from 'expo-file-system';
+import { decode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
 
 const BUCKET = 'change-orders';
@@ -11,7 +14,16 @@ export async function uploadPdfAndGetUrl(
   localUri: string,
   fileName: string,
 ): Promise<string> {
-  const fileData = await fetch(localUri).then(r => r.blob());
+  let fileData: Blob | ArrayBuffer;
+
+  if (Platform.OS === 'web') {
+    fileData = await fetch(localUri).then(r => r.blob());
+  } else {
+    const base64 = await FileSystem.readAsStringAsync(localUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    fileData = decode(base64);
+  }
 
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
@@ -27,3 +39,4 @@ export async function uploadPdfAndGetUrl(
   if (!url) throw new Error('PDF uploaded but signed URL was not returned');
   return url;
 }
+

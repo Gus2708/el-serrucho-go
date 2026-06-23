@@ -19,6 +19,7 @@ import { VentaHoy } from '../../src/hooks/useVentasHoy';
 import { buildPdfHtml, printHtml, DraftItem } from '../../src/utils/pdfGenerator';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { uploadPdfAndGetUrl } from '../../src/lib/pdfStorage';
 
 export default function ProductoDetail() {
   const { colors, tokens, formatUSD } = useTheme();
@@ -499,22 +500,15 @@ export default function ProductoDetail() {
                       // Native: Print to file and upload to Supabase storage
                       const { uri } = await Print.printToFileAsync({ html });
                       const fileName = `orden-${orden.id}-${Date.now()}.pdf`;
-                      const fileData = await fetch(uri).then(r => r.blob());
 
-                      const { error: uploadError } = await supabase.storage
-                        .from('change-orders')
-                        .upload(fileName, fileData, { contentType: 'application/pdf' });
-
-                      if (!uploadError) {
-                        const { data: signedData } = await supabase.storage
-                          .from('change-orders')
-                          .createSignedUrl(fileName, 60 * 60 * 24 * 365);
-
+                      try {
+                        const pdfUrl = await uploadPdfAndGetUrl(uri, fileName);
                         await supabase
                           .from('ordenes_cambio')
-                          .update({ status: 'emitido', pdf_url: signedData?.signedUrl ?? null })
+                          .update({ status: 'emitido', pdf_url: pdfUrl })
                           .eq('id', orden.id);
-                      } else {
+                      } catch (err) {
+                        console.error('Error uploading order PDF:', err);
                         // Fallback: update status even if upload failed
                         await supabase
                           .from('ordenes_cambio')
