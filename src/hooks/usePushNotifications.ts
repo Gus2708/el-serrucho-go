@@ -19,14 +19,10 @@ async function subscribeActiveEmployee(): Promise<void> {
   if (Platform.OS !== 'web') return;
   if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
 
-  const { data: { session } } = await supabase.auth.getSession();
-  const empleadoId = session?.user?.id;
-  if (!empleadoId) return;
-
-  if (Notification.permission === 'denied') return;
-  const permission =
-    Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
-  if (permission !== 'granted') return;
+  // Only subscribe when the user has already granted permission.
+  // Never auto-request: Chrome Android silently blocks automatic prompts and
+  // eventually marks the site as abusive. Permission must come from a user gesture.
+  if (Notification.permission !== 'granted') return;
 
   const registration = await navigator.serviceWorker.ready;
   let subscription = await registration.pushManager.getSubscription();

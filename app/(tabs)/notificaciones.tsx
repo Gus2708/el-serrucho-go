@@ -73,12 +73,26 @@ export default function Notificaciones() {
   const [activeTab, setActiveTab] = useState<'atenciones' | 'solicitudes'>('atenciones');
   const [claimingId, setClaimingId] = useState<number | null>(null);
   const [retryingId, setRetryingId] = useState<number | null>(null);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | null>(null);
 
   const pendingSolicitudesCount = solicitudes.filter(s => s.status === 'pendiente').length;
 
+  // Read the current permission state once on mount (no automatic request).
   useEffect(() => {
-    requestNotificationPermission();
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setNotifPermission(Notification.permission);
+    }
   }, []);
+
+  async function handleEnableNotifications() {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    const result = await Notification.requestPermission();
+    setNotifPermission(result);
+    if (result === 'granted') {
+      // Trigger subscription now that the user granted permission.
+      requestNotificationPermission();
+    }
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -170,6 +184,37 @@ export default function Notificaciones() {
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
       <StatusBar style="light" />
 
+      {/* Notification permission card — shown when permission is not yet granted */}
+      {notifPermission !== null && notifPermission !== 'granted' && (
+        <Pressable
+          onPress={notifPermission === 'denied' ? undefined : handleEnableNotifications}
+          style={[
+            styles.notifCard,
+            { backgroundColor: colors.surfaceAlt, borderColor: notifPermission === 'denied' ? colors.danger + '44' : colors.primary + '44' },
+          ]}
+        >
+          <Feather
+            name={notifPermission === 'denied' ? 'bell-off' : 'bell'}
+            size={16}
+            color={notifPermission === 'denied' ? colors.danger : colors.primary}
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.notifCardTitle, { color: notifPermission === 'denied' ? colors.danger : colors.primary }]}>
+              {notifPermission === 'denied' ? 'Notificaciones bloqueadas' : 'Activar notificaciones'}
+            </Text>
+            <Text style={[styles.notifCardBody, { color: colors.textMuted }]}>
+              {notifPermission === 'denied'
+                ? 'Abre Configuración del sitio en Chrome → Notificaciones → Permitir'
+                : 'Toca aquí para recibir alertas aunque la app esté cerrada'}
+            </Text>
+          </View>
+          {notifPermission !== 'denied' && (
+            <Feather name="chevron-right" size={16} color={colors.textDim} />
+          )}
+        </Pressable>
+      )}
+
+      {/* Header */}
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text, flex: 1, marginRight: 8 }]} numberOfLines={1} adjustsFontSizeToFit>
           Notificaciones
@@ -409,6 +454,28 @@ export default function Notificaciones() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  notifCard: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               10,
+    marginHorizontal:  16,
+    marginTop:         10,
+    marginBottom:      4,
+    paddingVertical:   10,
+    paddingHorizontal: 14,
+    borderRadius:      12,
+    borderWidth:       1,
+  },
+  notifCardTitle: {
+    fontSize:   11,
+    fontFamily: 'JetBrainsMono_700Bold',
+    marginBottom: 2,
+  },
+  notifCardBody: {
+    fontSize:   10,
+    fontFamily: 'JetBrainsMono_400Regular',
+    lineHeight: 14,
+  },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: {
     flexDirection: 'row',
