@@ -170,9 +170,8 @@ export default function Notificaciones() {
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
       <StatusBar style="light" />
 
-      {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
+        <Text style={[styles.title, { color: colors.text, flex: 1, marginRight: 8 }]} numberOfLines={1} adjustsFontSizeToFit>
           Notificaciones
         </Text>
         {/* Tab switcher */}
@@ -433,9 +432,10 @@ const styles = StyleSheet.create({
   tabBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
     paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingLeft: 12,
+    paddingRight: 14,
   },
   tabBtnText: {
     fontSize: 10,
