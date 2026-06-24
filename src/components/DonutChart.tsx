@@ -1,3 +1,4 @@
+import { scaleFont } from '../theme/responsive';
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { PieChart } from 'react-native-gifted-charts';
@@ -86,11 +87,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   centerNum: {
-    fontSize:   20,
+    fontSize:   scaleFont(20),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   centerLabel: {
-    fontSize: 10,
+    fontSize: scaleFont(10),
     fontFamily: 'JetBrainsMono_400Regular',
   },
   legend: {
@@ -108,12 +109,12 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   legendLabel: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     flex:      1,
     fontFamily: 'JetBrainsMono_400Regular',
   },
   legendPct: {
-    fontSize:   13,
+    fontSize:   scaleFont(13),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   empty: {
@@ -123,7 +124,7 @@ const styles = StyleSheet.create({
     alignItems:   'center',
   },
   emptyText: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_400Regular',
   },
 });

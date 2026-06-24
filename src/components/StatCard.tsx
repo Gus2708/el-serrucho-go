@@ -1,3 +1,4 @@
+import { scaleFont } from '../theme/responsive';
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
@@ -57,18 +58,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   label: {
-    fontSize:   11,
+    fontSize:   scaleFont(11),
     fontFamily: 'JetBrainsMono_500Medium',
     letterSpacing: 0.3,
     textTransform: 'uppercase',
   },
   value: {
-    fontSize:   22,
+    fontSize:   scaleFont(22),
     fontFamily: 'JetBrainsMono_700Bold',
     letterSpacing: -0.5,
   },
   sub: {
-    fontSize: 11,
+    fontSize: scaleFont(11),
     marginTop: 1,
     fontFamily: 'JetBrainsMono_400Regular',
   },

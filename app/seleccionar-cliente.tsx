@@ -1,3 +1,4 @@
+import { scaleFont } from '../src/theme/responsive';
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, TextInput, FlatList, ActivityIndicator, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -149,7 +150,7 @@ const styles = StyleSheet.create({
     padding: 5,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: scaleFont(20),
     fontWeight: '800',
     letterSpacing: -0.5,
   },
@@ -168,7 +169,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     height: '100%',
-    fontSize: 16,
+    fontSize: scaleFont(16),
   },
   listContainer: {
     paddingHorizontal: 15,
@@ -187,18 +188,18 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   clienteName: {
-    fontSize: 16,
+    fontSize: scaleFont(16),
     fontWeight: '700',
     marginBottom: 4,
   },
   clienteCode: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontWeight: '500',
     marginBottom: 2,
   },
   emptyText: {
     textAlign: 'center',
     marginTop: 50,
-    fontSize: 16,
+    fontSize: scaleFont(16),
   },
 });

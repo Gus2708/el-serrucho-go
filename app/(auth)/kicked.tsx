@@ -1,3 +1,4 @@
+import { scaleFont } from '../../src/theme/responsive';
 import React from 'react';
 import {
   View,
@@ -121,13 +122,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   brandSub: {
-    fontSize: 11,
+    fontSize: scaleFont(11),
     fontFamily: 'JetBrainsMono_700Bold',
     letterSpacing: 2,
     textTransform: 'uppercase',
   },
   brandTitle: {
-    fontSize: 22,
+    fontSize: scaleFont(22),
     fontFamily: 'JetBrainsMono_700Bold',
     letterSpacing: -0.5,
   },
@@ -152,16 +153,16 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   cardTitle: {
-    fontSize: 20,
+    fontSize: scaleFont(20),
     fontFamily: 'JetBrainsMono_700Bold',
     marginBottom: 10,
     textAlign: 'center',
   },
   cardDesc: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_400Regular',
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: scaleFont(20),
     marginBottom: 16,
   },
   divider: {
@@ -181,9 +182,9 @@ const styles = StyleSheet.create({
   },
   infoText: {
     flex: 1,
-    fontSize: 11,
+    fontSize: scaleFont(11),
     fontFamily: 'JetBrainsMono_500Medium',
-    lineHeight: 15,
+    lineHeight: scaleFont(15),
   },
   actionBtn: {
     width: '100%',
@@ -203,15 +204,15 @@ const styles = StyleSheet.create({
   },
   actionBtnText: {
     color: '#0C0C0C',
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_700Bold',
     letterSpacing: 0.5,
   },
   footerNotice: {
-    fontSize: 9,
+    fontSize: scaleFont(9),
     fontFamily: 'JetBrainsMono_500Medium',
     textAlign: 'center',
-    lineHeight: 14,
+    lineHeight: scaleFont(14),
     opacity: 0.7,
     paddingHorizontal: 12,
   },

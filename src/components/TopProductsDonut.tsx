@@ -1,3 +1,4 @@
+import { scaleFont } from '../theme/responsive';
 import React from 'react';
 import { View, Text, StyleSheet, useWindowDimensions, Platform, ActivityIndicator } from 'react-native';
 import { PieChart } from 'react-native-gifted-charts';
@@ -218,11 +219,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   centerTotal: {
-    fontSize: 24,
+    fontSize: scaleFont(24),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   centerSub: {
-    fontSize: 10,
+    fontSize: scaleFont(10),
     fontFamily: 'JetBrainsMono_400Regular',
     textTransform: 'uppercase',
     marginTop: 2,
@@ -256,7 +257,7 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
   },
   rankText: {
-    fontSize: 8,
+    fontSize: scaleFont(8),
     fontFamily: 'JetBrainsMono_700Bold',
     letterSpacing: 0.5,
   },
@@ -267,14 +268,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   itemName: {
-    fontSize: 10,
+    fontSize: scaleFont(10),
     fontFamily: 'JetBrainsMono_500Medium',
     flex: 1,
     marginRight: 4,
     textTransform: 'uppercase',
   },
   itemValue: {
-    fontSize: 11,
+    fontSize: scaleFont(11),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   progressContainer: {
@@ -294,7 +295,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   itemPct: {
-    fontSize: 9,
+    fontSize: scaleFont(9),
     fontFamily: 'JetBrainsMono_700Bold',
     letterSpacing: 0.5,
   },
@@ -309,7 +310,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   emptyText: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_400Regular',
   },
 });

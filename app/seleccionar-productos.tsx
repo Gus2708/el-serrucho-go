@@ -1,3 +1,4 @@
+import { scaleFont } from '../src/theme/responsive';
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
@@ -409,7 +410,7 @@ const styles = StyleSheet.create({
     padding: 5,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: scaleFont(20),
     fontWeight: '800',
     letterSpacing: -0.5,
   },
@@ -432,13 +433,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   summaryLabel: {
-    fontSize: 12,
+    fontSize: scaleFont(12),
     textTransform: 'uppercase',
     fontWeight: '600',
     marginBottom: 5,
   },
   summaryValue: {
-    fontSize: 22,
+    fontSize: scaleFont(22),
     fontWeight: '800',
   },
   searchContainer: {
@@ -463,7 +464,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     height: '100%',
-    fontSize: 16,
+    fontSize: scaleFont(16),
   },
   listContainer: {
     paddingTop: 10,
@@ -495,22 +496,22 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   productCode: {
-    fontSize: 12,
+    fontSize: scaleFont(12),
     fontWeight: '600',
     marginBottom: 2,
   },
   productName: {
-    fontSize: 15,
+    fontSize: scaleFont(15),
     fontWeight: '700',
     marginBottom: 4,
   },
   productPrice: {
-    fontSize: 16,
+    fontSize: scaleFont(16),
     fontWeight: '800',
     marginBottom: 2,
   },
   productStock: {
-    fontSize: 12,
+    fontSize: scaleFont(12),
     fontWeight: '600',
   },
   quantityControl: {
@@ -529,14 +530,14 @@ const styles = StyleSheet.create({
   quantityText: {
     width: 30,
     textAlign: 'center',
-    fontSize: 16,
+    fontSize: scaleFont(16),
     fontWeight: '700',
   },
   quantityInput: {
     width: 50,
     height: 40,
     textAlign: 'center',
-    fontSize: 16,
+    fontSize: scaleFont(16),
     fontWeight: '700',
     borderRadius: 8,
     borderWidth: 1,
@@ -546,7 +547,7 @@ const styles = StyleSheet.create({
   emptyText: {
     textAlign: 'center',
     marginTop: 50,
-    fontSize: 16,
+    fontSize: scaleFont(16),
   },
   submitBar: {
     padding: 16,
@@ -573,20 +574,20 @@ const styles = StyleSheet.create({
   },
   noDispHint: {
     flex: 1,
-    fontSize: 12,
+    fontSize: scaleFont(12),
     fontFamily: 'JetBrainsMono_500Medium',
-    lineHeight: 16,
+    lineHeight: scaleFont(16),
   },
   submitCount: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   submitTotal: {
-    fontSize: 14,
+    fontSize: scaleFont(14),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   clearText: {
-    fontSize: 11,
+    fontSize: scaleFont(11),
     fontFamily: 'JetBrainsMono_700Bold',
     textDecorationLine: 'underline',
   },
@@ -600,7 +601,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   submitBtnText: {
-    fontSize: 11,
+    fontSize: scaleFont(11),
     fontFamily: 'JetBrainsMono_700Bold',
     letterSpacing: 0.5,
   },

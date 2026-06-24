@@ -1,3 +1,4 @@
+import { scaleFont } from '../theme/responsive';
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Platform, StyleSheet, Text } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -90,8 +91,8 @@ const styles = StyleSheet.create({
     borderWidth:       0.5,
   },
   label: {
-    fontSize:   10,
+    fontSize:   scaleFont(10),
     fontFamily: 'JetBrainsMono_700Bold',
-    lineHeight: 14,
+    lineHeight: scaleFont(14),
   },
 });

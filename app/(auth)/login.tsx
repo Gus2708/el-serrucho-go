@@ -1,3 +1,4 @@
+import { scaleFont } from '../../src/theme/responsive';
 import { useState } from 'react';
 import {
   View,
@@ -128,7 +129,7 @@ const styles = StyleSheet.create({
     height: 140,
   },
   subtitle: {
-    fontSize:    13,
+    fontSize:    scaleFont(13),
     marginBottom: 16,
     fontFamily:  'JetBrainsMono_400Regular',
   },
@@ -141,7 +142,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   input: {
-    fontSize: 15,
+    fontSize: scaleFont(15),
     fontFamily: 'JetBrainsMono_400Regular',
   },
   btn: {
@@ -153,7 +154,7 @@ const styles = StyleSheet.create({
     marginTop:    8,
   },
   btnText: {
-    fontSize:   15,
+    fontSize:   scaleFont(15),
     fontFamily: 'JetBrainsMono_700Bold',
   },
 });

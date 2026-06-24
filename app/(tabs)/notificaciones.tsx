@@ -1,3 +1,4 @@
+import { scaleFont } from '../../src/theme/responsive';
 import * as React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -474,14 +475,14 @@ const styles = StyleSheet.create({
     borderWidth:       1,
   },
   notifCardTitle: {
-    fontSize:   11,
+    fontSize:   scaleFont(11),
     fontFamily: 'JetBrainsMono_700Bold',
     marginBottom: 2,
   },
   notifCardBody: {
-    fontSize:   10,
+    fontSize:   scaleFont(10),
     fontFamily: 'JetBrainsMono_400Regular',
-    lineHeight: 14,
+    lineHeight: scaleFont(14),
   },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: {
@@ -494,7 +495,7 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   title: {
-    fontSize: 26,
+    fontSize: scaleFont(26),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   tabSwitcher: {
@@ -512,7 +513,7 @@ const styles = StyleSheet.create({
     paddingRight: 14,
   },
   tabBtnText: {
-    fontSize: 10,
+    fontSize: scaleFont(10),
     fontFamily: 'JetBrainsMono_700Bold',
     letterSpacing: 0.5,
   },
@@ -525,7 +526,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   tabBadgeText: {
-    fontSize: 9,
+    fontSize: scaleFont(9),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   // Card
@@ -552,17 +553,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   clientName: {
-    fontSize: 16,
+    fontSize: scaleFont(16),
     fontFamily: 'JetBrainsMono_700Bold',
     flex: 1,
   },
   clientPhone: {
-    fontSize: 12,
+    fontSize: scaleFont(12),
     fontFamily: 'JetBrainsMono_500Medium',
     paddingLeft: 26,
   },
   timeAgo: {
-    fontSize: 11,
+    fontSize: scaleFont(11),
     fontFamily: 'JetBrainsMono_600SemiBold',
     textAlign: 'right',
   },
@@ -581,13 +582,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   motivoText: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   reasonText: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_400Regular',
-    lineHeight: 18,
+    lineHeight: scaleFont(18),
   },
   actionBtn: {
     height: 44,
@@ -597,7 +598,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   actionBtnText: {
-    fontSize: 12,
+    fontSize: scaleFont(12),
     fontFamily: 'JetBrainsMono_700Bold',
     letterSpacing: 0.5,
   },
@@ -610,14 +611,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   emptyTextTitle: {
-    fontSize: 18,
+    fontSize: scaleFont(18),
     fontFamily: 'JetBrainsMono_700Bold',
     marginBottom: 6,
   },
   emptyTextSub: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_400Regular',
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: scaleFont(18),
   },
 });

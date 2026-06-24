@@ -1,3 +1,4 @@
+import { scaleFont } from '../theme/responsive';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -397,7 +398,7 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                                 style={[
                                   styles.percentBtnText,
                                   { color: isMarkup ? colors.success : colors.primary },
-                                  isMarkup && { fontSize: 16 },
+                                  isMarkup && { fontSize: scaleFont(16) },
                                 ]}
                               >
                                 {isMarkup ? '↺' : '+40%'}
@@ -630,10 +631,10 @@ const styles = StyleSheet.create({
   },
   btnBack: { padding: 5, width: 40 },
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 18, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -0.5 },
-  headerSub: { fontSize: 12, fontFamily: 'JetBrainsMono_400Regular', marginTop: 2 },
+  headerTitle: { fontSize: scaleFont(18), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -0.5 },
+  headerSub: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular', marginTop: 2 },
   doneBtn: { width: 50, alignItems: 'flex-end' },
-  doneBtnText: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold' },
+  doneBtnText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll: { paddingTop: 12, gap: 8 },
@@ -649,11 +650,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderStyle: 'dashed',
   },
-  addBtnText: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold' },
+  addBtnText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
 
   empty: { alignItems: 'center', justifyContent: 'center', paddingVertical: 50, gap: 12 },
-  emptyTitle: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold' },
-  emptySub: { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular', textAlign: 'center', lineHeight: 20, paddingHorizontal: 24 },
+  emptyTitle: { fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_700Bold' },
+  emptySub: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_400Regular', textAlign: 'center', lineHeight: scaleFont(20), paddingHorizontal: 24 },
 
   itemCard: {
     marginHorizontal: 16,
@@ -664,18 +665,18 @@ const styles = StyleSheet.create({
   },
   itemTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   itemInfo: { flex: 1 },
-  itemName: { fontSize: 13, fontFamily: 'JetBrainsMono_700Bold' },
-  itemCode: { fontSize: 11, fontFamily: 'JetBrainsMono_400Regular', marginTop: 1 },
+  itemName: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
+  itemCode: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', marginTop: 1 },
   removeBtn: { padding: 4, marginLeft: 8 },
 
   controlsRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 16 },
   controlGroup: { gap: 4 },
-  controlLabel: { fontSize: 9, fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.3 },
+  controlLabel: { fontSize: scaleFont(9), fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.3 },
   controlRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 
   ctrlBtn: { width: 36, height: 36, borderRadius: 8, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   ctrlInput: {
-    fontSize: 15,
+    fontSize: scaleFont(15),
     fontFamily: 'JetBrainsMono_700Bold',
     textAlign: 'center',
     textAlignVertical: 'center',
@@ -699,10 +700,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     gap: 4,
   },
-  priceCurrency: { fontSize: 13, fontFamily: 'JetBrainsMono_700Bold' },
+  priceCurrency: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
   priceInput: {
     flex: 1,
-    fontSize: 15,
+    fontSize: scaleFont(15),
     fontFamily: 'JetBrainsMono_700Bold',
     textAlignVertical: 'center',
     includeFontPadding: false,
@@ -722,14 +723,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  percentBtnText: { fontSize: 11, fontFamily: 'JetBrainsMono_700Bold' },
+  percentBtnText: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold' },
 
   subtotalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8 },
-  subtotalVal: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold', fontVariant: ['tabular-nums'] },
+  subtotalVal: { fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_700Bold', fontVariant: ['tabular-nums'] },
 
   ordenNota: { marginHorizontal: 16, borderRadius: 12, borderWidth: 0.5, padding: 14, gap: 6 },
-  ordenNotaLabel: { fontSize: 11, fontFamily: 'JetBrainsMono_700Bold', textTransform: 'uppercase', letterSpacing: 0.3 },
-  ordenNotaInput: { fontSize: 16, fontFamily: 'JetBrainsMono_400Regular', lineHeight: 22, minHeight: 44 },
+  ordenNotaLabel: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold', textTransform: 'uppercase', letterSpacing: 0.3 },
+  ordenNotaInput: { fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_400Regular', lineHeight: scaleFont(22), minHeight: 44 },
 
   footer: {
     flexDirection: 'row',
@@ -742,8 +743,8 @@ const styles = StyleSheet.create({
   },
   footerDesktop: { maxWidth: 1200, width: '100%', alignSelf: 'center' },
   footerInfo: { flex: 1, gap: 2 },
-  footerLabel: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', letterSpacing: 0.3 },
-  footerTotal: { fontSize: 20, fontFamily: 'JetBrainsMono_700Bold', fontVariant: ['tabular-nums'] },
+  footerLabel: { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_500Medium', letterSpacing: 0.3 },
+  footerTotal: { fontSize: scaleFont(20), fontFamily: 'JetBrainsMono_700Bold', fontVariant: ['tabular-nums'] },
   saveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -752,7 +753,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 22,
   },
-  saveBtnText: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold' },
+  saveBtnText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
 
   /* ── Product picker ─────────────────────────────────────── */
   searchContainer: {
@@ -764,7 +765,7 @@ const styles = StyleSheet.create({
     height: 50,
     borderRadius: 12,
   },
-  searchInput: { flex: 1, height: '100%', fontSize: 16, fontFamily: 'JetBrainsMono_400Regular' },
+  searchInput: { flex: 1, height: '100%', fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_400Regular' },
   pickCard: {
     flexDirection: 'row',
     padding: 16,
@@ -776,12 +777,12 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
   },
   pickInfo: { flex: 1, marginRight: 10 },
-  pickCode: { fontSize: 12, fontFamily: 'JetBrainsMono_500Medium', marginBottom: 2 },
-  pickName: { fontSize: 15, fontFamily: 'JetBrainsMono_700Bold', marginBottom: 4 },
-  pickPrice: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold', marginBottom: 2 },
-  pickStock: { fontSize: 12, fontFamily: 'JetBrainsMono_500Medium' },
+  pickCode: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium', marginBottom: 2 },
+  pickName: { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold', marginBottom: 4 },
+  pickPrice: { fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_700Bold', marginBottom: 2 },
+  pickStock: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium' },
   pickQtyControl: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   pickActionBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 8, borderWidth: 1 },
-  pickQtyText: { width: 30, textAlign: 'center', fontSize: 16, fontFamily: 'JetBrainsMono_700Bold' },
-  pickEmpty: { textAlign: 'center', marginTop: 50, fontSize: 16, fontFamily: 'JetBrainsMono_400Regular' },
+  pickQtyText: { width: 30, textAlign: 'center', fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_700Bold' },
+  pickEmpty: { textAlign: 'center', marginTop: 50, fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_400Regular' },
 });

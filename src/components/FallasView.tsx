@@ -1,3 +1,4 @@
+import { scaleFont } from '../theme/responsive';
 import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
@@ -239,7 +240,7 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    fontSize: 15,
+    fontSize: scaleFont(15),
     fontFamily: 'JetBrainsMono_400Regular',
     height: '100%',
     ...(Platform.OS === 'web' ? { outlineStyle: 'none' as any } : {})
@@ -277,11 +278,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   dropdownName: {
-    fontSize: 14,
+    fontSize: scaleFont(14),
     fontFamily: 'JetBrainsMono_500Medium',
   },
   dropdownCode: {
-    fontSize: 11,
+    fontSize: scaleFont(11),
     fontFamily: 'JetBrainsMono_400Regular',
     marginTop: 2,
   },
@@ -304,12 +305,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   rowText: {
-    fontSize: 15,
+    fontSize: scaleFont(15),
     fontFamily: 'JetBrainsMono_500Medium',
-    lineHeight: 22,
+    lineHeight: scaleFont(22),
   },
   rowAuthor: {
-    fontSize: 10,
+    fontSize: scaleFont(10),
     fontFamily: 'JetBrainsMono_400Regular',
     marginTop: 4,
   },
@@ -323,7 +324,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   emptyText: {
-    fontSize: 14,
+    fontSize: scaleFont(14),
     fontFamily: 'JetBrainsMono_400Regular',
   },
   emptyNotebook: {

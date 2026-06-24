@@ -1,3 +1,4 @@
+import { scaleFont } from '../theme/responsive';
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { LineChart, CurveType } from 'react-native-gifted-charts';
@@ -455,7 +456,7 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
   },
   peakText: {
-    fontSize:      10,
+    fontSize:      scaleFont(10),
     fontFamily:    'JetBrainsMono_700Bold',
     letterSpacing: -0.2,
     textAlign:     'center',
@@ -466,7 +467,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   lunchText: {
-    fontSize:      9,
+    fontSize:      scaleFont(9),
     fontFamily:    'JetBrainsMono_500Medium',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
@@ -478,7 +479,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tickText: {
-    fontSize:      10,                    // ↑ de 8 — mejor legibilidad en móvil
+    fontSize:      scaleFont(10),                    // ↑ de 8 — mejor legibilidad en móvil
     fontFamily:    'JetBrainsMono_500Medium',
     letterSpacing: 0.4,                   // ↑ de 0.3 — un poco más de aire
     opacity:       0.95,                  // ↑ de 0.85 — sigue sutil pero ya no pálido
@@ -492,7 +493,7 @@ const styles = StyleSheet.create({
     height: 40, // Centered in the drawing area
   },
   nonWorkingText: {
-    fontSize: 12,
+    fontSize: scaleFont(12),
     fontFamily: 'JetBrainsMono_700Bold',
     letterSpacing: 2,
     opacity: 0.6,

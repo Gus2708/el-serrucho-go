@@ -1,3 +1,4 @@
+import { scaleFont } from '../theme/responsive';
 /**
  * BarcodeScannerModal.tsx
  *
@@ -205,13 +206,13 @@ const styles = StyleSheet.create({
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   card: { width: '100%', maxWidth: 380, borderRadius: 16, borderWidth: 1, padding: 24, alignItems: 'center', elevation: 8 },
   icon: { marginBottom: 16 },
-  cardTitle: { fontSize: 18, fontFamily: 'JetBrainsMono_700Bold', textAlign: 'center', marginBottom: 12 },
-  cardSubtitle: { fontSize: 14, fontFamily: 'JetBrainsMono_400Regular', textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  cardTitle: { fontSize: scaleFont(18), fontFamily: 'JetBrainsMono_700Bold', textAlign: 'center', marginBottom: 12 },
+  cardSubtitle: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_400Regular', textAlign: 'center', lineHeight: scaleFont(20), marginBottom: 24 },
   buttonRow: { flexDirection: 'row', gap: 12, width: '100%' },
   btnPrimary: { flex: 1, height: 48, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  btnPrimaryText: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold' },
+  btnPrimaryText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
   btnSecondary: { flex: 1, height: 48, borderRadius: 10, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  btnSecondaryText: { fontSize: 14, fontFamily: 'JetBrainsMono_500Medium' },
+  btnSecondaryText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_500Medium' },
 
   overlayContainer: { ...StyleSheet.absoluteFillObject, justifyContent: 'space-between' },
   overlayRow: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
@@ -226,7 +227,7 @@ const styles = StyleSheet.create({
   bottomRight: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4 },
   scanLine: { position: 'absolute', left: 10, right: 10, height: 3, elevation: 3 },
 
-  instructionText: { fontSize: 14, fontFamily: 'JetBrainsMono_500Medium', textAlign: 'center', marginBottom: 20 },
+  instructionText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_500Medium', textAlign: 'center', marginBottom: 20 },
   btnClose: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 48, borderRadius: 24, borderWidth: 1, paddingHorizontal: 24 },
-  btnCloseText: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold', color: '#fff' },
+  btnCloseText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', color: '#fff' },
 });

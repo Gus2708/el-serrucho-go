@@ -1,3 +1,4 @@
+import { scaleFont } from '../src/theme/responsive';
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
@@ -250,7 +251,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 14,
+    fontSize: scaleFont(14),
     fontFamily: 'JetBrainsMono_700Bold',
     letterSpacing: 2,
   },
@@ -273,15 +274,15 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   clientName: {
-    fontSize: 16,
+    fontSize: scaleFont(16),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   clientPhone: {
-    fontSize: 12,
+    fontSize: scaleFont(12),
     fontFamily: 'JetBrainsMono_500Medium',
   },
   timeAgo: {
-    fontSize: 11,
+    fontSize: scaleFont(11),
     fontFamily: 'JetBrainsMono_600SemiBold',
     textAlign: 'right',
   },
@@ -300,13 +301,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   motivoText: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   consultaText: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_400Regular',
-    lineHeight: 18,
+    lineHeight: scaleFont(18),
   },
   actionBtn: {
     height: 44,
@@ -316,7 +317,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   actionBtnText: {
-    fontSize: 12,
+    fontSize: scaleFont(12),
     fontFamily: 'JetBrainsMono_700Bold',
     letterSpacing: 0.5,
   },
@@ -329,14 +330,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   emptyTextTitle: {
-    fontSize: 18,
+    fontSize: scaleFont(18),
     fontFamily: 'JetBrainsMono_700Bold',
     marginBottom: 6,
   },
   emptyTextSub: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_400Regular',
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: scaleFont(18),
   },
 });

@@ -1,3 +1,4 @@
+import { scaleFont } from '../../src/theme/responsive';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
@@ -215,8 +216,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop:     12,
   },
-  title: { fontSize: 26, fontFamily: 'JetBrainsMono_700Bold', marginBottom: 20 },
-  count: { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular' },
+  title: { fontSize: scaleFont(26), fontFamily: 'JetBrainsMono_700Bold', marginBottom: 20 },
+  count: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_400Regular' },
 
   toolbarDesktop: {
     flexDirection:    'row',
@@ -244,7 +245,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex:     1,
-    fontSize: 16, // Prevents auto-zoom on mobile web
+    fontSize: scaleFont(16), // Prevents auto-zoom on mobile web
     fontFamily: 'JetBrainsMono_400Regular',
   },
 
@@ -266,7 +267,7 @@ const styles = StyleSheet.create({
     paddingVertical:  6,
     paddingHorizontal: 14,
   },
-  chipText: { fontSize: 12, fontFamily: 'JetBrainsMono_500Medium' },
+  chipText: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium' },
 
   list: {
     paddingTop:    4,
@@ -281,7 +282,7 @@ const styles = StyleSheet.create({
     paddingBottom:  80,
   },
   emptyText: {
-    fontSize: 14,
+    fontSize: scaleFont(14),
     fontFamily: 'JetBrainsMono_400Regular',
   },
 });

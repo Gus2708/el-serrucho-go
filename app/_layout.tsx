@@ -1,3 +1,4 @@
+import { scaleFont } from '../src/theme/responsive';
 import { useEffect, useState } from 'react';
 import { Slot, useRouter, useSegments } from 'expo-router';
 
@@ -118,7 +119,7 @@ function AuthGuard({ session, ready }: { session: Session | null; ready: boolean
             }}
             style={{ marginTop: 20, padding: 10, backgroundColor: colors?.surface || '#111', borderRadius: 8, borderWidth: 1, borderColor: colors?.border || '#333' }}
           >
-            <Text style={{ color: colors?.primary || '#fbbf24', fontSize: 14 }}>Recargar aplicación</Text>
+            <Text style={{ color: colors?.primary || '#fbbf24', fontSize: scaleFont(14) }}>Recargar aplicación</Text>
           </Pressable>
         )}
       </View>
@@ -183,10 +184,10 @@ function UpdateToast() {
       zIndex: 9999,
     }}>
       <View style={{ flex: 1, marginRight: 12 }}>
-        <Text style={{ color: '#FFFFFF', fontSize: 13, fontFamily: 'JetBrainsMono_700Bold', marginBottom: 2 }}>
+        <Text style={{ color: '#FFFFFF', fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', marginBottom: 2 }}>
           Nueva versión disponible
         </Text>
-        <Text style={{ color: '#888888', fontSize: 10, fontFamily: 'JetBrainsMono_400Regular' }}>
+        <Text style={{ color: '#888888', fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_400Regular' }}>
           Instala la última actualización para aplicar las mejoras.
         </Text>
       </View>
@@ -199,7 +200,7 @@ function UpdateToast() {
           borderRadius: 8,
         }, pressed && { opacity: 0.8 }]}
       >
-        <Text style={{ color: '#0C0C0C', fontSize: 11, fontFamily: 'JetBrainsMono_700Bold' }}>
+        <Text style={{ color: '#0C0C0C', fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold' }}>
           ACTUALIZAR
         </Text>
       </Pressable>
@@ -411,7 +412,7 @@ export default function RootLayout() {
     if (!process.env.EXPO_PUBLIC_SUPABASE_URL || !process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY) {
       return (
         <View style={{ flex: 1, backgroundColor: '#010100', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <Text style={{ color: '#ef4444', textAlign: 'center', fontSize: 16, fontWeight: 'bold' }}>Error de Configuración</Text>
+          <Text style={{ color: '#ef4444', textAlign: 'center', fontSize: scaleFont(16), fontWeight: 'bold' }}>Error de Configuración</Text>
           <Text style={{ color: '#9ca3af', textAlign: 'center', marginTop: 10 }}>Faltan las variables de entorno de Supabase en el servidor.</Text>
         </View>
       );

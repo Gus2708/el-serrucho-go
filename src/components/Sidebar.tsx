@@ -1,3 +1,4 @@
+import { scaleFont } from '../theme/responsive';
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
@@ -112,8 +113,8 @@ const styles = StyleSheet.create({
   },
   logo:      { width: 40, height: 40, borderRadius: 10 },
   logoTexts: { gap: 1 },
-  logoName:  { fontSize: 13, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -0.3 },
-  logoSub:   { fontSize: 10, fontFamily: 'JetBrainsMono_400Regular' },
+  logoName:  { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -0.3 },
+  logoSub:   { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_400Regular' },
 
   nav: { flex: 1, gap: 2, paddingHorizontal: 8 },
 
@@ -129,7 +130,7 @@ const styles = StyleSheet.create({
   },
   label: {
     flex:       1,
-    fontSize:   13,
+    fontSize:   scaleFont(13),
     fontFamily: 'JetBrainsMono_500Medium',
   },
   sidebarBadge: {
@@ -143,9 +144,9 @@ const styles = StyleSheet.create({
   },
   sidebarBadgeText: {
     color: '#FFFFFF',
-    fontSize: 9,
+    fontSize: scaleFont(9),
     fontFamily: 'JetBrainsMono_700Bold',
-    lineHeight: 10,
+    lineHeight: scaleFont(10),
   },
   activeDot: {
     width:        5,

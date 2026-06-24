@@ -1,3 +1,4 @@
+import { scaleFont } from '../theme/responsive';
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import {
@@ -468,13 +469,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   ticketHeaderLeft: { gap: 0 },
-  ticketTitle: { fontSize: 9, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.2, textTransform: 'uppercase', opacity: 0.85 },
-  ticketFolio: { fontSize: 22, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -0.5 },
-  ticketProducts: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', marginTop: 4, opacity: 0.95 },
+  ticketTitle: { fontSize: scaleFont(9), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.2, textTransform: 'uppercase', opacity: 0.85 },
+  ticketFolio: { fontSize: scaleFont(22), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -0.5 },
+  ticketProducts: { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_500Medium', marginTop: 4, opacity: 0.95 },
   ticketTimeContainer: { alignItems: 'flex-end', gap: 0 },
-  ticketDateLabel: { fontSize: 9, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1, opacity: 0.85, marginBottom: 2 },
-  ticketDate: { fontSize: 12, fontFamily: 'JetBrainsMono_700Bold' },
-  ticketTime: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', opacity: 0.9 },
+  ticketDateLabel: { fontSize: scaleFont(9), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1, opacity: 0.85, marginBottom: 2 },
+  ticketDate: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold' },
+  ticketTime: { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_500Medium', opacity: 0.9 },
   
   ticketListContainer: {
     width: '100%',
@@ -499,10 +500,10 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   ticketScrollDots: {
-    fontSize: 20,
+    fontSize: scaleFont(20),
     fontWeight: '900',
     letterSpacing: 2,
-    lineHeight: 20,
+    lineHeight: scaleFont(20),
   },
   ticketItemRow: {
     flexDirection: 'row',
@@ -511,9 +512,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   ticketItemMain: { flex: 1, gap: 2, paddingRight: 16 },
-  ticketItemDesc: { fontSize: 13, fontFamily: 'JetBrainsMono_700Bold', lineHeight: 18 },
-  ticketItemQty: { fontSize: 11, fontFamily: 'JetBrainsMono_500Medium', opacity: 0.85, marginTop: 2 },
-  ticketItemPrice: { fontSize: 15, fontFamily: 'JetBrainsMono_700Bold' },
+  ticketItemDesc: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', lineHeight: scaleFont(18) },
+  ticketItemQty: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_500Medium', opacity: 0.85, marginTop: 2 },
+  ticketItemPrice: { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
 
   ticketFooter: {
     paddingHorizontal: 24,
@@ -528,8 +529,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  ticketFooterLabel: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 0.5, textTransform: 'uppercase', opacity: 0.85 },
-  ticketFooterValue: { fontSize: 18, fontFamily: 'JetBrainsMono_700Bold' },
+  ticketFooterLabel: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 0.5, textTransform: 'uppercase', opacity: 0.85 },
+  ticketFooterValue: { fontSize: scaleFont(18), fontFamily: 'JetBrainsMono_700Bold' },
 
   ticketTotalSection: {
     paddingVertical: 24,
@@ -539,10 +540,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  ticketTotalLabel: { fontSize: 11, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.5, marginBottom: 8, opacity: 0.85 },
+  ticketTotalLabel: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.5, marginBottom: 8, opacity: 0.85 },
   ticketTotalValueRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  ticketTotalCurrency: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold', marginTop: 4 },
-  ticketTotalValue: { fontSize: 42, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -1 },
+  ticketTotalCurrency: { fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_700Bold', marginTop: 4 },
+  ticketTotalValue: { fontSize: scaleFont(42), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -1 },
 
   modalLoading: { height: 200, alignItems: 'center', justifyContent: 'center' },
   modalOverlay: {
@@ -581,7 +582,7 @@ const styles = StyleSheet.create({
     maxWidth:         120,
   },
   pagoChipText: {
-    fontSize:      12,
+    fontSize:      scaleFont(12),
     fontFamily:    'JetBrainsMono_700Bold',
     letterSpacing: 0.2,
   },

@@ -1,3 +1,4 @@
+import { scaleFont } from '../src/theme/responsive';
 import { Link, Stack } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../src/theme/ThemeContext';
@@ -27,7 +28,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   title: {
-    fontSize: 20,
+    fontSize: scaleFont(20),
     fontWeight: 'bold',
   },
   link: {
@@ -35,6 +36,6 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
   },
   linkText: {
-    fontSize: 14,
+    fontSize: scaleFont(14),
   },
 });

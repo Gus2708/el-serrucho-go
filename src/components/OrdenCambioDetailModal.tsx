@@ -1,3 +1,4 @@
+import { scaleFont } from '../theme/responsive';
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import {
@@ -353,7 +354,7 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
                                   Cód: {item.codigo_producto}  ·  Stock: {item.existencia_actual} → {item.nueva_existencia}
                                 </Text>
                                 {item.nota && item.nota !== 'fail' ? (
-                                  <Text style={[styles.ticketItemNote, { color: colors.textMuted, fontStyle: 'italic', fontSize: 11, marginTop: 4 }]}>
+                                  <Text style={[styles.ticketItemNote, { color: colors.textMuted, fontStyle: 'italic', fontSize: scaleFont(11), marginTop: 4 }]}>
                                     Nota: {item.nota}
                                   </Text>
                                 ) : null}
@@ -488,13 +489,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   ticketHeaderLeft: { gap: 0, flex: 1, paddingRight: 8 },
-  ticketTitle: { fontSize: 8.5, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.2, textTransform: 'uppercase', opacity: 0.85 },
-  ticketFolio: { fontSize: 20, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -0.5, marginTop: 2 },
-  ticketProducts: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', marginTop: 4, opacity: 0.95 },
+  ticketTitle: { fontSize: scaleFont(8.5), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.2, textTransform: 'uppercase', opacity: 0.85 },
+  ticketFolio: { fontSize: scaleFont(20), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -0.5, marginTop: 2 },
+  ticketProducts: { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_500Medium', marginTop: 4, opacity: 0.95 },
   ticketTimeContainer: { alignItems: 'flex-end', gap: 0 },
-  ticketDateLabel: { fontSize: 9, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1, opacity: 0.85, marginBottom: 2 },
-  ticketDate: { fontSize: 12, fontFamily: 'JetBrainsMono_700Bold' },
-  ticketTime: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', opacity: 0.9 },
+  ticketDateLabel: { fontSize: scaleFont(9), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1, opacity: 0.85, marginBottom: 2 },
+  ticketDate: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold' },
+  ticketTime: { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_500Medium', opacity: 0.9 },
   
   ticketListContainer: {
     width: '100%',
@@ -519,10 +520,10 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   ticketScrollDots: {
-    fontSize: 20,
+    fontSize: scaleFont(20),
     fontWeight: '900',
     letterSpacing: 2,
-    lineHeight: 20,
+    lineHeight: scaleFont(20),
   },
   ticketItemRow: {
     flexDirection: 'row',
@@ -531,9 +532,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   ticketItemMain: { flex: 1, gap: 2, paddingRight: 12 },
-  ticketItemDesc: { fontSize: 13, fontFamily: 'JetBrainsMono_700Bold', lineHeight: 18 },
-  ticketItemQty: { fontSize: 11, fontFamily: 'JetBrainsMono_500Medium', opacity: 0.85, marginTop: 2 },
-  ticketItemNote: { fontSize: 11, fontFamily: 'JetBrainsMono_400Regular', fontStyle: 'italic', marginTop: 4 },
+  ticketItemDesc: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', lineHeight: scaleFont(18) },
+  ticketItemQty: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_500Medium', opacity: 0.85, marginTop: 2 },
+  ticketItemNote: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', fontStyle: 'italic', marginTop: 4 },
   
   deltaBadge: {
     borderRadius: 8,
@@ -545,7 +546,7 @@ const styles = StyleSheet.create({
     minWidth: 44,
   },
   deltaText: {
-    fontSize: 12,
+    fontSize: scaleFont(12),
     fontFamily: 'JetBrainsMono_700Bold',
   },
 
@@ -562,8 +563,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  ticketFooterLabel: { fontSize: 12, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 0.5, textTransform: 'uppercase', opacity: 0.85 },
-  ticketFooterValue: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold' },
+  ticketFooterLabel: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 0.5, textTransform: 'uppercase', opacity: 0.85 },
+  ticketFooterValue: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
 
   ticketTotalSection: {
     paddingVertical: 20,
@@ -573,10 +574,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  ticketTotalLabel: { fontSize: 10, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.5, marginBottom: 8, opacity: 0.85 },
+  ticketTotalLabel: { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.5, marginBottom: 8, opacity: 0.85 },
   ticketTotalValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
-  ticketTotalCurrency: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold' },
-  ticketTotalValue: { fontSize: 36, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -1 },
+  ticketTotalCurrency: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
+  ticketTotalValue: { fontSize: scaleFont(36), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -1 },
 
   modalLoading: { height: 200, alignItems: 'center', justifyContent: 'center' },
   modalOverlay: {
@@ -614,7 +615,7 @@ const styles = StyleSheet.create({
     marginRight:      6,
   },
   pagoChipText: {
-    fontSize:      11,
+    fontSize:      scaleFont(11),
     fontFamily:    'JetBrainsMono_700Bold',
     letterSpacing: 0.2,
   },
@@ -626,13 +627,13 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   obsLabel: {
-    fontSize: 10,
+    fontSize: scaleFont(10),
     fontFamily: 'JetBrainsMono_700Bold',
     letterSpacing: 0.5,
   },
   obsText: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_400Regular',
-    lineHeight: 18,
+    lineHeight: scaleFont(18),
   },
 });

@@ -1,3 +1,4 @@
+import { scaleFont } from '../../src/theme/responsive';
 import * as React from 'react';
 import { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Modal, TextInput, Animated, PanResponder, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
@@ -344,7 +345,7 @@ export default function ProductoDetail() {
 
               {errorMsg && (
                 <View style={{ backgroundColor: colors.danger + '22', padding: 8, borderRadius: 8, marginBottom: 8 }}>
-                  <Text style={{ color: colors.danger, fontSize: 12, fontFamily: 'JetBrainsMono_700Bold', textAlign: 'center' }}>
+                  <Text style={{ color: colors.danger, fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold', textAlign: 'center' }}>
                     {errorMsg}
                   </Text>
                 </View>
@@ -778,7 +779,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
   },
   backBtn:        { padding: 4, marginRight: 4 },
-  navTitle:       { flex: 1, fontSize: 16, fontFamily: 'JetBrainsMono_700Bold', textAlign: 'center' },
+  navTitle:       { flex: 1, fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_700Bold', textAlign: 'center' },
   navPlaceholder: { width: 30 },
 
   center: {
@@ -787,7 +788,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap:            12,
   },
-  errorText: { fontSize: 15, fontFamily: 'JetBrainsMono_400Regular' },
+  errorText: { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_400Regular' },
 
   scroll: {
     paddingTop:    16,
@@ -803,9 +804,9 @@ const styles = StyleSheet.create({
   },
 
   productName: {
-    fontSize:     20,
+    fontSize:     scaleFont(20),
     fontFamily:   'JetBrainsMono_700Bold',
-    lineHeight:   27,
+    lineHeight:   scaleFont(27),
     marginBottom: 10,
   },
   codeRow: {
@@ -814,9 +815,9 @@ const styles = StyleSheet.create({
     alignItems:     'center',
     paddingVertical: 6,
   },
-  label: { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular' },
-  code:  { fontSize: 13, fontFamily: 'JetBrainsMono_700Bold' },
-  value: { fontSize: 13, fontFamily: 'JetBrainsMono_500Medium' },
+  label: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_400Regular' },
+  code:  { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
+  value: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_500Medium' },
 
   row2: {
     flexDirection:  'row',
@@ -831,10 +832,10 @@ const styles = StyleSheet.create({
     alignItems:   'center',
     gap:          6,
   },
-  statLabel: { fontSize: 12, fontFamily: 'JetBrainsMono_400Regular' },
-  statValue: { fontSize: 22, fontFamily: 'JetBrainsMono_700Bold' },
+  statLabel: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular' },
+  statValue: { fontSize: scaleFont(22), fontFamily: 'JetBrainsMono_700Bold' },
 
-  sectionLabel: { fontSize: 12, marginBottom: 10, fontFamily: 'JetBrainsMono_400Regular' },
+  sectionLabel: { fontSize: scaleFont(12), marginBottom: 10, fontFamily: 'JetBrainsMono_400Regular' },
 
   marginHeader: {
     flexDirection:  'row',
@@ -842,7 +843,7 @@ const styles = StyleSheet.create({
     alignItems:     'center',
     marginBottom:   8,
   },
-  marginPct: { fontSize: 18, fontFamily: 'JetBrainsMono_700Bold' },
+  marginPct: { fontSize: scaleFont(18), fontFamily: 'JetBrainsMono_700Bold' },
   barBg:     { height: 6, borderRadius: 3, overflow: 'hidden' },
   barFill:   { height: 6, borderRadius: 3 },
 
@@ -851,11 +852,11 @@ const styles = StyleSheet.create({
     alignItems:    'center',
     gap:           12,
   },
-  stockQty:       { fontSize: 36, fontFamily: 'JetBrainsMono_700Bold' },
+  stockQty:       { fontSize: scaleFont(36), fontFamily: 'JetBrainsMono_700Bold' },
   stockBadge:     { borderRadius: 999, borderWidth: 0.5, paddingVertical: 4, paddingHorizontal: 12 },
-  stockBadgeText: { fontSize: 13, fontFamily: 'JetBrainsMono_500Medium' },
+  stockBadgeText: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_500Medium' },
 
-  syncNote: { fontSize: 11, textAlign: 'center', marginTop: 4, fontFamily: 'JetBrainsMono_400Regular' },
+  syncNote: { fontSize: scaleFont(11), textAlign: 'center', marginTop: 4, fontFamily: 'JetBrainsMono_400Regular' },
 
   addBtn: {
     flexDirection:     'row',
@@ -868,7 +869,7 @@ const styles = StyleSheet.create({
     borderRadius:      14,
     borderWidth:       1,
   },
-  addBtnText: { fontSize: 15, fontFamily: 'JetBrainsMono_700Bold' },
+  addBtnText: { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
 
   sheetOverlay: {
     flex:            1,
@@ -912,9 +913,9 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     opacity: 0.5,
   },
-  sheetTitle:   { fontSize: 18, fontFamily: 'JetBrainsMono_700Bold' },
-  sheetSub:     { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular' },
-  sheetLabel:   { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular' },
+  sheetTitle:   { fontSize: scaleFont(18), fontFamily: 'JetBrainsMono_700Bold' },
+  sheetSub:     { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_400Regular' },
+  sheetLabel:   { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_400Regular' },
   qtyWrap: {
     borderRadius: 12,
     borderWidth:  0.5,
@@ -922,7 +923,7 @@ const styles = StyleSheet.create({
     height:       56,
     justifyContent: 'center',
   },
-  qtyInput: { fontSize: 28, fontFamily: 'JetBrainsMono_700Bold', textAlign: 'center' },
+  qtyInput: { fontSize: scaleFont(28), fontFamily: 'JetBrainsMono_700Bold', textAlign: 'center' },
   sheetBtn: {
     height:         52,
     borderRadius:   12,
@@ -930,7 +931,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop:      12,
   },
-  sheetBtnText: { fontSize: 15, fontFamily: 'JetBrainsMono_700Bold' },
+  sheetBtnText: { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
 
   modeSelector: {
     flexDirection: 'row',
@@ -950,7 +951,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   modeBtnText: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   inputContainer: {
@@ -967,7 +968,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   opText: {
-    fontSize: 28,
+    fontSize: scaleFont(28),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   previewContainer: {
@@ -977,11 +978,11 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   previewLabel: {
-    fontSize: 14,
+    fontSize: scaleFont(14),
     fontFamily: 'JetBrainsMono_400Regular',
   },
   previewValue: {
-    fontSize: 16,
+    fontSize: scaleFont(16),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   movCenter: {
@@ -990,7 +991,7 @@ const styles = StyleSheet.create({
     justifyContent:  'center',
   },
   emptyText: {
-    fontSize:   13,
+    fontSize:   scaleFont(13),
     fontFamily: 'JetBrainsMono_400Regular',
   },
   movementsList: {
@@ -1013,13 +1014,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   movText: {
-    fontSize:   13,
+    fontSize:   scaleFont(13),
     fontFamily: 'JetBrainsMono_500Medium',
     flex: 1,
     marginRight: 8,
   },
   movNota: {
-    fontSize:   11,
+    fontSize:   scaleFont(11),
     fontFamily: 'JetBrainsMono_400Regular',
     marginTop:  2,
   },
@@ -1030,12 +1031,12 @@ const styles = StyleSheet.create({
   },
   movQtyText: {
     fontFamily: 'JetBrainsMono_700Bold',
-    fontSize: 14,
+    fontSize: scaleFont(14),
     textAlign: 'right',
   },
   movDateText: {
     fontFamily: 'JetBrainsMono_400Regular',
-    fontSize: 10,
+    fontSize: scaleFont(10),
     marginTop: 2,
     textAlign: 'right',
   },
@@ -1044,7 +1045,7 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    fontSize: 14,
+    fontSize: scaleFont(14),
     fontFamily: 'JetBrainsMono_400Regular',
     marginTop: 6,
   },

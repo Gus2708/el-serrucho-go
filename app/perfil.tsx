@@ -1,3 +1,4 @@
+import { scaleFont } from '../src/theme/responsive';
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import {
@@ -45,7 +46,7 @@ function PWAProfileControl() {
         paddingHorizontal: 16,
       }}>
         <Feather name="check-circle" size={18} color={colors.primary || '#F5B200'} />
-        <Text style={{ fontSize: 13, fontFamily: 'JetBrainsMono_700Bold', color: '#FFFFFF', letterSpacing: 0.5 }}>
+        <Text style={{ fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', color: '#FFFFFF', letterSpacing: 0.5 }}>
           APLICACIÓN INSTALADA (PWA)
         </Text>
       </View>
@@ -71,7 +72,7 @@ function PWAProfileControl() {
         }, pressed && { opacity: 0.8 }]}
       >
         <Feather name="download" size={18} color={colors.primary || '#F5B200'} />
-        <Text style={{ fontSize: 13, fontFamily: 'JetBrainsMono_700Bold', color: colors.primary || '#F5B200', letterSpacing: 0.5 }}>
+        <Text style={{ fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', color: colors.primary || '#F5B200', letterSpacing: 0.5 }}>
           INSTALAR APLICACIÓN
         </Text>
       </Pressable>
@@ -311,7 +312,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerTitle: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 2 },
+  headerTitle: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 2 },
   content: { paddingHorizontal: 16, gap: 24 },
   
   // Card Principal Única
@@ -333,7 +334,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarLetter: { fontSize: 24, fontFamily: 'JetBrainsMono_700Bold' },
+  avatarLetter: { fontSize: scaleFont(24), fontFamily: 'JetBrainsMono_700Bold' },
   mainInfo: { flex: 1, gap: 6 },
   nameRow: { 
     flexDirection: 'row', 
@@ -343,13 +344,13 @@ const styles = StyleSheet.create({
   },
   mainName: { 
     flex: 1,
-    fontSize: 20, 
+    fontSize: scaleFont(20), 
     fontFamily: 'JetBrainsMono_700Bold', 
     letterSpacing: -0.5 
   },
   nameInput: {
     flex: 1,
-    fontSize: 20,
+    fontSize: scaleFont(20),
     fontFamily: 'JetBrainsMono_700Bold',
     paddingVertical: 0,
     borderBottomWidth: 1,
@@ -367,7 +368,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 6,
   },
-  badgeText: { fontSize: 9, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 0.5 },
+  badgeText: { fontSize: scaleFont(9), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 0.5 },
 
   divider: { height: 1, opacity: 0.3 },
 
@@ -380,7 +381,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   footerText: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_500Medium',
   },
 
@@ -395,6 +396,6 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     marginTop: 10,
   },
-  logoutText: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1 },
+  logoutText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1 },
 });
 

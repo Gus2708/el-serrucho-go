@@ -1,3 +1,4 @@
+import { scaleFont } from '../../src/theme/responsive';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
@@ -93,10 +94,10 @@ function PWAInstallBanner() {
     }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <View style={{ flex: 1, marginRight: 24 }}>
-          <Text style={{ color: '#FFFFFF', fontSize: 14, fontFamily: 'JetBrainsMono_700Bold', marginBottom: 4 }}>
+          <Text style={{ color: '#FFFFFF', fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', marginBottom: 4 }}>
             Instalar App
           </Text>
-          <Text style={{ color: '#A0A0A0', fontSize: 11, fontFamily: 'JetBrainsMono_400Regular', lineHeight: 16 }}>
+          <Text style={{ color: '#A0A0A0', fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', lineHeight: scaleFont(16) }}>
             Accede más rápido y úsala sin conexión instalando la aplicación en tu pantalla de inicio.
           </Text>
         </View>
@@ -122,7 +123,7 @@ function PWAInstallBanner() {
           justifyContent: 'center',
         }, pressed && { opacity: 0.85 }]}
       >
-        <Text style={{ color: '#0C0C0C', fontSize: 12, fontFamily: 'JetBrainsMono_700Bold' }}>
+        <Text style={{ color: '#0C0C0C', fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold' }}>
           INSTALAR AHORA
         </Text>
       </Pressable>
@@ -316,7 +317,7 @@ export default function Index() {
     return (
       <View style={[styles.root, { backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={{ color: colors.textMuted, marginTop: 12, fontSize: 12 }}>Cargando perfil...</Text>
+        <Text style={{ color: colors.textMuted, marginTop: 12, fontSize: scaleFont(12) }}>Cargando perfil...</Text>
       </View>
     );
   }
@@ -388,7 +389,7 @@ export default function Index() {
               Estadísticas:
             </Text>
             {sessionUser?.email && (
-              <Text style={{ fontSize: 9, color: colors.textMuted, opacity: 0.85, marginBottom: 5 }}>
+              <Text style={{ fontSize: scaleFont(9), color: colors.textMuted, opacity: 0.85, marginBottom: 5 }}>
                 {sessionUser.email}
               </Text>
             )}
@@ -655,8 +656,8 @@ const styles = StyleSheet.create({
   },
   logoImg: { width: 72, height: 72 },
   logoWords:   { flex: 1 },
-  logoSub:     { fontSize: 11, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.5, textTransform: 'uppercase' },
-  logoName:    { fontSize: 20, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -0.5 },
+  logoSub:     { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1.5, textTransform: 'uppercase' },
+  logoName:    { fontSize: scaleFont(20), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -0.5 },
   iconBtn: {
     width: 38, height: 38, borderRadius: 13, borderWidth: 0.5,
     alignItems: 'center', justifyContent: 'center',
@@ -681,14 +682,14 @@ const styles = StyleSheet.create({
   },
   badgeIndicatorText: {
     color: '#FFFFFF',
-    fontSize: 9,
+    fontSize: scaleFont(9),
     fontFamily: 'JetBrainsMono_700Bold',
-    lineHeight: 10,
+    lineHeight: scaleFont(10),
   },
 
   greeting: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10 },
-  greetSub:   { fontSize: 11, marginBottom: 2, fontFamily: 'JetBrainsMono_400Regular' },
-  greetTitle: { fontSize: 24, fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -0.5 },
+  greetSub:   { fontSize: scaleFont(11), marginBottom: 2, fontFamily: 'JetBrainsMono_400Regular' },
+  greetTitle: { fontSize: scaleFont(24), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: -0.5 },
 
   periodRow: {
     flexDirection:     'row',
@@ -717,7 +718,7 @@ const styles = StyleSheet.create({
     borderWidth:       0.5,
     minWidth:          96,
   },
-  periodText: { fontSize: 12, fontFamily: 'JetBrainsMono_500Medium' },
+  periodText: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium' },
 
   bigCard: {
     marginHorizontal: 16,
@@ -727,9 +728,9 @@ const styles = StyleSheet.create({
     padding:          20,
     overflow:         'hidden',
   },
-  bigLabel:         { fontSize: 11, marginBottom: 4, fontFamily: 'JetBrainsMono_400Regular' },
-  bigValue:         { fontSize: 32, fontFamily: 'JetBrainsMono_700Bold', lineHeight: 36, marginBottom: 2 },
-  bigSub:           { fontSize: 11, fontFamily: 'JetBrainsMono_400Regular' },
+  bigLabel:         { fontSize: scaleFont(11), marginBottom: 4, fontFamily: 'JetBrainsMono_400Regular' },
+  bigValue:         { fontSize: scaleFont(32), fontFamily: 'JetBrainsMono_700Bold', lineHeight: scaleFont(36), marginBottom: 2 },
+  bigSub:           { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular' },
   warnBanner: {
     flexDirection:    'row',
     alignItems:       'center',
@@ -740,7 +741,7 @@ const styles = StyleSheet.create({
     borderRadius:     8,
     borderWidth:      0.5,
   },
-  warnText: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium', flex: 1, lineHeight: 14 },
+  warnText: { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_500Medium', flex: 1, lineHeight: scaleFont(14) },
 
   kpiGrid: {
     flexDirection:     'row',
@@ -770,11 +771,11 @@ const styles = StyleSheet.create({
     padding:      16,
   },
   kpiIcon:  { marginBottom: 8 },
-  kpiVal:   { fontSize: 17, fontFamily: 'JetBrainsMono_700Bold', marginBottom: 2 },
-  kpiLabel: { fontSize: 9, fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.5 },
+  kpiVal:   { fontSize: scaleFont(17), fontFamily: 'JetBrainsMono_700Bold', marginBottom: 2 },
+  kpiLabel: { fontSize: scaleFont(9), fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.5 },
 
   sectionLabel: {
-    fontSize: 10, fontFamily: 'JetBrainsMono_700Bold', textTransform: 'uppercase',
+    fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_700Bold', textTransform: 'uppercase',
     letterSpacing: 0.7, paddingHorizontal: 16, marginBottom: 8,
   },
 
@@ -784,14 +785,14 @@ const styles = StyleSheet.create({
     padding: 14, marginBottom: 8,
   },
   topLeft:      { gap: 2 },
-  topDate:      { fontSize: 10, fontFamily: 'JetBrainsMono_400Regular' },
-  topVal:       { fontSize: 20, fontFamily: 'JetBrainsMono_700Bold' },
-  topSub:       { fontSize: 10, fontFamily: 'JetBrainsMono_400Regular' },
+  topDate:      { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_400Regular' },
+  topVal:       { fontSize: scaleFont(20), fontFamily: 'JetBrainsMono_700Bold' },
+  topSub:       { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_400Regular' },
   topBadge: {
     borderRadius: 999, borderWidth: 0.5,
     paddingVertical: 4, paddingHorizontal: 12,
   },
-  topBadgeText: { fontSize: 11, fontFamily: 'JetBrainsMono_700Bold' },
+  topBadgeText: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold' },
 
   bottomPad: { height: 110 },
   seeMoreBtn: {
@@ -806,7 +807,7 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
   },
   seeMoreText: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_700Bold',
   },
 });

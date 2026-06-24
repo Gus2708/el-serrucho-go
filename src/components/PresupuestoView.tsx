@@ -1,3 +1,4 @@
+import { scaleFont } from '../theme/responsive';
 import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Pressable, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -241,7 +242,7 @@ export default function PresupuestoView({ router }: { router: any }) {
                               <Text style={[
                                 styles.percentBtnText, 
                                 { color: isMarkupApplied ? colors.success : colors.primary },
-                                isMarkupApplied && { fontSize: 16 }
+                                isMarkupApplied && { fontSize: scaleFont(16) }
                               ]}>
                                 {isMarkupApplied ? '↺' : '+40%'}
                               </Text>
@@ -350,7 +351,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderStyle: 'dashed',
   },
-  actionBtnText: { fontSize: 13, fontFamily: 'JetBrainsMono_700Bold' },
+  actionBtnText: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
 
   /* ── Empty state ────────────────────────────────────────── */
   empty: {
@@ -359,8 +360,8 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
     gap: 12,
   },
-  emptyTitle: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold' },
-  emptySub: { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular', textAlign: 'center', lineHeight: 20 },
+  emptyTitle: { fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_700Bold' },
+  emptySub: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_400Regular', textAlign: 'center', lineHeight: scaleFont(20) },
 
   /* ── Item card ──────────────────────────────────────────── */
   itemCard: {
@@ -376,8 +377,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   itemInfo: { flex: 1 },
-  itemName: { fontSize: 13, fontFamily: 'JetBrainsMono_700Bold' },
-  itemCode: { fontSize: 11, fontFamily: 'JetBrainsMono_400Regular', marginTop: 1 },
+  itemName: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
+  itemCode: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', marginTop: 1 },
   removeBtn: { padding: 4, marginLeft: 8 },
 
   /* ── Controls row (qty + price side by side) ────────────── */
@@ -390,7 +391,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   controlLabel: {
-    fontSize: 9,
+    fontSize: scaleFont(9),
     fontFamily: 'JetBrainsMono_500Medium',
     textTransform: 'uppercase',
     letterSpacing: 0.3,
@@ -411,7 +412,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   ctrlInput: {
-    fontSize: 15,
+    fontSize: scaleFont(15),
     fontFamily: 'JetBrainsMono_700Bold',
     textAlign: 'center',
     textAlignVertical: 'center',
@@ -437,12 +438,12 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   priceCurrency: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   priceInput: {
     flex: 1,
-    fontSize: 15,
+    fontSize: scaleFont(15),
     fontFamily: 'JetBrainsMono_700Bold',
     textAlignVertical: 'center',
     includeFontPadding: false,
@@ -464,7 +465,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   percentBtnText: {
-    fontSize: 11,
+    fontSize: scaleFont(11),
     fontFamily: 'JetBrainsMono_700Bold',
   },
 
@@ -476,7 +477,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   subtotalVal: {
-    fontSize: 16,
+    fontSize: scaleFont(16),
     fontFamily: 'JetBrainsMono_700Bold',
     fontVariant: ['tabular-nums'],
   },
@@ -489,8 +490,8 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 6,
   },
-  ordenNotaLabel: { fontSize: 11, fontFamily: 'JetBrainsMono_700Bold', textTransform: 'uppercase', letterSpacing: 0.3 },
-  ordenNotaInput: { fontSize: 16, fontFamily: 'JetBrainsMono_400Regular', lineHeight: 22, minHeight: 44 },
+  ordenNotaLabel: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold', textTransform: 'uppercase', letterSpacing: 0.3 },
+  ordenNotaInput: { fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_400Regular', lineHeight: scaleFont(22), minHeight: 44 },
 
   /* ── Submit bar ──────────────────────────────────────────── */
   submitBar: {
@@ -510,8 +511,8 @@ const styles = StyleSheet.create({
     } : {}),
   } as any,
   submitInfo: { flex: 1, gap: 2 },
-  submitCount: { fontSize: 15, fontFamily: 'JetBrainsMono_700Bold' },
-  clearText: { fontSize: 12, marginTop: 2, fontFamily: 'JetBrainsMono_400Regular' },
+  submitCount: { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
+  clearText: { fontSize: scaleFont(12), marginTop: 2, fontFamily: 'JetBrainsMono_400Regular' },
   submitBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -520,7 +521,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 20,
   },
-  submitBtnText: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold' },
+  submitBtnText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
 
   submitBarWeb: {
     position: 'relative',

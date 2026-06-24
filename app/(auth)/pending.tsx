@@ -1,3 +1,4 @@
+import { scaleFont } from '../../src/theme/responsive';
 import React from 'react';
 import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
@@ -105,15 +106,15 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   title: {
-    fontSize: 20,
+    fontSize: scaleFont(20),
     fontFamily: 'JetBrainsMono_700Bold',
     textAlign: 'center',
   },
   message: {
-    fontSize: 14,
+    fontSize: scaleFont(14),
     fontFamily: 'JetBrainsMono_400Regular',
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: scaleFont(20),
   },
   refreshBtn: {
     marginTop: 8,
@@ -123,14 +124,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   refreshText: {
-    fontSize: 14,
+    fontSize: scaleFont(14),
     fontFamily: 'JetBrainsMono_600SemiBold',
   },
   logoutBtn: {
     padding: 12,
   },
   logoutText: {
-    fontSize: 14,
+    fontSize: scaleFont(14),
     fontFamily: 'JetBrainsMono_600SemiBold',
   },
   spacer: {

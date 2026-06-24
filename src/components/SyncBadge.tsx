@@ -1,3 +1,4 @@
+import { scaleFont } from '../theme/responsive';
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Pressable, ActivityIndicator, Platform } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
@@ -240,11 +241,11 @@ const styles = StyleSheet.create({
     gap:  1,
   },
   t1: {
-    fontSize:   11,
+    fontSize:   scaleFont(11),
     fontFamily: 'JetBrainsMono_500Medium',
   },
   t2: {
-    fontSize: 10,
+    fontSize: scaleFont(10),
     fontFamily: 'JetBrainsMono_400Regular',
   },
   tag: {
@@ -257,7 +258,7 @@ const styles = StyleSheet.create({
     alignItems:       'center',
   },
   tagText: {
-    fontSize:   10,
+    fontSize:   scaleFont(10),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   syncButton: {

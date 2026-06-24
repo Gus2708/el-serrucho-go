@@ -1,3 +1,4 @@
+import { scaleFont } from '../../src/theme/responsive';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
@@ -787,7 +788,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop:        12,
   },
-  title: { fontSize: 26, fontFamily: 'JetBrainsMono_700Bold', marginBottom: 20 },
+  title: { fontSize: scaleFont(26), fontFamily: 'JetBrainsMono_700Bold', marginBottom: 20 },
 
   tabRowWrapper: {
     borderBottomWidth: 0.5,
@@ -803,7 +804,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 4,
   },
-  tabText: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold' },
+  tabText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
 
   scroll: { paddingTop: 12, gap: 8 },
 
@@ -818,7 +819,7 @@ const styles = StyleSheet.create({
     borderWidth:       1,
     borderStyle:       'dashed',
   },
-  addProductText: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold' },
+  addProductText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
 
   empty: {
     alignItems:     'center',
@@ -826,8 +827,8 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
     gap:            12,
   },
-  emptyTitle: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold' },
-  emptySub:   { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular', textAlign: 'center', lineHeight: 20 },
+  emptyTitle: { fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_700Bold' },
+  emptySub:   { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_400Regular', textAlign: 'center', lineHeight: scaleFont(20) },
 
   itemCard: {
     marginHorizontal: 16,
@@ -842,8 +843,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   itemInfo:  { flex: 1 },
-  itemName:  { fontSize: 13, fontFamily: 'JetBrainsMono_700Bold' },
-  itemCode:  { fontSize: 11, fontFamily: 'JetBrainsMono_400Regular', marginTop: 1 },
+  itemName:  { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
+  itemCode:  { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', marginTop: 1 },
   removeBtn: { padding: 4, marginLeft: 8 },
 
   itemBottom: {
@@ -866,10 +867,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop:      13, // qtyLabel(9) + gap(4)
   },
-  qtyLabel:  { fontSize: 9, fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.3 },
-  qtyVal:    { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold' },
+  qtyLabel:  { fontSize: scaleFont(9), fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.3 },
+  qtyVal:    { fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_700Bold' },
   qtyEdit: {
-    fontSize:   15,
+    fontSize:   scaleFont(15),
     fontFamily: 'JetBrainsMono_700Bold',
     textAlign:  'center',
     textAlignVertical: 'center',
@@ -897,13 +898,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   deltaText: { 
-    fontSize: 12, 
+    fontSize: scaleFont(12), 
     fontFamily: 'JetBrainsMono_700Bold', 
     fontVariant: ['tabular-nums'] 
   },
 
   notaInput: {
-    fontSize:   16,
+    fontSize:   scaleFont(16),
     fontFamily: 'JetBrainsMono_400Regular',
     borderBottomWidth: 0.5,
     paddingVertical:   6,
@@ -916,8 +917,8 @@ const styles = StyleSheet.create({
     padding:          14,
     gap:              6,
   },
-  ordenNotaLabel: { fontSize: 11, fontFamily: 'JetBrainsMono_700Bold', textTransform: 'uppercase', letterSpacing: 0.3 },
-  ordenNotaInput: { fontSize: 16, fontFamily: 'JetBrainsMono_400Regular', lineHeight: 22, minHeight: 44 },
+  ordenNotaLabel: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold', textTransform: 'uppercase', letterSpacing: 0.3 },
+  ordenNotaInput: { fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_400Regular', lineHeight: scaleFont(22), minHeight: 44 },
 
   submitBar: {
     position:          'absolute',
@@ -933,8 +934,8 @@ const styles = StyleSheet.create({
     gap:               12,
   },
   submitInfo:    { flex: 1, gap: 2 },
-  submitCount:   { fontSize: 15, fontFamily: 'JetBrainsMono_700Bold' },
-  clearText:     { fontSize: 12, marginTop: 2, fontFamily: 'JetBrainsMono_400Regular' },
+  submitCount:   { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
+  clearText:     { fontSize: scaleFont(12), marginTop: 2, fontFamily: 'JetBrainsMono_400Regular' },
   submitBtn: {
     flexDirection:  'row',
     alignItems:     'center',
@@ -943,7 +944,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 20,
   },
-  submitBtnText: { fontSize: 14, fontFamily: 'JetBrainsMono_700Bold' },
+  submitBtnText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
 
   submitBarWeb: {
     position: 'relative',
@@ -969,11 +970,11 @@ const styles = StyleSheet.create({
     alignItems:     'center',
     justifyContent: 'space-between',
   },
-  histId:   { fontSize: 15, fontFamily: 'JetBrainsMono_700Bold' },
+  histId:   { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
   statusBadge: { borderRadius: 999, borderWidth: 0.5, paddingVertical: 3, paddingHorizontal: 10 },
-  statusText:  { fontSize: 11, fontFamily: 'JetBrainsMono_700Bold' },
-  histMeta:    { fontSize: 12, fontFamily: 'JetBrainsMono_400Regular' },
-  histNota:    { fontSize: 12, fontFamily: 'JetBrainsMono_400Regular' },
+  statusText:  { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold' },
+  histMeta:    { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular' },
+  histNota:    { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular' },
   pdfBtn: {
     flexDirection:  'row',
     alignItems:     'center',
@@ -985,7 +986,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     marginTop:         4,
   },
-  pdfBtnText: { fontSize: 12, fontFamily: 'JetBrainsMono_700Bold' },
+  pdfBtnText: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold' },
   histFooter: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1024,11 +1025,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   subTabText: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   histClient: {
-    fontSize: 13,
+    fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_700Bold',
     marginTop: 4,
   },

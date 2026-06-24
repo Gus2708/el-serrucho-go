@@ -1,3 +1,4 @@
+import { scaleFont } from '../theme/responsive';
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -142,14 +143,14 @@ const styles = StyleSheet.create({
     gap:  2,
   },
   heading: {
-    fontSize:   11,
+    fontSize:   scaleFont(11),
     fontFamily: 'JetBrainsMono_700Bold',
-    lineHeight: 16,
+    lineHeight: scaleFont(16),
   },
   sub: {
-    fontSize:   10,
+    fontSize:   scaleFont(10),
     fontFamily: 'JetBrainsMono_400Regular',
-    lineHeight: 14,
+    lineHeight: scaleFont(14),
   },
   actions: {
     alignItems:  'flex-end',
@@ -162,11 +163,11 @@ const styles = StyleSheet.create({
     borderRadius:      8,
   },
   btnContinueText: {
-    fontSize:   11,
+    fontSize:   scaleFont(11),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   btnDiscard: {
-    fontSize:   10,
+    fontSize:   scaleFont(10),
     fontFamily: 'JetBrainsMono_400Regular',
   },
 });

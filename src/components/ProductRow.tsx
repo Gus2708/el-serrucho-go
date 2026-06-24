@@ -1,3 +1,4 @@
+import { scaleFont } from '../theme/responsive';
 import React, { memo, useCallback } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -112,12 +113,12 @@ const styles = StyleSheet.create({
   bar:    { width: 3, alignSelf: 'stretch' },
   body:   { flex: 1, paddingVertical: 12, paddingHorizontal: 12, gap: 4 },
   top:    { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
-  name:   { flex: 1, fontSize: 14, fontFamily: 'JetBrainsMono_400Regular', lineHeight: 19 },
-  price:  { fontSize: 15, fontFamily: 'JetBrainsMono_700Bold' },
+  name:   { flex: 1, fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_400Regular', lineHeight: scaleFont(19) },
+  price:  { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
   bottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 2 },
-  meta:   { fontSize: 11, flex: 1, fontFamily: 'JetBrainsMono_400Regular' },
+  meta:   { fontSize: scaleFont(11), flex: 1, fontFamily: 'JetBrainsMono_400Regular' },
   badges: { flexDirection: 'row', gap: 4 },
   badge:  { borderRadius: 999, borderWidth: 0.5, paddingVertical: 2, paddingHorizontal: 7 },
-  badgeText: { fontSize: 10, fontFamily: 'JetBrainsMono_500Medium' },
+  badgeText: { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_500Medium' },
   chevron:   { marginRight: 12 },
 });

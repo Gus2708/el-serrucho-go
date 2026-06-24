@@ -1,3 +1,4 @@
+import { scaleFont } from '../theme/responsive';
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { BarChart } from 'react-native-gifted-charts';
@@ -154,13 +155,13 @@ function GananciaChartBase({ data, mode = 'ganancia' }: Props) {
         yAxisColor="transparent"
         yAxisTextStyle={{
           color:      colors.textMuted,
-          fontSize:   10,
+          fontSize:   scaleFont(10),
           fontFamily: 'JetBrainsMono_500Medium',
           opacity:    0.85,
         }}
         xAxisLabelTextStyle={{
           color:      colors.textMuted,
-          fontSize:   10,
+          fontSize:   scaleFont(10),
           fontFamily: 'JetBrainsMono_500Medium',
           opacity:    0.95,
         }}
@@ -212,7 +213,7 @@ const styles = StyleSheet.create({
     alignItems:       'center',
   },
   emptyText: {
-    fontSize:   13,
+    fontSize:   scaleFont(13),
     fontFamily: 'JetBrainsMono_400Regular',
   },
 
@@ -229,7 +230,7 @@ const styles = StyleSheet.create({
     gap:         2,
   },
   statLabel: {
-    fontSize:      9,
+    fontSize:      scaleFont(9),
     fontFamily:    'JetBrainsMono_500Medium',
     letterSpacing: 0.6,
     textTransform: 'uppercase',
@@ -241,12 +242,12 @@ const styles = StyleSheet.create({
     gap:           4,
   },
   statValue: {
-    fontSize:      18,
+    fontSize:      scaleFont(18),
     fontFamily:    'JetBrainsMono_700Bold',
     letterSpacing: -0.4,
   },
   statContext: {
-    fontSize:   10,
+    fontSize:   scaleFont(10),
     fontFamily: 'JetBrainsMono_500Medium',
   },
 });

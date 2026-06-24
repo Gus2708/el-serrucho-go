@@ -1,3 +1,4 @@
+import { scaleFont } from '../theme/responsive';
 import React from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
@@ -90,13 +91,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   title: {
-    fontSize: 10,
+    fontSize: scaleFont(10),
     fontFamily: 'JetBrainsMono_700Bold',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   time: {
-    fontSize: 9,
+    fontSize: scaleFont(9),
     fontFamily: 'JetBrainsMono_400Regular',
   },
   content: {
@@ -115,12 +116,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#333',
   },
   label: {
-    fontSize: 9,
+    fontSize: scaleFont(9),
     fontFamily: 'JetBrainsMono_500Medium',
     textTransform: 'uppercase',
   },
   value: {
-    fontSize: 16,
+    fontSize: scaleFont(16),
     fontFamily: 'JetBrainsMono_700Bold',
   },
   brechaRow: {
@@ -129,7 +130,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   brechaValue: {
-    fontSize: 14,
+    fontSize: scaleFont(14),
     fontFamily: 'JetBrainsMono_700Bold',
   },
 });

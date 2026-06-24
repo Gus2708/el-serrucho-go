@@ -1,3 +1,4 @@
+import { scaleFont } from '../../src/theme/responsive';
 import React, { useState, useCallback, useRef, useEffect, useMemo, memo } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
@@ -174,7 +175,7 @@ export default function Reportes() {
                   <Text style={[
                     styles.selectorText, 
                     { color: active ? colors.onPrimary : colors.textMuted },
-                    isNarrow && { fontSize: 10 }
+                    isNarrow && { fontSize: scaleFont(10) }
                   ]}>
                     {p.label}
                   </Text>
@@ -209,7 +210,7 @@ export default function Reportes() {
                   <Text style={[
                     styles.selectorText, 
                     { color: active ? colors.text : colors.textMuted },
-                    isNarrow && { fontSize: 10 }
+                    isNarrow && { fontSize: scaleFont(10) }
                   ]}>
                     {m === 'ganancia' ? 'Ganancia' : m === 'ingreso' ? 'Ingresos' : 'Unidades'}
                   </Text>
@@ -348,7 +349,7 @@ const styles = StyleSheet.create({
     paddingTop:        12,
     paddingBottom:     4,
   },
-  title: { fontSize: 26, fontFamily: 'JetBrainsMono_700Bold' },
+  title: { fontSize: scaleFont(26), fontFamily: 'JetBrainsMono_700Bold' },
 
   selectorsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   padH:    { paddingHorizontal: 16 },
@@ -363,7 +364,7 @@ const styles = StyleSheet.create({
     minWidth:          40,
     alignItems:        'center',
   },
-  selectorText: { fontSize: 11, fontFamily: 'JetBrainsMono_500Medium' },
+  selectorText: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_500Medium' },
 
   summaryRow: {
     flexDirection: 'row',
@@ -384,11 +385,11 @@ const styles = StyleSheet.create({
     alignItems:    'center',
     gap:           6,
   },
-  pillLabel: { fontSize: 9, fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.5 },
-  pillValue: { fontSize: 16, fontFamily: 'JetBrainsMono_700Bold' },
+  pillLabel: { fontSize: scaleFont(9), fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.5 },
+  pillValue: { fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_700Bold' },
 
   sectionLabel: {
-    fontSize:          11,
+    fontSize:          scaleFont(11),
     fontFamily:        'JetBrainsMono_500Medium',
     textTransform:     'uppercase',
     letterSpacing:     0.8,
@@ -404,7 +405,7 @@ const styles = StyleSheet.create({
     padding:          20,
     overflow:         'hidden',
   },
-  emptyText: { fontSize: 13, fontFamily: 'JetBrainsMono_400Regular' },
+  emptyText: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_400Regular' },
 
   productRow: {
     flexDirection:     'row',
@@ -414,13 +415,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
     gap:               10,
   },
-  rank:         { fontSize: 12, width: 20, textAlign: 'right', fontFamily: 'JetBrainsMono_400Regular' },
+  rank:         { fontSize: scaleFont(12), width: 20, textAlign: 'right', fontFamily: 'JetBrainsMono_400Regular' },
   productInfo:  { flex: 1, gap: 2 },
-  productName:  { fontSize: 13, fontFamily: 'JetBrainsMono_500Medium' },
-  productMeta:  { fontSize: 11, fontFamily: 'JetBrainsMono_400Regular' },
+  productName:  { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_500Medium' },
+  productMeta:  { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular' },
   productAmounts: { alignItems: 'flex-end', gap: 2 },
-  amountText:   { fontSize: 13, fontFamily: 'JetBrainsMono_700Bold' },
-  gananciaText: { fontSize: 11, fontFamily: 'JetBrainsMono_400Regular' },
+  amountText:   { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
+  gananciaText: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular' },
 
   loadingRow: { paddingVertical: 24, alignItems: 'center' },
   bottomPad:  { height: 110 },
