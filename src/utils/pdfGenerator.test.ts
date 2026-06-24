@@ -58,8 +58,8 @@ describe('getPresupuestoFilename and sanitizeFilename', () => {
 
   it('generates the correct presupuesto filename with and without client', () => {
     const { getPresupuestoFilename } = require('./pdfGenerator');
-    expect(getPresupuestoFilename(null, 123)).toBe('Presupuesto_#123.pdf');
-    expect(getPresupuestoFilename({ nombre: 'Maria' } as any, 3344343)).toBe('Presupuesto_Maria_#3344343.pdf');
-    expect(getPresupuestoFilename({ nombre: 'Ferretería El Sol C.A.' } as any, 99)).toBe('Presupuesto_Ferretería_El_Sol_CA_#99.pdf');
+    expect(getPresupuestoFilename(null, 123)).toBe('Presupuesto_No_123.pdf');
+    expect(getPresupuestoFilename({ nombre: 'Maria' } as any, 3344343)).toBe('Presupuesto_Maria_No_3344343.pdf');
+    expect(getPresupuestoFilename({ nombre: 'Ferretería El Sol C.A.' } as any, 99)).toBe('Presupuesto_Ferretería_El_Sol_CA_No_99.pdf');
   });
 });

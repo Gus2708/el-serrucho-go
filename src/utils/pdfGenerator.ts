@@ -432,7 +432,7 @@ export function sanitizeFilename(name: string): string {
 
 export function getPresupuestoFilename(cliente: Cliente | null, presupuestoId: number): string {
   const clientPart = cliente ? `_${sanitizeFilename(cliente.nombre)}` : '';
-  return `Presupuesto${clientPart}_#${presupuestoId}.pdf`;
+  return `Presupuesto${clientPart}_No_${presupuestoId}.pdf`;
 }
 
 /* ─── Shared document shell ──────────────────────────────── */

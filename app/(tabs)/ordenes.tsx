@@ -389,7 +389,32 @@ function HistorialView({ queryClient }: { queryClient: any }) {
 
   const handleViewPDF = async (o: any) => {
     if (o.pdf_url) {
-      Linking.openURL(o.pdf_url);
+      if (Platform.OS === 'web') {
+        Linking.openURL(o.pdf_url);
+      } else {
+        setIsGeneratingPdf(o.id);
+        try {
+          let friendlyName = 'Documento.pdf';
+          if (subTab === 'ajuste') {
+            friendlyName = `Ajuste_No_${o.id}.pdf`;
+          } else {
+            const { data: header } = await supabase
+              .from('presupuestos')
+              .select(`*, clientes ( nombre, rif, telefono, direccion )`)
+              .eq('id', o.id)
+              .single();
+            const clienteObj = header ? (Array.isArray(header.clientes) ? header.clientes[0] : header.clientes) : null;
+            friendlyName = getPresupuestoFilename(clienteObj as any, o.id);
+          }
+          const localDestUri = `${FileSystem.cacheDirectory}${friendlyName}`;
+          await FileSystem.downloadAsync(o.pdf_url, localDestUri);
+          await Sharing.shareAsync(localDestUri, { mimeType: 'application/pdf' });
+        } catch (downloadErr: any) {
+          notify('Error', 'No se pudo descargar el PDF para compartir: ' + downloadErr.message);
+        } finally {
+          setIsGeneratingPdf(null);
+        }
+      }
       return;
     }
 
@@ -413,7 +438,7 @@ function HistorialView({ queryClient }: { queryClient: any }) {
           .single();
         const creadoPor = profileData?.display_name || undefined;
         html = buildPdfHtml(items as any[], o.nota, o.id, creadoPor);
-        friendlyName = `Ajuste_#${o.id}.pdf`;
+        friendlyName = `Ajuste_No_${o.id}.pdf`;
       } else {
         const { data: header, error: headerErr } = await supabase
           .from('presupuestos')
@@ -663,7 +688,9 @@ function HistorialView({ queryClient }: { queryClient: any }) {
                       <>
                         <Feather name="file-text" size={14} color={colors.primary} />
                         <Text style={[styles.pdfBtnText, { color: colors.primary }]}>
-                          {o.pdf_url ? 'Ver PDF' : 'Imprimir PDF'}
+                          {Platform.OS === 'web'
+                            ? (o.pdf_url ? 'Ver PDF' : 'Imprimir PDF')
+                            : 'Compartir PDF'}
                         </Text>
                       </>
                     )}
