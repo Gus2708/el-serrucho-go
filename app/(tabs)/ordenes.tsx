@@ -33,6 +33,7 @@ import PresupuestoView from '../../src/components/PresupuestoView';
 import FallasView from '../../src/components/FallasView';
 import { usePresupuestosHistory } from '../../src/hooks/usePresupuestosHistory';
 import { OrdenCambioDetailModal } from '../../src/components/OrdenCambioDetailModal';
+import { PresupuestoEditModal } from '../../src/components/PresupuestoEditModal';
 import { DraftRestoreBanner } from '../../src/components/DraftRestoreBanner';
 
 type Tab = 'ajuste' | 'presupuesto' | 'historial' | 'fallas';
@@ -324,6 +325,7 @@ function HistorialView({ queryClient }: { queryClient: any }) {
 
   const [subTab, setSubTab] = useState<'ajuste' | 'presupuesto'>('ajuste');
   const [selectedOrden, setSelectedOrden] = useState<any | null>(null);
+  const [editPresupuestoId, setEditPresupuestoId] = useState<number | null>(null);
   const { data: userAuth } = useUserRole();
   const isAdmin = userAuth?.role === 'admin';
   const currentUserId = userAuth?.profile?.id;
@@ -624,17 +626,20 @@ function HistorialView({ queryClient }: { queryClient: any }) {
             });
             const itemCount = isPresupuesto ? (o as any).items_count || 0 : (o as any).item_count || 0;
             const status = o.status || 'emitido';
+            const canEdit = isAdmin || currentUserId === o.creado_por;
 
             return (
               <Pressable
                 key={o.id}
                 style={({ pressed }) => [
-                  styles.histCard, 
+                  styles.histCard,
                   { backgroundColor: colors.surface, borderColor: colors.border },
                   pressed && { opacity: 0.75 }
                 ]}
                 onPress={() => {
-                  if (!isPresupuesto) {
+                  if (isPresupuesto) {
+                    if (canEdit) setEditPresupuestoId(o.id);
+                  } else {
                     setSelectedOrden(o);
                   }
                 }}
@@ -696,25 +701,42 @@ function HistorialView({ queryClient }: { queryClient: any }) {
                     )}
                   </Pressable>
 
-                  {/* Delete button — admin: all, employee: own items only */}
-                  {(isAdmin || currentUserId === o.creado_por) && (
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.deleteBtn,
-                        { borderColor: colors.border },
-                        pressed && { backgroundColor: colors.danger + '15', borderColor: colors.danger + '40' }
-                      ]}
-                      onPress={() => handleDelete(o)}
-                    >
-                      {({ pressed }) => (
-                        <Feather 
-                          name="trash-2" 
-                          size={14} 
-                          color={pressed ? colors.danger : colors.textMuted} 
-                        />
-                      )}
-                    </Pressable>
-                  )}
+                  {/* Right-side actions — admin: all, employee: own items only */}
+                  <View style={styles.histActions}>
+                    {isPresupuesto && canEdit && (
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.deleteBtn,
+                          { borderColor: colors.border },
+                          pressed && { backgroundColor: colors.primary + '15', borderColor: colors.primary + '40' }
+                        ]}
+                        onPress={() => setEditPresupuestoId(o.id)}
+                      >
+                        {({ pressed }) => (
+                          <Feather name="edit-2" size={14} color={pressed ? colors.primary : colors.textMuted} />
+                        )}
+                      </Pressable>
+                    )}
+
+                    {canEdit && (
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.deleteBtn,
+                          { borderColor: colors.border },
+                          pressed && { backgroundColor: colors.danger + '15', borderColor: colors.danger + '40' }
+                        ]}
+                        onPress={() => handleDelete(o)}
+                      >
+                        {({ pressed }) => (
+                          <Feather
+                            name="trash-2"
+                            size={14}
+                            color={pressed ? colors.danger : colors.textMuted}
+                          />
+                        )}
+                      </Pressable>
+                    )}
+                  </View>
                 </View>
               </Pressable>
             );
@@ -725,6 +747,10 @@ function HistorialView({ queryClient }: { queryClient: any }) {
       <OrdenCambioDetailModal
         orden={selectedOrden}
         onClose={() => setSelectedOrden(null)}
+      />
+      <PresupuestoEditModal
+        presupuestoId={editPresupuestoId}
+        onClose={() => setEditPresupuestoId(null)}
       />
     </View>
   );
@@ -965,6 +991,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: 4,
+  },
+  histActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   deleteBtn: {
     padding: 8,
