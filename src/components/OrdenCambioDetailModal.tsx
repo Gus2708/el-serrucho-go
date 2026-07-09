@@ -315,6 +315,9 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
           descripcion:       d.descripcion,
           existencia_actual: d.existencia_actual,
           nueva_existencia:  d.nueva_existencia,
+          precio_actual:      d.precio_actual,
+          nuevo_precio:       d.nuevo_precio,
+          costo:              d.costo,
           nota:              d.nota || '',
         })),
         orden.nota || '',
@@ -531,9 +534,16 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
                                 <Text style={[styles.ticketItemDesc, { color: colors.text }]}>
                                   {item.descripcion}
                                 </Text>
-                                <Text style={[styles.ticketItemQty, { color: colors.textMuted }]}>
-                                  Cód: {item.codigo_producto}  ·  Stock: {item.existencia_actual} → {item.nueva_existencia}
-                                </Text>
+                                 <Text style={[styles.ticketItemQty, { color: colors.textMuted }]}>
+                                   Cód: {item.codigo_producto}
+                                   {item.existencia_actual !== item.nueva_existencia || item.delta !== 0 ? `  ·  Stock: ${item.existencia_actual} → ${item.nueva_existencia}` : ''}
+                                 </Text>
+                                 {((item.nuevo_precio !== undefined && item.nuevo_precio !== null) || (item.costo !== undefined && item.costo !== null)) && (
+                                   <Text style={[styles.ticketItemQty, { color: colors.textMuted, marginTop: 2 }]}>
+                                     {item.nuevo_precio !== undefined && item.nuevo_precio !== null ? `Precio: $${item.precio_actual?.toFixed(2)} → $${item.nuevo_precio.toFixed(2)}` : ''}
+                                     {item.costo !== undefined && item.costo !== null ? `${item.nuevo_precio !== undefined && item.nuevo_precio !== null ? '  ·  ' : ''}Costo: $${item.costo.toFixed(2)}` : ''}
+                                   </Text>
+                                 )}
                                 {item.nota && item.nota !== 'fail' ? (
                                   <Text style={[styles.ticketItemNote, { color: colors.textMuted, fontStyle: 'italic', fontSize: scaleFont(11), marginTop: 4 }]}>
                                     Nota: {item.nota}

@@ -73,6 +73,7 @@ export const useOrdenCambio = create<OrdenStore>()((set, get) => ({
             nueva_existencia:   item.nueva_existencia,
             precio_actual:      item.precio_actual ?? null,
             nuevo_precio:       item.nuevo_precio ?? null,
+            costo:              item.costo ?? null,
             nota:               item.nota || null,
           }))
         );

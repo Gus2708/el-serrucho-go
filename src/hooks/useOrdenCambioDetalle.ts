@@ -17,6 +17,9 @@ export interface OrdenCambioItem {
   backend_resultado:   string | null;
   backend_intentos:    number;
   backend_aplicado_en: string | null;
+  precio_actual?:    number | null;
+  nuevo_precio?:     number | null;
+  costo?:            number | null;
 }
 
 export function useOrdenCambioDetalle(ordenId: number | null) {
@@ -75,12 +78,13 @@ async function fetchOrdenCambioDetalle(ordenId: number): Promise<OrdenCambioItem
     nueva_existencia:  Number(row.nueva_existencia || 0),
     delta:             Number(row.delta || 0),
     nota:              row.nota,
-    // Filas viejas (previas al backend de writeback) no traen estos campos;
-    // por defecto se muestran como 'completado' para no aparentar trabajo pendiente.
     backend_status:      (row.backend_status ?? 'completado') as BackendStatus,
     backend_resultado:   row.backend_resultado ?? null,
     backend_intentos:    Number(row.backend_intentos || 0),
     backend_aplicado_en: row.backend_aplicado_en ?? null,
+    precio_actual:      row.precio_actual !== null && row.precio_actual !== undefined ? Number(row.precio_actual) : null,
+    nuevo_precio:       row.nuevo_precio !== null && row.nuevo_precio !== undefined ? Number(row.nuevo_precio) : null,
+    costo:              row.costo !== null && row.costo !== undefined ? Number(row.costo) : null,
   })) as OrdenCambioItem[];
 }
 

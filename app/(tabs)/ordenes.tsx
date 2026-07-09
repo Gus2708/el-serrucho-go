@@ -233,73 +233,99 @@ function BorradorView({ router }: { router: any }) {
                     </View>
                   </View>
 
-                  {/* Price adjustment row */}
-                  {item.nuevo_precio !== undefined && item.nuevo_precio !== null && (
-                    <View style={[styles.itemBottom, { marginTop: 10, borderTopWidth: 0.5, borderColor: colors.border, paddingTop: 10 }]}>
-                      <View style={styles.qtyColumn}>
-                        <Text style={[styles.qtyLabel, { color: colors.textMuted }]}>PRECIO ACT</Text>
-                        <View style={styles.qtyValueWrapper}>
-                          <Text style={[styles.qtyVal, { color: colors.text }]}>{formatUSD(item.precio_actual ?? 0)}</Text>
-                        </View>
+                  {/* Price and Cost adjustment row */}
+                  <View style={[styles.itemBottom, { marginTop: 10, borderTopWidth: 0.5, borderColor: colors.border, paddingTop: 10 }]}>
+                    {/* Price Column */}
+                    <View style={{ flex: 1.2, marginRight: 8 }}>
+                      <Text style={[styles.qtyLabel, { color: colors.textMuted }]}>PRECIO ($)</Text>
+                      <View style={[styles.qtyValueWrapper, { justifyContent: 'flex-start', marginTop: 4 }]}>
+                        <TextInput
+                          style={[
+                            styles.qtyEdit, 
+                            { 
+                              color: colors.text, 
+                              borderColor: colors.border, 
+                              backgroundColor: colors.surfaceAlt,
+                              width: 80,
+                              flex: 1,
+                              textAlign: 'center',
+                              paddingVertical: 4
+                            }
+                          ]}
+                          keyboardType="numeric"
+                          value={item.nuevo_precio !== undefined && item.nuevo_precio !== null ? String(item.nuevo_precio) : ''}
+                          placeholder={item.precio_actual !== undefined && item.precio_actual !== null ? String(item.precio_actual) : '0.00'}
+                          placeholderTextColor={colors.textDim}
+                          onChangeText={v => {
+                            const n = parseFloat(v);
+                            if (!isNaN(n) && n >= 0) {
+                              updateItem(item.codigo_producto, { nuevo_precio: n });
+                            } else if (v === '') {
+                              updateItem(item.codigo_producto, { nuevo_precio: null });
+                            }
+                          }}
+                          selectTextOnFocus
+                        />
                       </View>
-
-                      <View style={styles.qtySeparator}>
-                        <Feather name="arrow-right" size={14} color={colors.textDim} />
-                      </View>
-
-                      <View style={[styles.qtyColumn, { flex: 1 }]}>
-                        <Text style={[styles.qtyLabel, { color: colors.textMuted }]}>NUEVO PRECIO</Text>
-                        <View style={styles.qtyValueWrapper}>
-                          <TextInput
-                            style={[
-                              styles.qtyEdit, 
-                              { 
-                                color: colors.text, 
-                                borderColor: colors.border, 
-                                backgroundColor: colors.surfaceAlt,
-                                width: 80,
-                                flex: 0,
-                                textAlign: 'center'
-                              }
-                            ]}
-                            keyboardType="numeric"
-                            value={String(item.nuevo_precio)}
-                            onChangeText={v => {
-                              const n = parseFloat(v);
-                              if (!isNaN(n) && n >= 0) {
-                                updateItem(item.codigo_producto, { nuevo_precio: n });
-                              } else if (v === '') {
-                                updateItem(item.codigo_producto, { nuevo_precio: null });
-                              }
-                            }}
-                            selectTextOnFocus
-                          />
-                        </View>
-                      </View>
-
-                      {item.costo !== undefined && item.costo !== null && item.nuevo_precio !== null && (
-                        <View style={styles.qtyColumn}>
-                          <Text style={[styles.qtyLabel, { color: colors.textMuted, textAlign: 'right' }]}>MARGEN</Text>
-                          <View style={[styles.qtyValueWrapper, { justifyContent: 'flex-end' }]}>
-                            {(() => {
-                              const precioSinIva = (item.nuevo_precio ?? 0) / 1.16;
-                              const pct = precioSinIva > 0 ? ((precioSinIva - (item.costo ?? 0)) / precioSinIva) * 100 : 0;
-                              const isNegMargin = pct < 0;
-                              const marginColor = isNegMargin ? colors.danger : pct < 20 ? colors.warning : colors.success;
-
-                              return (
-                                <View style={[styles.deltaBadge, { backgroundColor: marginColor + '22', borderColor: marginColor + '55' }]}>
-                                  <Text style={[styles.deltaText, { color: marginColor }]} numberOfLines={1} adjustsFontSizeToFit>
-                                    {isNegMargin ? '' : '+'}{pct.toFixed(1)}%
-                                  </Text>
-                                </View>
-                              );
-                            })()}
-                          </View>
-                        </View>
-                      )}
                     </View>
-                  )}
+
+                    {/* Cost Column */}
+                    <View style={{ flex: 1.2, marginRight: 8 }}>
+                      <Text style={[styles.qtyLabel, { color: colors.textMuted }]}>COSTO ($)</Text>
+                      <View style={[styles.qtyValueWrapper, { justifyContent: 'flex-start', marginTop: 4 }]}>
+                        <TextInput
+                          style={[
+                            styles.qtyEdit, 
+                            { 
+                              color: colors.text, 
+                              borderColor: colors.border, 
+                              backgroundColor: colors.surfaceAlt,
+                              width: 80,
+                              flex: 1,
+                              textAlign: 'center',
+                              paddingVertical: 4
+                            }
+                          ]}
+                          keyboardType="numeric"
+                          value={item.costo !== undefined && item.costo !== null ? String(item.costo) : ''}
+                          placeholder="0.00"
+                          placeholderTextColor={colors.textDim}
+                          onChangeText={v => {
+                            const n = parseFloat(v);
+                            if (!isNaN(n) && n >= 0) {
+                              updateItem(item.codigo_producto, { costo: n });
+                            } else if (v === '') {
+                              updateItem(item.codigo_producto, { costo: null });
+                            }
+                          }}
+                          selectTextOnFocus
+                        />
+                      </View>
+                    </View>
+
+                    {/* Margin Column */}
+                    <View style={[styles.qtyColumn, { justifyContent: 'center' }]}>
+                      <Text style={[styles.qtyLabel, { color: colors.textMuted, textAlign: 'right' }]}>MARGEN</Text>
+                      <View style={[styles.qtyValueWrapper, { justifyContent: 'flex-end', marginTop: 4 }]}>
+                        {(() => {
+                          const priceToUse = item.nuevo_precio !== undefined && item.nuevo_precio !== null ? item.nuevo_precio : item.precio_actual;
+                          const precioSinIva = (priceToUse ?? 0) / 1.16;
+                          const currentCosto = item.costo ?? 0;
+                          const pct = precioSinIva > 0 ? ((precioSinIva - currentCosto) / precioSinIva) * 100 : 0;
+                          const isNegMargin = pct < 0;
+                          const marginColor = isNegMargin ? colors.danger : pct < 20 ? colors.warning : colors.success;
+
+                          return (
+                            <View style={[styles.deltaBadge, { backgroundColor: marginColor + '22', borderColor: marginColor + '55' }]}>
+                              <Text style={[styles.deltaText, { color: marginColor }]} numberOfLines={1} adjustsFontSizeToFit>
+                                {isNegMargin ? '' : '+'}{pct.toFixed(1)}%
+                              </Text>
+                            </View>
+                          );
+                        })()}
+                      </View>
+                    </View>
+                  </View>
 
                   <TextInput
                     style={[styles.notaInput, { color: colors.text, borderColor: colors.border }]}
