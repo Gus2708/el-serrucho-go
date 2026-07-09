@@ -32,6 +32,7 @@ export default function ProductoDetail() {
   const [adjustmentNote, setAdjustmentNote] = useState('');
   const [showPriceSheet, setShowPriceSheet] = useState(false);
   const [newPrice, setNewPrice] = useState('');
+  const [newCost, setNewCost] = useState('');
   const [isSavingPrice, setIsSavingPrice] = useState(false);
 
   const { data: movimientos, isLoading: isLoadingMovs } = useMovimientosProducto(id);
@@ -616,7 +617,7 @@ export default function ProductoDetail() {
           </KeyboardAvoidingView>
         </Modal>
 
-        {/* Add to order sheet (Price Adjustment) */}
+        {/* Add to order sheet (Price/Cost Adjustment) */}
         <Modal
           visible={showPriceSheet}
           transparent
@@ -655,37 +656,80 @@ export default function ProductoDetail() {
                 <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
               </View>
 
-              <Text style={[styles.sheetTitle, { color: colors.text }]}>
-                Ajustar precio
-              </Text>
-              <Text style={[styles.sheetSub, { color: colors.textMuted }]} numberOfLines={1}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <Text style={{ fontSize: scaleFont(20), fontFamily: 'JetBrainsMono_700Bold', color: colors.text }}>
+                  Ajustar precio y costo
+                </Text>
+                <Pressable
+                  style={({ pressed }) => [
+                    {
+                      padding: 8,
+                      borderRadius: 10,
+                      backgroundColor: colors.surfaceAlt,
+                      borderWidth: 0.5,
+                      borderColor: colors.border
+                    },
+                    pressed && { opacity: 0.7 }
+                  ]}
+                  onPress={() => {
+                    setNewPrice('');
+                    setNewCost('');
+                    setAdjustmentNote('');
+                    setErrorMsg(null);
+                    notify('Restablecido', 'Valores devueltos al original');
+                  }}
+                >
+                  <Feather name="refresh-cw" size={14} color={colors.primary} />
+                </Pressable>
+              </View>
+
+              <Text style={{ fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium', color: colors.textMuted }} numberOfLines={1}>
                 {producto.descripcion}
               </Text>
 
               {errorMsg && (
-                <View style={{ backgroundColor: colors.danger + '22', padding: 8, borderRadius: 8, marginBottom: 8 }}>
+                <View style={{ backgroundColor: colors.danger + '22', padding: 8, borderRadius: 8, marginVertical: 8 }}>
                   <Text style={{ color: colors.danger, fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold', textAlign: 'center' }}>
                     {errorMsg}
                   </Text>
                 </View>
               )}
 
-              <Text style={[styles.sheetLabel, { color: colors.textMuted }]}>
-                Actual: {formatUSD(producto.precio_venta)} (con IVA)  ·  Nuevo precio:
-              </Text>
+              <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+                {/* Price Input Column */}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold', color: colors.textMuted, marginBottom: 6 }}>
+                    Nuevo precio ($ con IVA)
+                  </Text>
+                  <View style={[styles.qtyWrap, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, height: 48 }]}>
+                    <TextInput
+                      style={[styles.qtyInput, { color: colors.text, fontSize: scaleFont(15) }]}
+                      keyboardType="numeric"
+                      value={newPrice}
+                      onChangeText={setNewPrice}
+                      placeholder={producto.precio_venta !== undefined && producto.precio_venta !== null ? producto.precio_venta.toFixed(2) : '0.00'}
+                      placeholderTextColor={colors.textDim}
+                      selectTextOnFocus
+                    />
+                  </View>
+                </View>
 
-              <View style={styles.inputContainer}>
-                <View style={[styles.qtyWrap, { flex: 1, backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
-                  <TextInput
-                    style={[styles.qtyInput, { color: colors.text }]}
-                    keyboardType="numeric"
-                    value={newPrice}
-                    onChangeText={setNewPrice}
-                    placeholder="0.00"
-                    placeholderTextColor={colors.textDim}
-                    selectTextOnFocus
-                    autoFocus
-                  />
+                {/* Cost Input Column */}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold', color: colors.textMuted, marginBottom: 6 }}>
+                    Nuevo costo ($)
+                  </Text>
+                  <View style={[styles.qtyWrap, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, height: 48 }]}>
+                    <TextInput
+                      style={[styles.qtyInput, { color: colors.text, fontSize: scaleFont(15) }]}
+                      keyboardType="numeric"
+                      value={newCost}
+                      onChangeText={setNewCost}
+                      placeholder={producto.costo !== undefined && producto.costo !== null ? producto.costo.toFixed(2) : '0.00'}
+                      placeholderTextColor={colors.textDim}
+                      selectTextOnFocus
+                    />
+                  </View>
                 </View>
               </View>
 
@@ -693,26 +737,30 @@ export default function ProductoDetail() {
               {(() => {
                 const parsedPrice = parseFloat(newPrice);
                 const priceToUse = isNaN(parsedPrice) ? producto.precio_venta : parsedPrice;
+                
+                const parsedCost = parseFloat(newCost);
+                const costToUse = isNaN(parsedCost) ? producto.costo : parsedCost;
+
                 const precioSinIva = priceToUse / 1.16;
-                const pct = producto.costo > 0 ? ((precioSinIva - producto.costo) / precioSinIva) * 100 : 0;
+                const pct = precioSinIva > 0 ? ((precioSinIva - costToUse) / precioSinIva) * 100 : 0;
                 const isNeg = pct < 0;
                 const barColor = isNeg ? colors.danger : pct < 20 ? colors.warning : colors.success;
 
                 return (
-                  <View style={styles.previewContainer}>
-                    <Text style={[styles.previewLabel, { color: colors.textMuted }]}>Margen estimado: </Text>
-                    <Text style={[styles.previewValue, { color: barColor }]}>
+                  <View style={[styles.previewContainer, { marginTop: 12, paddingVertical: 10 }]}>
+                    <Text style={{ fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium', color: colors.textMuted }}>Margen estimado: </Text>
+                    <Text style={{ fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', color: barColor }}>
                       {isNeg ? '-' : ''}{Math.abs(pct).toFixed(1)}%
                     </Text>
                   </View>
                 );
               })()}
 
-              <Text style={[styles.sheetLabel, { color: colors.textMuted, marginTop: 12 }]}>
+              <Text style={{ fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold', color: colors.textMuted, marginTop: 12, marginBottom: 6 }}>
                 Nota / Observación (opcional):
               </Text>
               <TextInput
-                style={[styles.noteInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                style={[styles.noteInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt, fontSize: scaleFont(13), paddingVertical: 10 }]}
                 placeholder="Ej. Cambio de tarifa, actualización..."
                 placeholderTextColor={colors.textDim}
                 value={adjustmentNote}
@@ -721,7 +769,7 @@ export default function ProductoDetail() {
                 returnKeyType="done"
               />
 
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
                 {/* Agregar al Borrador */}
                 <Pressable
                   style={({ pressed }) => [
@@ -738,13 +786,15 @@ export default function ProductoDetail() {
                     pressed && { opacity: 0.7 }
                   ]}
                   onPress={() => {
-                    const inputVal = parseFloat(newPrice);
-                    if (isNaN(inputVal)) {
+                    const finalPrice = newPrice === '' ? producto.precio_venta : parseFloat(newPrice);
+                    const finalCost = newCost === '' ? producto.costo : parseFloat(newCost);
+
+                    if (isNaN(finalPrice) || finalPrice < 0) {
                       setErrorMsg('Ingresa un precio válido');
                       return;
                     }
-                    if (inputVal < 0) {
-                      setErrorMsg('El precio no puede ser negativo');
+                    if (isNaN(finalCost) || finalCost < 0) {
+                      setErrorMsg('Ingresa un costo válido');
                       return;
                     }
                     setErrorMsg(null);
@@ -755,18 +805,19 @@ export default function ProductoDetail() {
                       existencia_actual: producto.existencia,
                       nueva_existencia: producto.existencia, // default: keep same
                       precio_actual: producto.precio_venta,
-                      nuevo_precio: inputVal,
-                      nota: adjustmentNote.trim() || 'Ajuste de precio',
-                      costo: producto.costo,
+                      nuevo_precio: finalPrice,
+                      costo: finalCost,
+                      nota: adjustmentNote.trim() || 'Ajuste de precio/costo',
                     });
 
                     notify('Éxito', 'Agregado al borrador de Ajustes');
                     setAdjustmentNote('');
                     setNewPrice('');
+                    setNewCost('');
                     setShowPriceSheet(false);
                   }}
                 >
-                  <Text style={{ fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', color: colors.primary }}>
+                  <Text style={{ fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', color: colors.primary }}>
                     Al Borrador
                   </Text>
                 </Pressable>
@@ -788,13 +839,15 @@ export default function ProductoDetail() {
                   onPress={async () => {
                     if (isSavingPrice) return;
 
-                    const inputVal = parseFloat(newPrice);
-                    if (isNaN(inputVal)) {
+                    const finalPrice = newPrice === '' ? producto.precio_venta : parseFloat(newPrice);
+                    const finalCost = newCost === '' ? producto.costo : parseFloat(newCost);
+
+                    if (isNaN(finalPrice) || finalPrice < 0) {
                       setErrorMsg('Ingresa un precio válido');
                       return;
                     }
-                    if (inputVal < 0) {
-                      setErrorMsg('El precio no puede ser negativo');
+                    if (isNaN(finalCost) || finalCost < 0) {
+                      setErrorMsg('Ingresa un costo válido');
                       return;
                     }
 
@@ -805,7 +858,7 @@ export default function ProductoDetail() {
                       const { data: { user } } = await supabase.auth.getUser();
                       if (!user) throw new Error('Usuario no autenticado');
 
-                      const noteText = adjustmentNote.trim() || 'Ajuste precio rápido';
+                      const noteText = adjustmentNote.trim() || 'Ajuste precio/costo rápido';
 
                       const { data: orden, error: ordenError } = await supabase
                         .from('ordenes_cambio')
@@ -824,7 +877,8 @@ export default function ProductoDetail() {
                           existencia_actual: producto.existencia,
                           nueva_existencia: producto.existencia, // Keep same
                           precio_actual: producto.precio_venta,
-                          nuevo_precio: inputVal,
+                          nuevo_precio: finalPrice,
+                          costo: finalCost,
                           nota: noteText,
                         });
 
@@ -843,7 +897,8 @@ export default function ProductoDetail() {
                         existencia_actual: producto.existencia,
                         nueva_existencia: producto.existencia,
                         precio_actual: producto.precio_venta,
-                        nuevo_precio: inputVal,
+                        nuevo_precio: finalPrice,
+                        costo: finalCost,
                         nota: noteText,
                       };
                       const html = buildPdfHtml([draftItem], noteText, orden.id, creadoPor);
@@ -867,17 +922,18 @@ export default function ProductoDetail() {
 
                       await supabase.from('comandos_remotos').insert([{ comando: 'sync_inventory', status: 'pendiente' }]);
 
-                      notify('Éxito', 'Ajuste de precio guardado. Sincronizando...');
+                      notify('Éxito', 'Ajuste de precio/costo guardado.');
                       queryClient.invalidateQueries({ queryKey: ['producto', id] });
                       queryClient.invalidateQueries({ queryKey: ['movimientos-producto', id] });
                       queryClient.invalidateQueries({ queryKey: ['sync-status'] });
 
                       setAdjustmentNote('');
                       setNewPrice('');
+                      setNewCost('');
                       setShowPriceSheet(false);
                     } catch (e: any) {
                       console.error(e);
-                      setErrorMsg(e.message ?? 'Error al guardar el ajuste de precio');
+                      setErrorMsg(e.message ?? 'Error al guardar el ajuste de precio/costo');
                     } finally {
                       setIsSavingPrice(false);
                     }
@@ -886,7 +942,7 @@ export default function ProductoDetail() {
                   {isSavingPrice ? (
                     <ActivityIndicator color={colors.onPrimary} size="small" />
                   ) : (
-                    <Text style={{ fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', color: colors.onPrimary }}>
+                    <Text style={{ fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', color: colors.onPrimary }}>
                       Aplicar Ahora
                     </Text>
                   )}
