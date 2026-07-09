@@ -83,20 +83,25 @@ export default function ProductoDetail() {
       toValue: screenHeight,
       duration: 200,
       useNativeDriver: Platform.OS !== 'web',
-    }).start(() => setShowAddSheet(false));
+    }).start(() => {
+      setShowAddSheet(false);
+      setShowPriceSheet(false);
+    });
   };
 
   // Reset animation when sheet opens
   useEffect(() => {
-    if (showAddSheet) {
+    if (showAddSheet || showPriceSheet) {
       Animated.spring(panY, {
         toValue: 0,
         useNativeDriver: Platform.OS !== 'web',
         tension: 40,
         friction: 8,
       }).start();
+    } else {
+      panY.setValue(screenHeight);
     }
-  }, [showAddSheet]);
+  }, [showAddSheet, showPriceSheet]);
 
   const panResponder = useRef(
     PanResponder.create({
