@@ -23,6 +23,9 @@ import { supabase, Producto } from '../lib/supabase';
 import { notify } from '../lib/notify';
 import { MarginWarningBadge } from './MarginWarningBadge';
 
+import { usePresupuestoConfig } from '../hooks/usePresupuestoConfig';
+import { useTazas } from '../hooks/useTazas';
+
 /** Editable budget line held in local modal state. */
 type EditItem = {
   rowId?: number;            // existing presupuestos_detalle.id (absent for new lines)
@@ -54,14 +57,21 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
   const { data, isLoading } = usePresupuestoWithDetails(presupuestoId);
   const { mutateAsync, isPending } = useActualizarPresupuesto();
 
+  const { data: config } = usePresupuestoConfig();
+  const { data: tasa } = useTazas();
+  const markup_porcentaje = config?.markup_porcentaje ?? 30;
+  const bcv = tasa?.bcv_usd ?? 0;
+
   const [items, setItems] = useState<EditItem[]>([]);
   const [removedIds, setRemovedIds] = useState<number[]>([]);
   const [nota, setNota] = useState('');
   const [priceWarnings, setPriceWarnings] = useState<Record<string, string | null>>({});
   const [addOpen, setAddOpen] = useState(false);
+  const [enBs, setEnBs] = useState(false);
+  const [tasaCambio, setTasaCambio] = useState<number | null>(null);
+  const [porcentajeRecargo, setPorcentajeRecargo] = useState<number | null>(null);
   const initedForId = useRef<number | null>(null);
 
-  // ── Load budget into editable state (once per opened budget) ────────────────
   useEffect(() => {
     if (!data || !presupuestoId) return;
     if (data.header.id !== presupuestoId) return;
@@ -89,16 +99,22 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
       }
       if (cancelled) return;
 
+      const savedEnBs = !!data.header.en_bs;
+      const savedRecargo = Number(data.header.porcentaje_recargo || 30);
+
       const mapped: EditItem[] = detail.map((d) => {
         const precio = Number(d.precio_unitario) || 0;
+        const basePrecio = savedEnBs 
+          ? Number((precio / (1 + savedRecargo / 100)).toFixed(2))
+          : precio;
         return {
           rowId: d.id,
           codigo_producto: d.codigo_producto,
           descripcion: d.descripcion,
           cantidad: Number(d.cantidad) || 0,
-          precio_unitario: precio,
+          precio_unitario: basePrecio,
           costo: prodMap[d.codigo_producto]?.costo ?? 0,
-          precioVentaOriginal: prodMap[d.codigo_producto]?.precio_venta ?? precio,
+          precioVentaOriginal: prodMap[d.codigo_producto]?.precio_venta ?? basePrecio,
         };
       });
 
@@ -106,6 +122,9 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
       setNota(data.header.nota ?? '');
       setRemovedIds([]);
       setPriceWarnings({});
+      setEnBs(savedEnBs);
+      setTasaCambio(data.header.tasa_cambio ? Number(data.header.tasa_cambio) : null);
+      setPorcentajeRecargo(data.header.porcentaje_recargo ? Number(data.header.porcentaje_recargo) : null);
       initedForId.current = presupuestoId;
     })();
 
@@ -120,6 +139,9 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
     setRemovedIds([]);
     setPriceWarnings({});
     setAddOpen(false);
+    setEnBs(false);
+    setTasaCambio(null);
+    setPorcentajeRecargo(null);
     onClose();
   }
 
@@ -147,7 +169,7 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
     const isApplied = item.precio_unitario !== item.precioVentaOriginal;
     const newPrice = isApplied
       ? item.precioVentaOriginal
-      : parseFloat((item.precioVentaOriginal * 1.4).toFixed(2));
+      : parseFloat((item.precioVentaOriginal * (1 + markup_porcentaje / 100)).toFixed(2));
     setPrice(item.codigo_producto, newPrice);
   }
 
@@ -202,7 +224,14 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
     });
   }
 
-  const total = items.reduce((acc, it) => acc + it.cantidad * it.precio_unitario, 0);
+  const getDisplayUsdPrice = (precio: number, originalPrecio: number) => {
+    if (!enBs) return precio;
+    const isMarkupApplied = precio !== originalPrecio;
+    if (isMarkupApplied) return precio;
+    return Number((precio * (1 + (porcentajeRecargo || 30) / 100)).toFixed(2));
+  };
+
+  const total = items.reduce((acc, it) => acc + it.cantidad * getDisplayUsdPrice(it.precio_unitario, it.precioVentaOriginal), 0);
   const clienteNombre = getClienteNombre(data?.header);
 
   async function handleSave(): Promise<void> {
@@ -212,6 +241,14 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
       return;
     }
     try {
+      const getFinalPrice = (it: EditItem) => {
+        if (!enBs) return it.precio_unitario;
+        const isMarkupApplied = it.precio_unitario !== it.precioVentaOriginal;
+        if (isMarkupApplied) return it.precio_unitario;
+        const surcharge = 1 + (porcentajeRecargo || 30) / 100;
+        return Number((it.precio_unitario * surcharge).toFixed(2));
+      };
+
       await mutateAsync({
         presupuestoId,
         items: items.map((it) => ({
@@ -219,10 +256,13 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
           codigo_producto: it.codigo_producto,
           descripcion: it.descripcion,
           cantidad: it.cantidad,
-          precio_unitario: it.precio_unitario,
+          precio_unitario: getFinalPrice(it),
         })),
         removedIds,
         nota,
+        enBs,
+        tasaCambio,
+        porcentajeRecargo,
       });
       notify('Guardado', 'El presupuesto se actualizó correctamente.');
       handleClose();
@@ -283,6 +323,45 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                 <Text style={[styles.addBtnText, { color: colors.primary }]}>Agregar productos</Text>
               </Pressable>
 
+              {items.length > 0 && (
+                <View style={[styles.currencyToggleContainer, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}>
+                  <Text style={[styles.currencyLabel, { color: colors.textMuted }]}>
+                    MONEDA DEL PRESUPUESTO
+                  </Text>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.currencyToggleBtn,
+                      enBs 
+                        ? { backgroundColor: colors.primary, borderColor: colors.primary } 
+                        : { backgroundColor: colors.surface, borderColor: colors.border },
+                      pressed && { opacity: 0.8 }
+                    ]}
+                    onPress={() => {
+                      if (enBs) {
+                        setEnBs(false);
+                        setTasaCambio(null);
+                        setPorcentajeRecargo(null);
+                      } else {
+                        setEnBs(true);
+                        setTasaCambio(bcv);
+                        setPorcentajeRecargo(markup_porcentaje);
+                      }
+                    }}
+                  >
+                    <Text 
+                      style={[
+                        styles.currencyToggleText, 
+                        { color: enBs ? colors.onPrimary : colors.text }
+                      ]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                    >
+                      {enBs ? `Bolívares (Bs. @ ${bcv.toFixed(2)})` : 'Dólares (USD)'}
+                    </Text>
+                  </Pressable>
+                </View>
+              )}
+
               {items.length === 0 ? (
                 <View style={styles.empty}>
                   <Feather name="file-text" size={36} color={colors.textDim} />
@@ -293,7 +372,8 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                 </View>
               ) : (
                 items.map((item) => {
-                  const subtotal = item.cantidad * item.precio_unitario;
+                  const displaySubtotalUsd = item.cantidad * getDisplayUsdPrice(item.precio_unitario, item.precioVentaOriginal);
+                  const displaySubtotalBs = displaySubtotalUsd * bcv;
                   const isMarkup = item.precio_unitario !== item.precioVentaOriginal;
                   return (
                     <View
@@ -401,10 +481,15 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                                   isMarkup && { fontSize: scaleFont(16) },
                                 ]}
                               >
-                                {isMarkup ? '↺' : '+40%'}
+                                {isMarkup ? '↺' : `+${markup_porcentaje}%`}
                               </Text>
                             </Pressable>
                           </View>
+                          {enBs && bcv > 0 && (
+                            <Text style={{ fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_400Regular', color: colors.textMuted, marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>
+                              Final: ${getDisplayUsdPrice(item.precio_unitario, item.precioVentaOriginal).toFixed(2)} — Bs. ${(getDisplayUsdPrice(item.precio_unitario, item.precioVentaOriginal) * bcv).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </Text>
+                          )}
                         </View>
                       </View>
 
@@ -414,7 +499,14 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
 
                       <View style={styles.subtotalRow}>
                         <Text style={[styles.controlLabel, { color: colors.textMuted }]}>SUBTOTAL</Text>
-                        <Text style={[styles.subtotalVal, { color: colors.text }]}>{formatUSD(subtotal)}</Text>
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={[styles.subtotalVal, { color: colors.text }]}>{formatUSD(displaySubtotalUsd)}</Text>
+                          {enBs && bcv > 0 && (
+                            <Text style={{ fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold', color: colors.textMuted, marginTop: 2 }} numberOfLines={1} adjustsFontSizeToFit>
+                              Bs. {displaySubtotalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </Text>
+                          )}
+                        </View>
                       </View>
                     </View>
                   );
@@ -455,6 +547,11 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                 <Text style={[styles.footerTotal, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
                   {formatUSD(total)}
                 </Text>
+                {enBs && bcv > 0 && (
+                  <Text style={{ fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold', color: colors.primary, marginTop: 2 }} numberOfLines={1} adjustsFontSizeToFit>
+                    Bs. {(total * bcv).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                )}
               </View>
               <Pressable
                 style={({ pressed }) => [
@@ -785,4 +882,34 @@ const styles = StyleSheet.create({
   pickActionBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 8, borderWidth: 1 },
   pickQtyText: { width: 30, textAlign: 'center', fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_700Bold' },
   pickEmpty: { textAlign: 'center', marginTop: 50, fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_400Regular' },
+
+  currencyToggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 12,
+    borderWidth: 0.5,
+  },
+  currencyLabel: {
+    fontSize: scaleFont(11),
+    fontFamily: 'JetBrainsMono_700Bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  currencyToggleBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  currencyToggleText: {
+    fontSize: scaleFont(11),
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
 });

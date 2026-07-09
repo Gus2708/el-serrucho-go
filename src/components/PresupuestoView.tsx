@@ -10,14 +10,35 @@ import { supabase } from '../lib/supabase';
 import { notify, confirm } from '../lib/notify';
 import { printHtml } from '../utils/pdfGenerator';
 import { MarginWarningBadge } from './MarginWarningBadge';
+import { usePresupuestoConfig } from '../hooks/usePresupuestoConfig';
+import { useTazas } from '../hooks/useTazas';
 
 export default function PresupuestoView({ router }: { router: any }) {
   const { colors, formatUSD } = useTheme();
   const insets = useSafeAreaInsets();
   const { isDesktop } = useDeviceSize();
-  const { items, cliente, nota, removeItem, updateItemQuantity, updateItemPrice, setNota, reset, submit } = usePresupuestoStore();
+  const { 
+    items, 
+    cliente, 
+    nota, 
+    removeItem, 
+    updateItemQuantity, 
+    updateItemPrice, 
+    setNota, 
+    reset, 
+    submit,
+    enBs,
+    tasaCambio,
+    porcentajeRecargo,
+    setEnBs
+  } = usePresupuestoStore();
   const [isLoading, setIsLoading] = useState(false);
   const [priceWarnings, setPriceWarnings] = useState<Record<string, string | null>>({});
+
+  const { data: config } = usePresupuestoConfig();
+  const { data: tasa } = useTazas();
+  const markup_porcentaje = config?.markup_porcentaje ?? 30;
+  const bcv = tasa?.bcv_usd ?? 0;
 
   const [session, setSession] = useState<string | null>(null);
 
@@ -27,7 +48,14 @@ export default function PresupuestoView({ router }: { router: any }) {
     return data.user?.id ?? '';
   }
 
-  const total = items.reduce((acc, item) => acc + item.cantidad * item.precio_unitario, 0);
+  const getDisplayUsdPrice = (precio: number, originalPrecio: number) => {
+    if (!enBs) return precio;
+    const isMarkupApplied = precio !== originalPrecio;
+    if (isMarkupApplied) return precio;
+    return Number((precio * (1 + markup_porcentaje / 100)).toFixed(2));
+  };
+
+  const total = items.reduce((acc, item) => acc + item.cantidad * getDisplayUsdPrice(item.precio_unitario, item.producto.precio_venta), 0);
 
   async function performSubmit() {
     setIsLoading(true);
@@ -54,9 +82,12 @@ export default function PresupuestoView({ router }: { router: any }) {
 
   function handleSubmit() {
     if (items.length === 0) return;
+    const totalLabel = enBs && tasaCambio
+      ? `${formatUSD(total)} / Bs. ${(total * tasaCambio).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : formatUSD(total);
     confirm({
       title:       'Emitir presupuesto',
-      message:     `Se creará un presupuesto por ${formatUSD(total)} con ${items.length} ítem${items.length > 1 ? 's' : ''}.`,
+      message:     `Se creará un presupuesto por ${totalLabel} con ${items.length} ítem${items.length > 1 ? 's' : ''}.`,
       confirmText: 'Emitir',
       onConfirm:   performSubmit,
     });
@@ -99,6 +130,41 @@ export default function PresupuestoView({ router }: { router: any }) {
           </Pressable>
         </View>
 
+        {items.length > 0 && (
+          <View style={[styles.currencyToggleContainer, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}>
+            <Text style={[styles.currencyLabel, { color: colors.textMuted }]}>
+              MONEDA DEL PRESUPUESTO
+            </Text>
+            <Pressable
+              style={({ pressed }) => [
+                styles.currencyToggleBtn,
+                enBs 
+                  ? { backgroundColor: colors.primary, borderColor: colors.primary } 
+                  : { backgroundColor: colors.surface, borderColor: colors.border },
+                pressed && { opacity: 0.8 }
+              ]}
+              onPress={() => {
+                if (enBs) {
+                  setEnBs(false, null, null);
+                } else {
+                  setEnBs(true, bcv, markup_porcentaje);
+                }
+              }}
+            >
+              <Text 
+                style={[
+                  styles.currencyToggleText, 
+                  { color: enBs ? colors.onPrimary : colors.text }
+                ]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {enBs ? `Bolívares (Bs. @ ${bcv.toFixed(2)})` : 'Dólares (USD)'}
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
         {items.length === 0 ? (
           <View style={styles.empty}>
             <Feather name="file-text" size={36} color={colors.textDim} />
@@ -110,7 +176,8 @@ export default function PresupuestoView({ router }: { router: any }) {
         ) : (
           <>
             {items.map(item => {
-              const subtotal = item.cantidad * item.precio_unitario;
+              const displaySubtotalUsd = item.cantidad * getDisplayUsdPrice(item.precio_unitario, item.producto.precio_venta);
+              const displaySubtotalBs = displaySubtotalUsd * bcv;
               return (
                 <View
                   key={item.producto.codigo_interno}
@@ -224,8 +291,8 @@ export default function PresupuestoView({ router }: { router: any }) {
                                   const w = updateItemPrice(item.producto.codigo_interno, originalPrice);
                                   setPriceWarnings(prev => ({ ...prev, [item.producto.codigo_interno]: w }));
                                 } else {
-                                  // Apply +40%
-                                  const newPrice = parseFloat((originalPrice * 1.4).toFixed(2));
+                                  // Apply dynamic markup
+                                  const newPrice = parseFloat((originalPrice * (1 + markup_porcentaje / 100)).toFixed(2));
                                   const w = updateItemPrice(item.producto.codigo_interno, newPrice);
                                   setPriceWarnings(prev => ({ ...prev, [item.producto.codigo_interno]: w }));
                                 }
@@ -244,12 +311,17 @@ export default function PresupuestoView({ router }: { router: any }) {
                                 { color: isMarkupApplied ? colors.success : colors.primary },
                                 isMarkupApplied && { fontSize: scaleFont(16) }
                               ]}>
-                                {isMarkupApplied ? '↺' : '+40%'}
+                                {isMarkupApplied ? '↺' : `+${markup_porcentaje}%`}
                               </Text>
                             </Pressable>
                           );
                         })()}
                       </View>
+                      {enBs && bcv > 0 && (
+                        <Text style={{ fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_400Regular', color: colors.textMuted, marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>
+                          Final: ${getDisplayUsdPrice(item.precio_unitario, item.producto.precio_venta).toFixed(2)} — Bs. ${(getDisplayUsdPrice(item.precio_unitario, item.producto.precio_venta) * bcv).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </Text>
+                      )}
                     </View>
                   </View>
 
@@ -264,7 +336,14 @@ export default function PresupuestoView({ router }: { router: any }) {
                   {/* Row 2: Subtotal aligned right */}
                   <View style={styles.subtotalRow}>
                     <Text style={[styles.controlLabel, { color: colors.textMuted }]}>SUBTOTAL</Text>
-                    <Text style={[styles.subtotalVal, { color: colors.text }]}>{formatUSD(subtotal)}</Text>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={[styles.subtotalVal, { color: colors.text }]}>{formatUSD(displaySubtotalUsd)}</Text>
+                      {enBs && bcv > 0 && (
+                        <Text style={{ fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold', color: colors.textMuted, marginTop: 2 }} numberOfLines={1} adjustsFontSizeToFit>
+                          Bs. {displaySubtotalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </Text>
+                      )}
+                    </View>
                   </View>
                 </View>
               );
@@ -305,7 +384,12 @@ export default function PresupuestoView({ router }: { router: any }) {
             <Text style={[styles.submitCount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
               Total: {formatUSD(total)}
             </Text>
-            <Pressable onPress={reset} style={({ pressed }) => pressed && { opacity: 0.7 }}>
+            {enBs && bcv > 0 && (
+              <Text style={{ fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold', color: colors.primary, marginTop: 2 }} numberOfLines={1} adjustsFontSizeToFit>
+                Bs. {(total * bcv).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </Text>
+            )}
+            <Pressable onPress={reset} style={({ pressed }) => [pressed && { opacity: 0.7 }, { marginTop: 4 }]} hitSlop={6}>
               <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>Limpiar presupuesto</Text>
             </Pressable>
           </View>
@@ -531,5 +615,34 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 16,
     marginTop: 8,
+  },
+  currencyToggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 12,
+    borderWidth: 0.5,
+  },
+  currencyLabel: {
+    fontSize: scaleFont(11),
+    fontFamily: 'JetBrainsMono_700Bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  currencyToggleBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  currencyToggleText: {
+    fontSize: scaleFont(11),
+    fontFamily: 'JetBrainsMono_700Bold',
   },
 });

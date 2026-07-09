@@ -18,6 +18,9 @@ export type ActualizarPresupuestoArgs = {
   items: EditItemPayload[];
   removedIds: number[];
   nota: string | null;
+  enBs?: boolean;
+  tasaCambio?: number | null;
+  porcentajeRecargo?: number | null;
 };
 
 async function actualizarPresupuesto({
@@ -25,6 +28,9 @@ async function actualizarPresupuesto({
   items,
   removedIds,
   nota,
+  enBs,
+  tasaCambio,
+  porcentajeRecargo,
 }: ActualizarPresupuestoArgs): Promise<{ presupuestoId: number; totalUsd: number }> {
   if (items.length === 0) {
     throw new Error('El presupuesto debe tener al menos un producto');
@@ -76,7 +82,14 @@ async function actualizarPresupuesto({
   //    from the updated data the next time it is requested.
   const { error: headerErr } = await supabase
     .from('presupuestos')
-    .update({ total_usd: totalUsd, nota: nota || null, pdf_url: null })
+    .update({ 
+      total_usd: totalUsd, 
+      nota: nota || null, 
+      pdf_url: null,
+      en_bs: enBs ?? false,
+      tasa_cambio: tasaCambio ?? null,
+      porcentaje_recargo: porcentajeRecargo ?? null
+    })
     .eq('id', presupuestoId);
   if (headerErr) throw headerErr;
 

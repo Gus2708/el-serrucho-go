@@ -104,14 +104,22 @@ export type OrdenCambioItem = {
 };
 
 export type Presupuesto = {
-  id:         number;
-  creado_por: string;
-  cliente_id: string | null;
-  total_usd:  number;
-  status:     'borrador' | 'emitido';
-  pdf_url:    string | null;
-  nota:       string | null;
-  creado_en:  string;
+  id:                 number;
+  creado_por:         string;
+  cliente_id:         string | null;
+  total_usd:          number;
+  status:             'borrador' | 'emitido';
+  pdf_url:            string | null;
+  nota:               string | null;
+  creado_en:          string;
+  en_bs:              boolean;
+  tasa_cambio?:       number | null;
+  porcentaje_recargo?: number | null;
+};
+
+export type PresupuestoConfig = {
+  id:                 number;
+  markup_porcentaje:  number;
 };
 
 export type PresupuestoDetalle = {

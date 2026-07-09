@@ -188,6 +188,30 @@ const SHARED_STYLES = `
     color: oklch(0.38 0.10 75);
   }
 
+  .warning-box {
+    background: oklch(0.96 0.015 25);
+    border: 1px solid oklch(0.88 0.03 25);
+    border-radius: 8px;
+    padding: var(--sp-4) var(--sp-5);
+    margin-top: var(--sp-6);
+    margin-bottom: var(--sp-6);
+    font-size: 13px;
+    color: oklch(0.40 0.12 25);
+    line-height: 1.6;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .warning-box strong {
+    font-weight: 700;
+    display: block;
+    margin-bottom: 4px;
+    font-size: 10px;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: oklch(0.45 0.14 25);
+  }
+
   /* ── Table ───────────────────────────────────── */
   table {
     width: 100%;
@@ -585,6 +609,9 @@ export function buildPresupuestoPdfHtml(
   nota: string,
   presupuestoId: number,
   creadoPor?: string,
+  enBs?: boolean,
+  tasaCambio?: number,
+  porcentajeRecargo?: number,
 ): string {
   const now = new Date().toLocaleString('es-VE');
 
@@ -593,6 +620,30 @@ export function buildPresupuestoPdfHtml(
     const desc = item.producto ? item.producto.descripcion : item.descripcion;
     const qty   = Number(item.cantidad) || 0;
     const price = Number(item.precio_unitario) || 0;
+    
+    if (enBs && tasaCambio) {
+      const priceBs = price * tasaCambio;
+      const subtotalBs = qty * price * tasaCambio;
+      return `
+        <tr>
+          <td class="col-code">${escHtml(code ?? '')}</td>
+          <td class="col-desc">${escHtml(desc ?? '')}</td>
+          <td class="col-num">${qty}</td>
+          <td class="col-money">
+            <div>$${price.toFixed(2)}</div>
+            <div style="font-size: 10px; color: var(--ink-muted); margin-top: 2px; font-weight: normal;">
+              Bs. ${priceBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </td>
+          <td class="col-money-bold">
+            <div>$${(qty * price).toFixed(2)}</div>
+            <div style="font-size: 10px; color: var(--ink-soft); margin-top: 2px; font-weight: normal;">
+              Bs. ${subtotalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </td>
+        </tr>`;
+    }
+
     return `
       <tr>
         <td class="col-code">${escHtml(code ?? '')}</td>
@@ -629,6 +680,7 @@ export function buildPresupuestoPdfHtml(
         <span class="meta-label">Fecha de Emisión</span>
         <span class="meta-value">${now}</span>
         ${creadoPor ? `<span class="meta-label" style="margin-top:4px;">Creado por</span><span class="meta-value">${creadoPor}</span>` : ''}
+        ${enBs && tasaCambio ? `<span class="meta-label" style="margin-top:4px;">Tasa BCV</span><span class="meta-value">${tasaCambio.toFixed(2)} Bs/$</span>` : ''}
       </div>`;
 
   const noteHtml = nota ? `
@@ -637,24 +689,59 @@ export function buildPresupuestoPdfHtml(
       ${nota}
     </div>` : '';
 
-  const tableHtml = `
-    <table>
-      <thead>
-        <tr>
-          <th>Código</th>
-          <th>Descripción</th>
-          <th style="text-align:center;">Cantidad</th>
-          <th style="text-align:right;">P. Unit</th>
-          <th style="text-align:right;">Subtotal</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-
-    <div class="total-section">
-      <span class="total-label">Total USD</span>
-      <span class="total-amount">$${totalUsd}</span>
-    </div>`;
+  let tableHtml = '';
+  if (enBs && tasaCambio) {
+    const totalBs = Number(totalUsd) * tasaCambio;
+    tableHtml = `
+      <table>
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Descripción</th>
+            <th style="text-align:center;">Cantidad</th>
+            <th style="text-align:right;">P. Unit</th>
+            <th style="text-align:right;">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+  
+      <div class="total-section-multi">
+        <div class="total-line">
+          <span class="total-label">Total USD</span>
+          <span class="total-amount">$${totalUsd}</span>
+        </div>
+        <div class="total-line-grand">
+          <span class="total-label-lg">Total Bs</span>
+          <span class="total-amount-lg">Bs. ${totalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+        </div>
+      </div>
+      
+      <div class="warning-box">
+        <strong>Validez y Tasa de Cambio</strong>
+        Presupuesto calculado a la tasa oficial del BCV de <strong>Bs. ${tasaCambio.toFixed(2)}</strong>. 
+        Si este presupuesto tiene más de 12 horas de haber sido emitido, los montos en Bolívares perderán validez. En ese caso, deberá solicitar a un empleado el recalculo del presupuesto con la tasa oficial BCV vigente en ese momento.
+      </div>`;
+  } else {
+    tableHtml = `
+      <table>
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Descripción</th>
+            <th style="text-align:center;">Cantidad</th>
+            <th style="text-align:right;">P. Unit</th>
+            <th style="text-align:right;">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+  
+      <div class="total-section">
+        <span class="total-label">Total USD</span>
+        <span class="total-amount">$${totalUsd}</span>
+      </div>`;
+  }
 
   const title = getPresupuestoFilename(cliente, presupuestoId).replace('.pdf', '');
 

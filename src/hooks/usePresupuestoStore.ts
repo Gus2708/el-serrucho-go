@@ -25,9 +25,13 @@ type PresupuestoStore = {
   cliente: Cliente | null;
   items: PresupuestoItem[];
   nota: string;
+  enBs: boolean;
+  tasaCambio: number | null;
+  porcentajeRecargo: number | null;
   
   setCliente: (cliente: Cliente | null) => void;
   setNota: (nota: string) => void;
+  setEnBs: (enBs: boolean, tasaCambio?: number | null, porcentajeRecargo?: number | null) => void;
   addItem: (producto: Producto, cantidad: number) => void;
   updateItemQuantity: (codigo_producto: string, cantidad: number) => void;
   updateItemPrice: (codigo_producto: string, precio: number) => string | null;
@@ -40,9 +44,13 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
   cliente: null,
   items: [],
   nota: '',
+  enBs: false,
+  tasaCambio: null,
+  porcentajeRecargo: null,
 
   setCliente: (cliente) => set({ cliente }),
   setNota: (nota) => set({ nota }),
+  setEnBs: (enBs, tasaCambio = null, porcentajeRecargo = null) => set({ enBs, tasaCambio, porcentajeRecargo }),
 
   addItem: (producto, cantidad) => {
     if (cantidad <= 0) return;
@@ -109,10 +117,10 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
     }));
   },
 
-  reset: () => set({ cliente: null, items: [], nota: '' }),
+  reset: () => set({ cliente: null, items: [], nota: '', enBs: false, tasaCambio: null, porcentajeRecargo: null }),
 
   submit: async () => {
-    const { cliente, items, nota } = get();
+    const { cliente, items, nota, enBs, tasaCambio, porcentajeRecargo } = get();
 
     if (items.length === 0) {
       throw new Error('No hay productos en el presupuesto');
@@ -132,7 +140,15 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
         .single();
       const creadoPor = profileData?.display_name || undefined;
 
-      const total_usd = items.reduce((acc, item) => acc + (item.cantidad * item.precio_unitario), 0);
+      const getFinalPrice = (item: PresupuestoItem) => {
+        if (!enBs) return item.precio_unitario;
+        const isMarkupApplied = item.precio_unitario !== item.producto.precio_venta;
+        if (isMarkupApplied) return item.precio_unitario;
+        const surcharge = 1 + (porcentajeRecargo || 0) / 100;
+        return Number((item.precio_unitario * surcharge).toFixed(2));
+      };
+
+      const total_usd = items.reduce((acc, item) => acc + (item.cantidad * getFinalPrice(item)), 0);
 
       // Insertar cabecera
       const { data: presupuesto, error: cabeceraError } = await supabase
@@ -142,7 +158,10 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
           cliente_id: cliente ? cliente.codigo_cliente : null,
           total_usd,
           status: 'emitido',
-          nota: nota || null
+          nota: nota || null,
+          en_bs: enBs,
+          tasa_cambio: tasaCambio,
+          porcentaje_recargo: porcentajeRecargo
         })
         .select()
         .single();
@@ -156,7 +175,7 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
         codigo_producto: item.producto.codigo_interno,
         descripcion: item.producto.descripcion,
         cantidad: item.cantidad,
-        precio_unitario: item.precio_unitario
+        precio_unitario: getFinalPrice(item)
       }));
 
       const { error: detalleError } = await supabase
@@ -166,7 +185,20 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
       if (detalleError) throw detalleError;
 
       // 3. Generate HTML
-      const html = buildPresupuestoPdfHtml(cliente, items, nota || '', presupuesto.id, creadoPor);
+      const pdfItems = items.map(item => ({
+        ...item,
+        precio_unitario: getFinalPrice(item)
+      }));
+      const html = buildPresupuestoPdfHtml(
+        cliente, 
+        pdfItems, 
+        nota || '', 
+        presupuesto.id, 
+        creadoPor,
+        enBs,
+        tasaCambio || undefined,
+        porcentajeRecargo || undefined
+      );
 
       if (Platform.OS === 'web') {
         // Web: return the html so the UI can decide how to handle the print/delivery

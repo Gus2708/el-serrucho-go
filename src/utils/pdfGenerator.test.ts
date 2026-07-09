@@ -46,6 +46,23 @@ describe('buildPresupuestoPdfHtml', () => {
     expect(html).toContain('<!DOCTYPE html>');
     expect(html).toContain('PRESUPUESTO');
   });
+
+  it('returns valid HTML in Bs mode', () => {
+    const item = {
+      codigo_producto: 'ABC-001',
+      descripcion: 'Tornillo',
+      cantidad: 2,
+      precio_unitario: 10,
+    };
+    const html = buildPresupuestoPdfHtml(null, [item], '', 1, undefined, true, 700, 30);
+    expect(html).toContain('<!DOCTYPE html>');
+    expect(html).toContain('PRESUPUESTO');
+    expect(html).toContain('Bs. 14.000,00'); // es-VE uses dot as thousands separator
+    expect(html).toContain('Tasa BCV');
+    expect(html).toContain('700.00');
+    expect(html).toContain('12 horas');
+    expect(html).toContain('solicitar a un empleado');
+  });
 });
 
 describe('getPresupuestoFilename and sanitizeFilename', () => {

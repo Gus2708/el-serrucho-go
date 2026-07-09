@@ -575,7 +575,16 @@ function HistorialView({ queryClient }: { queryClient: any }) {
             .single();
           creadoPorNombre = pData?.display_name || undefined;
         }
-        html = buildPresupuestoPdfHtml(clienteObj as any, items as any[], header.nota || '', header.id, creadoPorNombre);
+        html = buildPresupuestoPdfHtml(
+          clienteObj as any, 
+          items as any[], 
+          header.nota || '', 
+          header.id, 
+          creadoPorNombre,
+          header.en_bs,
+          header.tasa_cambio ? Number(header.tasa_cambio) : undefined,
+          header.porcentaje_recargo ? Number(header.porcentaje_recargo) : undefined
+        );
         friendlyName = getPresupuestoFilename(clienteObj as any, header.id);
       }
       
