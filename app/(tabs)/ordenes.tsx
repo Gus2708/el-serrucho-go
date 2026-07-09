@@ -233,8 +233,27 @@ function BorradorView({ router }: { router: any }) {
                     </View>
                   </View>
 
+                  {/* Note / Adjustment Title */}
+                  <TextInput
+                    style={[
+                      styles.notaInput,
+                      {
+                        color: colors.text,
+                        borderColor: colors.border,
+                        borderBottomWidth: 0,
+                        borderTopWidth: 0.5,
+                        marginTop: 10,
+                        paddingTop: 10,
+                      }
+                    ]}
+                    placeholder="Nota (opcional)…"
+                    placeholderTextColor={colors.textDim}
+                    value={item.nota}
+                    onChangeText={v => updateItem(item.codigo_producto, { nota: v })}
+                  />
+
                   {/* Price and Cost adjustment row */}
-                  <View style={[styles.itemBottom, { marginTop: 10, borderTopWidth: 0.5, borderColor: colors.border, paddingTop: 10 }]}>
+                  <View style={[styles.itemBottom, { marginTop: 8 }]}>
                     {/* Price Column */}
                     <View style={{ flex: 1.2, marginRight: 8 }}>
                       <Text style={[styles.qtyLabel, { color: colors.textMuted }]}>PRECIO ($)</Text>
@@ -326,14 +345,6 @@ function BorradorView({ router }: { router: any }) {
                       </View>
                     </View>
                   </View>
-
-                  <TextInput
-                    style={[styles.notaInput, { color: colors.text, borderColor: colors.border }]}
-                    placeholder="Nota (opcional)…"
-                    placeholderTextColor={colors.textDim}
-                    value={item.nota}
-                    onChangeText={v => updateItem(item.codigo_producto, { nota: v })}
-                  />
                 </View>
               );
             })}
