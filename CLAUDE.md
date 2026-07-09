@@ -112,7 +112,11 @@ anomalias              (id PK, codigo_producto, tipo, severidad, explicacion,
 ordenes_cambio         (id PK, creado_por, nota, status, pdf_url, creado_en)
 ordenes_cambio_items   (id PK, orden_id FK, codigo_producto, descripcion,
                         existencia_actual, nueva_existencia, delta GENERATED,
-                        nota)
+                        nota,
+                        backend_status,      -- write-back: pendiente|aplicando|completado|error
+                        backend_resultado, backend_intentos, backend_aplicado_en)
+                       -- write-back de stock a HybridLite: migraciones 018/019/020,
+                       -- contrato en docs/WRITEBACK-PIPELINE.md
 profiles               (id PK = auth.users.id, role: 'admin' | 'empleado',
                         email, display_name, updated_at)
 comandos_remotos       (id PK, comando, executed, created_at)

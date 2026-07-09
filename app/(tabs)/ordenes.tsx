@@ -1,4 +1,5 @@
 import { scaleFont } from '../../src/theme/responsive';
+import * as React from 'react';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
@@ -26,7 +27,7 @@ import { useTheme } from '../../src/theme/ThemeContext';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
-import { useOrdenesHistory } from '../../src/hooks/useOrdenesHistory';
+import { useOrdenesHistory, BackendResumen } from '../../src/hooks/useOrdenesHistory';
 import { useUserRole } from '../../src/hooks/useUserRole';
 import { supabase } from '../../src/lib/supabase';
 import { buildPdfHtml, buildPresupuestoPdfHtml, printHtml, getPresupuestoFilename } from '../../src/utils/pdfGenerator';
@@ -649,14 +650,17 @@ function HistorialView({ queryClient }: { queryClient: any }) {
                   <Text style={[styles.histId, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
                     {prefix}{String(o.id).padStart(4, '0')}
                   </Text>
-                  <View style={[
-                    styles.statusBadge,
-                    { backgroundColor: status === 'emitido' ? colors.success + '22' : colors.warning + '22',
-                      borderColor:     status === 'emitido' ? colors.success + '55' : colors.warning + '55' },
-                  ]}>
-                    <Text style={[styles.statusText, { color: status === 'emitido' ? colors.success : colors.warning }]} numberOfLines={1} adjustsFontSizeToFit>
-                      {status}
-                    </Text>
+                  <View style={styles.histBadgeGroup}>
+                    {!isPresupuesto ? <BackendBadge resumen={(o as any).backend_resumen} /> : null}
+                    <View style={[
+                      styles.statusBadge,
+                      { backgroundColor: status === 'emitido' ? colors.success + '22' : colors.warning + '22',
+                        borderColor:     status === 'emitido' ? colors.success + '55' : colors.warning + '55' },
+                    ]}>
+                      <Text style={[styles.statusText, { color: status === 'emitido' ? colors.success : colors.warning }]} numberOfLines={1} adjustsFontSizeToFit>
+                        {status}
+                      </Text>
+                    </View>
                   </View>
                 </View>
 
@@ -764,8 +768,8 @@ function TabBtn({ label, active, onPress }: { label: string; active: boolean; on
   return (
     <Pressable
       style={({ pressed }) => [
-        styles.tabBtn, 
-        active && { borderBottomColor: colors.primary, borderBottomWidth: 2 }, 
+        styles.tabBtn,
+        active && { borderBottomColor: colors.primary, borderBottomWidth: 2 },
         pressed && { backgroundColor: colors.primary + '10' }
       ]}
       onPress={onPress}
@@ -776,6 +780,47 @@ function TabBtn({ label, active, onPress }: { label: string; active: boolean; on
       </Text>
     </Pressable>
   );
+}
+
+function BackendBadge({ resumen }: { resumen?: BackendResumen }): React.JSX.Element | null {
+  const { colors } = useTheme();
+  if (!resumen) return null;
+
+  if (resumen.errores > 0) {
+    const label = resumen.errores > 1 ? 'errores' : 'error';
+    return (
+      <View style={[styles.backendBadge, { backgroundColor: colors.danger + '18', borderColor: colors.danger + '40' }]}>
+        <Feather name="alert-triangle" size={10} color={colors.danger} />
+        <Text style={[styles.backendBadgeText, { color: colors.danger }]} numberOfLines={1}>
+          {resumen.errores} {label}
+        </Text>
+      </View>
+    );
+  }
+
+  if (resumen.aplicando > 0) {
+    return (
+      <View style={[styles.backendBadge, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '40' }]}>
+        <ActivityIndicator size="small" color={colors.primary} />
+        <Text style={[styles.backendBadgeText, { color: colors.primary }]} numberOfLines={1}>
+          Aplicando…
+        </Text>
+      </View>
+    );
+  }
+
+  if (resumen.pendientes > 0) {
+    return (
+      <View style={[styles.backendBadge, { backgroundColor: colors.warning + '18', borderColor: colors.warning + '40' }]}>
+        <Feather name="clock" size={10} color={colors.warning} />
+        <Text style={[styles.backendBadgeText, { color: colors.warning }]} numberOfLines={1}>
+          {resumen.pendientes} en cola
+        </Text>
+      </View>
+    );
+  }
+
+  return null;
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -971,8 +1016,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   histId:   { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
+  histBadgeGroup: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   statusBadge: { borderRadius: 999, borderWidth: 0.5, paddingVertical: 3, paddingHorizontal: 10 },
   statusText:  { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold' },
+  backendBadge: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               4,
+    borderRadius:      999,
+    borderWidth:       0.5,
+    paddingVertical:   3,
+    paddingHorizontal: 10,
+  },
+  backendBadgeText: {
+    fontSize:   scaleFont(11),
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
   histMeta:    { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular' },
   histNota:    { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular' },
   pdfBtn: {

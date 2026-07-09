@@ -16,19 +16,63 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../theme/ThemeContext';
-import { useOrdenCambioDetalle, OrdenCambioItem } from '../hooks/useOrdenCambioDetalle';
+import { useOrdenCambioDetalle, useReencolarItem, OrdenCambioItem } from '../hooks/useOrdenCambioDetalle';
 import { OrdenConItems } from '../hooks/useOrdenesHistory';
+import { useUserRole } from '../hooks/useUserRole';
+import { confirm, notify } from '../lib/notify';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { buildPdfHtml, printHtml } from '../utils/pdfGenerator';
-import Svg, { 
-  Path, Defs, LinearGradient as SvgGradient, Stop, Filter, 
-  FeGaussianBlur, FeOffset, FeComponentTransfer, FeFuncA, FeMerge, FeMergeNode, Line 
+import Svg, {
+  Path, Defs, LinearGradient as SvgGradient, Stop, Filter,
+  FeGaussianBlur, FeOffset, FeComponentTransfer, FeFuncA, FeMerge, FeMergeNode, Line
 } from 'react-native-svg';
 
 export interface OrdenCambioDetailModalProps {
   orden:   OrdenConItems | null;
   onClose: () => void;
+}
+
+/** Un item muestra el chip de write-back solo si viene de la app y su estado es informativo. */
+function esItemRastreable(esOrdenApp: boolean, item: OrdenCambioItem): boolean {
+  if (!esOrdenApp) return false;
+  if (item.backend_status === 'pendiente' || item.backend_status === 'aplicando' || item.backend_status === 'error') {
+    return true;
+  }
+  return item.backend_status === 'completado' && !!item.backend_aplicado_en;
+}
+
+function formatFechaCorta(iso: string): string {
+  const d = new Date(iso);
+  const fecha = d.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' });
+  const hora = d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', hour12: true });
+  return `${fecha} ${hora}`;
+}
+
+interface ResumenColors {
+  danger:  string;
+  warning: string;
+  success: string;
+}
+
+function resumenAplicacion(items: OrdenCambioItem[], colors: ResumenColors): { texto: string; color: string } | null {
+  const rastreables = items.filter(item => esItemRastreable(true, item));
+  if (rastreables.length === 0) return null;
+
+  const completados = rastreables.filter(item => item.backend_status === 'completado').length;
+  const errores = rastreables.filter(item => item.backend_status === 'error').length;
+  const total = rastreables.length;
+
+  if (errores > 0) {
+    return {
+      texto: `${completados}/${total} aplicados · ${errores} error${errores > 1 ? 'es' : ''}`,
+      color: colors.danger,
+    };
+  }
+  return {
+    texto: `${completados}/${total} aplicados`,
+    color: completados === total ? colors.success : colors.warning,
+  };
 }
 
 interface TicketBackgroundProps {
@@ -112,12 +156,145 @@ function TicketBackground({ width, height, notchY }: TicketBackgroundProps): Rea
   );
 }
 
+interface BackendStatusChipProps {
+  item:          OrdenCambioItem;
+  esDueno:       boolean;
+  isExpanded:    boolean;
+  onToggleExpand: () => void;
+  ordenId:       number | null;
+}
+
+function BackendStatusChip({ item, esDueno, isExpanded, onToggleExpand, ordenId }: BackendStatusChipProps): React.JSX.Element {
+  const { colors } = useTheme();
+  const reencolar = useReencolarItem(ordenId);
+
+  function handleReencolar(): void {
+    const esRiesgoso = /ATENCIÓN|riesgo de ajuste doble/i.test(item.backend_resultado ?? '');
+
+    function ejecutarReencolar(): void {
+      reencolar.mutate(item.id, {
+        onError: (e: Error) => notify('Error', e.message),
+      });
+    }
+
+    if (esRiesgoso) {
+      confirm({
+        title:       'Riesgo de ajuste doble',
+        message:     'El intento anterior quedó en estado ambiguo: puede que el ajuste SÍ se haya aplicado en HybridLite. Verifica la existencia actual del producto en HybridLite (o en Inventario tras un sync) antes de continuar. Si ya se aplicó, reencolar lo aplicaría DOS VECES.',
+        confirmText: 'Reencolar igual',
+        cancelText:  'Cancelar',
+        destructive: true,
+        onConfirm:   ejecutarReencolar,
+      });
+      return;
+    }
+
+    confirm({
+      title:       'Reintentar aplicación',
+      message:     'El item volverá a la cola y el backend lo aplicará de nuevo en HybridLite automáticamente.',
+      confirmText: 'Reencolar',
+      cancelText:  'Cancelar',
+      onConfirm:   ejecutarReencolar,
+    });
+  }
+
+  if (item.backend_status === 'pendiente') {
+    const esPrueba = item.backend_resultado?.startsWith('[PREVIEW]');
+    return (
+      <View style={styles.backendChipBlock}>
+        <View style={[styles.backendChip, { backgroundColor: colors.warning + '18', borderColor: colors.warning + '40' }]}>
+          <Feather name="clock" size={11} color={colors.warning} />
+          <Text style={[styles.backendChipText, { color: colors.warning }]}>
+            {esPrueba ? 'EN COLA · PRUEBA' : 'EN COLA'}
+          </Text>
+        </View>
+        <Text style={[styles.backendChipSubtext, { color: colors.textDim }]}>
+          Se aplica automático fuera de horario
+        </Text>
+      </View>
+    );
+  }
+
+  if (item.backend_status === 'aplicando') {
+    return (
+      <View style={[styles.backendChip, styles.backendChipStandalone, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '40' }]}>
+        <ActivityIndicator size="small" color={colors.primary} />
+        <Text style={[styles.backendChipText, { color: colors.primary }]}>APLICANDO…</Text>
+      </View>
+    );
+  }
+
+  if (item.backend_status === 'completado') {
+    return (
+      <View style={[styles.backendChip, styles.backendChipStandalone, { backgroundColor: colors.success + '18', borderColor: colors.success + '40' }]}>
+        <Feather name="check-circle" size={11} color={colors.success} />
+        <Text style={[styles.backendChipText, { color: colors.success }]}>
+          APLICADO EN HYBRID{item.backend_aplicado_en ? ` · ${formatFechaCorta(item.backend_aplicado_en)}` : ''}
+        </Text>
+      </View>
+    );
+  }
+
+  // error
+  return (
+    <View style={styles.backendChipBlock}>
+      <View style={[styles.backendChip, { backgroundColor: colors.danger + '18', borderColor: colors.danger + '40' }]}>
+        <Feather name="alert-triangle" size={11} color={colors.danger} />
+        <Text style={[styles.backendChipText, { color: colors.danger }]}>
+          ERROR{item.backend_intentos > 0 ? ` · ${item.backend_intentos} intentos` : ''}
+        </Text>
+      </View>
+      {item.backend_resultado ? (
+        <Pressable onPress={onToggleExpand}>
+          <Text
+            style={[styles.backendErrorText, { color: colors.textMuted }]}
+            numberOfLines={isExpanded ? undefined : 2}
+          >
+            {item.backend_resultado}
+          </Text>
+        </Pressable>
+      ) : null}
+      {esDueno ? (
+        <Pressable
+          onPress={handleReencolar}
+          disabled={reencolar.isPending}
+          style={({ pressed }) => [
+            styles.backendRetryBtn,
+            { borderColor: colors.primary + '40', backgroundColor: colors.primary + '10' },
+            (pressed || reencolar.isPending) && { opacity: 0.7 },
+          ]}
+        >
+          {reencolar.isPending ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <>
+              <Feather name="refresh-cw" size={11} color={colors.primary} />
+              <Text style={[styles.backendRetryText, { color: colors.primary }]}>Reintentar</Text>
+            </>
+          )}
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModalProps): React.JSX.Element | null {
   const [showTicketDots, setShowTicketDots] = useState<boolean>(true);
+  const [expandedErrorIds, setExpandedErrorIds] = useState<Set<number>>(new Set());
   const { colors } = useTheme();
   const { data: details = [], isLoading } = useOrdenCambioDetalle(orden?.id ?? null);
+  const { data: userAuth } = useUserRole();
   const distinctCount = details.length;
-  
+
+  function toggleErrorExpanded(itemId: number): void {
+    setExpandedErrorIds(prev => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  }
+
   const animProgress = useRef(new Animated.Value(0)).current; 
   const [ticketLayout, setTicketLayout] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
 
@@ -174,6 +351,9 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
 
   if (!orden) return null;
 
+  const esOrdenApp = !!orden.creado_por;
+  const esDueno = !!userAuth?.profile?.id && userAuth.profile.id === orden.creado_por;
+
   // Detect transaction type from notes/header
   const cabeceraNota = orden.nota || '';
   let labelTipoUpper = 'AJUSTE DE INVENTARIO';
@@ -198,6 +378,7 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
   // Calculate stats
   const totalItemsAdjusted = details.reduce((acc, d) => acc + Math.abs(d.delta), 0);
   const netDelta = details.reduce((acc, d) => acc + d.delta, 0);
+  const resumenApp = esOrdenApp ? resumenAplicacion(details, colors) : null;
 
   return (
     <Modal
@@ -358,6 +539,15 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
                                     Nota: {item.nota}
                                   </Text>
                                 ) : null}
+                                {esItemRastreable(esOrdenApp, item) ? (
+                                  <BackendStatusChip
+                                    item={item}
+                                    esDueno={esDueno}
+                                    isExpanded={expandedErrorIds.has(item.id)}
+                                    onToggleExpand={() => toggleErrorExpanded(item.id)}
+                                    ordenId={orden.id}
+                                  />
+                                ) : null}
                               </View>
                               <View style={[styles.deltaBadge, { backgroundColor: deltaColor + '18', borderColor: deltaColor + '40' }]}>
                                 <Text style={[styles.deltaText, { color: deltaColor }]}>
@@ -411,6 +601,14 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
                           {netDelta >= 0 ? '+' : ''}{netDelta} uds
                         </Text>
                       </View>
+                      {resumenApp ? (
+                        <View style={styles.ticketFooterRow}>
+                          <Text style={[styles.ticketFooterLabel, { color: colors.textMuted }]}>APLICACIÓN AUTO</Text>
+                          <Text style={[styles.ticketFooterValue, { color: resumenApp.color }]}>
+                            {resumenApp.texto}
+                          </Text>
+                        </View>
+                      ) : null}
                     </View>
 
                     {cleanNota ? (
@@ -535,7 +733,47 @@ const styles = StyleSheet.create({
   ticketItemDesc: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', lineHeight: scaleFont(18) },
   ticketItemQty: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_500Medium', opacity: 0.85, marginTop: 2 },
   ticketItemNote: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', fontStyle: 'italic', marginTop: 4 },
-  
+
+  backendChipBlock: { gap: 6, marginTop: 6, alignItems: 'flex-start' },
+  backendChip: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               4,
+    borderRadius:      999,
+    borderWidth:       0.5,
+    paddingVertical:   3,
+    paddingHorizontal: 8,
+  },
+  backendChipStandalone: { marginTop: 6 },
+  backendChipText: {
+    fontSize:      scaleFont(10),
+    fontFamily:    'JetBrainsMono_700Bold',
+    letterSpacing: 0.2,
+  },
+  backendChipSubtext: {
+    fontSize:   scaleFont(10),
+    fontFamily: 'JetBrainsMono_400Regular',
+    fontStyle:  'italic',
+  },
+  backendErrorText: {
+    fontSize:   scaleFont(11),
+    fontFamily: 'JetBrainsMono_400Regular',
+    lineHeight: scaleFont(15),
+  },
+  backendRetryBtn: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               4,
+    borderRadius:      999,
+    borderWidth:       0.5,
+    paddingVertical:   4,
+    paddingHorizontal: 10,
+  },
+  backendRetryText: {
+    fontSize:   scaleFont(11),
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
+
   deltaBadge: {
     borderRadius: 8,
     borderWidth: 0.5,
