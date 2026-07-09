@@ -133,35 +133,38 @@ export default function PresupuestoView({ router }: { router: any }) {
         {items.length > 0 && (
           <View style={[styles.currencyToggleContainer, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}>
             <Text style={[styles.currencyLabel, { color: colors.textMuted }]}>
-              MONEDA DEL PRESUPUESTO
+              MONEDA
             </Text>
-            <Pressable
-              style={({ pressed }) => [
-                styles.currencyToggleBtn,
-                enBs 
-                  ? { backgroundColor: colors.primary, borderColor: colors.primary } 
-                  : { backgroundColor: colors.surface, borderColor: colors.border },
-                pressed && { opacity: 0.8 }
-              ]}
-              onPress={() => {
-                if (enBs) {
-                  setEnBs(false, null, null);
-                } else {
-                  setEnBs(true, bcv, markup_porcentaje);
-                }
-              }}
-            >
-              <Text 
-                style={[
-                  styles.currencyToggleText, 
-                  { color: enBs ? colors.onPrimary : colors.text }
+            <View style={[styles.segmentedControl, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.segmentedBtn,
+                  !enBs && { backgroundColor: colors.primary },
+                  pressed && { opacity: 0.85 }
                 ]}
-                numberOfLines={1}
-                adjustsFontSizeToFit
+                onPress={() => {
+                  if (enBs) setEnBs(false, null, null);
+                }}
               >
-                {enBs ? `Bolívares (Bs. @ ${bcv.toFixed(2)})` : 'Dólares (USD)'}
-              </Text>
-            </Pressable>
+                <Text style={[styles.segmentedText, { color: !enBs ? colors.onPrimary : colors.textMuted }]}>
+                  USD ($)
+                </Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.segmentedBtn,
+                  enBs && { backgroundColor: colors.primary },
+                  pressed && { opacity: 0.85 }
+                ]}
+                onPress={() => {
+                  if (!enBs) setEnBs(true, bcv, markup_porcentaje);
+                }}
+              >
+                <Text style={[styles.segmentedText, { color: enBs ? colors.onPrimary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
+                  Bs. (@ {bcv.toFixed(2)})
+                </Text>
+              </Pressable>
+            </View>
           </View>
         )}
 
@@ -468,7 +471,7 @@ const styles = StyleSheet.create({
   /* ── Controls row (qty + price side by side) ────────────── */
   controlsRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     gap: 16,
   },
   controlGroup: {
@@ -633,15 +636,23 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
-  currencyToggleBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+  segmentedControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderRadius: 8,
     borderWidth: 1,
+    padding: 2,
+    minWidth: 180,
+  },
+  segmentedBtn: {
+    flex: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  currencyToggleText: {
+  segmentedText: {
     fontSize: scaleFont(11),
     fontFamily: 'JetBrainsMono_700Bold',
   },
