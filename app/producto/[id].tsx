@@ -470,6 +470,7 @@ export default function ProductoDetail() {
                       descripcion: producto.descripcion,
                       existencia_actual: producto.existencia,
                       nueva_existencia: finalQty,
+                      precio_actual: producto.precio_venta,
                       nota: adjustmentNote.trim() || 'Ajuste de stock',
                       costo: producto.costo,
                     });
@@ -543,6 +544,8 @@ export default function ProductoDetail() {
                           descripcion: producto.descripcion,
                           existencia_actual: producto.existencia,
                           nueva_existencia: finalQty,
+                          precio_actual: producto.precio_venta,
+                          costo: producto.costo,
                           nota: noteText,
                         });
 
