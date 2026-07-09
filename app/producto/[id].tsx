@@ -21,6 +21,7 @@ import { buildPdfHtml, printHtml, DraftItem } from '../../src/utils/pdfGenerator
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { uploadPdfAndGetUrl } from '../../src/lib/pdfStorage';
+import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
 
 export default function ProductoDetail() {
   const { colors, tokens, formatUSD } = useTheme();
@@ -29,6 +30,9 @@ export default function ProductoDetail() {
   const queryClient = useQueryClient();
   const [isSaving, setIsSaving] = useState(false);
   const [adjustmentNote, setAdjustmentNote] = useState('');
+  const [showPriceSheet, setShowPriceSheet] = useState(false);
+  const [newPrice, setNewPrice] = useState('');
+  const [isSavingPrice, setIsSavingPrice] = useState(false);
 
   const { data: movimientos, isLoading: isLoadingMovs } = useMovimientosProducto(id);
 
@@ -248,6 +252,26 @@ export default function ProductoDetail() {
             </Text>
           </Pressable>
 
+          {/* Adjust Price CTA */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.addBtn,
+              { backgroundColor: colors.primaryFaded, borderColor: colors.primary, marginTop: 8 },
+              pressed && { opacity: 0.75 }
+            ]}
+            onPress={() => {
+              setNewPrice('');
+              setAdjustmentNote('');
+              setErrorMsg(null);
+              setShowPriceSheet(true);
+            }}
+          >
+            <Feather name="dollar-sign" size={16} color={colors.primary} />
+            <Text style={[styles.addBtnText, { color: colors.primary }]}>
+              Ajustar precio
+            </Text>
+          </Pressable>
+
           {/* Historial de movimientos */}
           <HistorialMovimientos 
             movimientos={movimientos} 
@@ -275,7 +299,7 @@ export default function ProductoDetail() {
           </View>
         </Modal>
 
-        {/* Add to order sheet */}
+        {/* Add to order sheet (Stock Adjustment) */}
         <Modal
           visible={showAddSheet}
           transparent
@@ -404,161 +428,462 @@ export default function ProductoDetail() {
                 returnKeyType="done"
               />
 
-              <Pressable
-                style={({ pressed }) => [styles.sheetBtn, { backgroundColor: colors.primary }, (isSaving || pressed) && { opacity: 0.75 }]}
-                disabled={isSaving}
-                onPress={async () => {
-                  if (isSaving) return;
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+                {/* Agregar al Borrador */}
+                <Pressable
+                  style={({ pressed }) => [
+                    {
+                      flex: 1,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      paddingVertical: 14,
+                      borderRadius: 14,
+                      borderWidth: 1,
+                      borderColor: colors.primary,
+                      backgroundColor: colors.surfaceAlt,
+                    },
+                    pressed && { opacity: 0.7 }
+                  ]}
+                  onPress={() => {
+                    const inputVal = parseFloat(newQty);
+                    if (isNaN(inputVal)) {
+                      setErrorMsg('Ingresa un número válido');
+                      return;
+                    }
+                    let finalQty = inputVal;
+                    if (adjMode === 'relative') {
+                      finalQty = adjOp === '+' ? producto.existencia + inputVal : producto.existencia - inputVal;
+                    }
+                    if (finalQty < 0) {
+                      setErrorMsg('La existencia no puede ser negativa');
+                      return;
+                    }
+                    setErrorMsg(null);
 
-                  const inputVal = parseFloat(newQty);
-                  if (isNaN(inputVal)) {
-                    setErrorMsg('Ingresa un número válido');
-                    return;
-                  }
+                    useOrdenCambio.getState().addItem({
+                      codigo_producto: producto.codigo_interno,
+                      descripcion: producto.descripcion,
+                      existencia_actual: producto.existencia,
+                      nueva_existencia: finalQty,
+                      nota: adjustmentNote.trim() || 'Ajuste de stock',
+                      costo: producto.costo,
+                    });
 
-                  let finalQty = inputVal;
-                  if (adjMode === 'relative') {
-                    finalQty = adjOp === '+' ? producto.existencia + inputVal : producto.existencia - inputVal;
-                  }
+                    notify('Éxito', 'Agregado al borrador de Ajustes');
+                    setAdjustmentNote('');
+                    setNewQty('');
+                    setShowAddSheet(false);
+                  }}
+                >
+                  <Text style={{ fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', color: colors.primary }}>
+                    Al Borrador
+                  </Text>
+                </Pressable>
 
-                  if (finalQty < 0) {
-                    setErrorMsg('La existencia no puede ser negativa');
-                    return;
-                  }
+                {/* Aplicar Ahora (Quick Submit) */}
+                <Pressable
+                  style={({ pressed }) => [
+                    {
+                      flex: 1,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      paddingVertical: 14,
+                      borderRadius: 14,
+                      backgroundColor: colors.primary,
+                    },
+                    (isSaving || pressed) && { opacity: 0.75 }
+                  ]}
+                  disabled={isSaving}
+                  onPress={async () => {
+                    if (isSaving) return;
 
-                  setErrorMsg(null);
-                  setIsSaving(true);
-
-                  try {
-                    // 1. Get authenticated user ID
-                    const { data: { user } } = await supabase.auth.getUser();
-                    if (!user) {
-                      throw new Error('Usuario no autenticado');
+                    const inputVal = parseFloat(newQty);
+                    if (isNaN(inputVal)) {
+                      setErrorMsg('Ingresa un número válido');
+                      return;
                     }
 
-                    const noteText = adjustmentNote.trim() || 'Ajuste rápido';
-
-                    // 2. Create the change order header (initially draft/borrador)
-                    const { data: orden, error: ordenError } = await supabase
-                      .from('ordenes_cambio')
-                      .insert({
-                        creado_por: user.id,
-                        nota: noteText,
-                        status: 'borrador',
-                      })
-                      .select('id')
-                      .single();
-
-                    if (ordenError || !orden) {
-                      throw ordenError ?? new Error('No se pudo crear la orden de cambio');
+                    let finalQty = inputVal;
+                    if (adjMode === 'relative') {
+                      finalQty = adjOp === '+' ? producto.existencia + inputVal : producto.existencia - inputVal;
                     }
 
-                    // 3. Create the change order item
-                    const { error: itemError } = await supabase
-                      .from('ordenes_cambio_items')
-                      .insert({
-                        orden_id: orden.id,
+                    if (finalQty < 0) {
+                      setErrorMsg('La existencia no puede ser negativa');
+                      return;
+                    }
+
+                    setErrorMsg(null);
+                    setIsSaving(true);
+
+                    try {
+                      const { data: { user } } = await supabase.auth.getUser();
+                      if (!user) throw new Error('Usuario no autenticado');
+
+                      const noteText = adjustmentNote.trim() || 'Ajuste rápido';
+
+                      const { data: orden, error: ordenError } = await supabase
+                        .from('ordenes_cambio')
+                        .insert({ creado_por: user.id, nota: noteText, status: 'borrador' })
+                        .select('id')
+                        .single();
+
+                      if (ordenError || !orden) throw ordenError ?? new Error('Error al crear orden');
+
+                      const { error: itemError } = await supabase
+                        .from('ordenes_cambio_items')
+                        .insert({
+                          orden_id: orden.id,
+                          codigo_producto: producto.codigo_interno,
+                          descripcion: producto.descripcion,
+                          existencia_actual: producto.existencia,
+                          nueva_existencia: finalQty,
+                          nota: noteText,
+                        });
+
+                      if (itemError) throw itemError;
+
+                      const { data: profileData } = await supabase
+                        .from('profiles')
+                        .select('display_name')
+                        .eq('id', user.id)
+                        .single();
+                      const creadoPor = profileData?.display_name || undefined;
+
+                      const draftItem: DraftItem = {
                         codigo_producto: producto.codigo_interno,
                         descripcion: producto.descripcion,
                         existencia_actual: producto.existencia,
                         nueva_existencia: finalQty,
                         nota: noteText,
-                      });
+                      };
+                      const html = buildPdfHtml([draftItem], noteText, orden.id, creadoPor);
 
-                    if (itemError) {
-                      throw itemError;
+                      if (Platform.OS === 'web') {
+                        await printHtml(html);
+                        await supabase.from('ordenes_cambio').update({ status: 'emitido' }).eq('id', orden.id);
+                      } else {
+                        const { uri } = await Print.printToFileAsync({ html });
+                        const fileName = `orden-${orden.id}-${Date.now()}.pdf`;
+                        try {
+                          const pdfUrl = await uploadPdfAndGetUrl(uri, fileName);
+                          await supabase.from('ordenes_cambio').update({ status: 'emitido', pdf_url: pdfUrl }).eq('id', orden.id);
+                        } catch (err) {
+                          console.error(err);
+                          await supabase.from('ordenes_cambio').update({ status: 'emitido' }).eq('id', orden.id);
+                        }
+                        const canShare = await Sharing.isAvailableAsync();
+                        if (canShare) await Sharing.shareAsync(uri, { mimeType: 'application/pdf' });
+                      }
+
+                      await supabase.from('comandos_remotos').insert([{ comando: 'sync_inventory', status: 'pendiente' }]);
+
+                      notify('Éxito', 'Ajuste guardado. Sincronizando stock...');
+                      queryClient.invalidateQueries({ queryKey: ['producto', id] });
+                      queryClient.invalidateQueries({ queryKey: ['movimientos-producto', id] });
+                      queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+
+                      setAdjustmentNote('');
+                      setNewQty('');
+                      setShowAddSheet(false);
+                    } catch (e: any) {
+                      console.error(e);
+                      setErrorMsg(e.message ?? 'Error al guardar el ajuste');
+                    } finally {
+                      setIsSaving(false);
                     }
+                  }}
+                >
+                  {isSaving ? (
+                    <ActivityIndicator color={colors.onPrimary} size="small" />
+                  ) : (
+                    <Text style={{ fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', color: colors.onPrimary }}>
+                      Aplicar Ahora
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
+              </ScrollView>
+            </Animated.View>
+          </KeyboardAvoidingView>
+        </Modal>
 
-                    // 4. Retrieve creator's display name
-                    const { data: profileData } = await supabase
-                      .from('profiles')
-                      .select('display_name')
-                      .eq('id', user.id)
-                      .single();
-                    const creadoPor = profileData?.display_name || undefined;
+        {/* Add to order sheet (Price Adjustment) */}
+        <Modal
+          visible={showPriceSheet}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowPriceSheet(false)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={[
+              styles.sheetOverlay,
+              Platform.OS === 'web' && { justifyContent: 'center', padding: 16 }
+            ]}
+          >
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => setShowPriceSheet(false)}
+            />
+            <Animated.View 
+              style={[
+                styles.sheet, 
+                { 
+                  backgroundColor: colors.surface, 
+                  transform: [{ translateY: panY }] 
+                }
+              ]}
+            >
+              <ScrollView 
+                bounces={false} 
+                contentContainerStyle={{ paddingBottom: 24 }}
+                showsVerticalScrollIndicator={false}
+              >
+              <View 
+                {...panResponder.panHandlers}
+                style={styles.modalHandleArea}
+              >
+                <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+              </View>
 
-                    // 5. Generate HTML
-                    const draftItem: DraftItem = {
+              <Text style={[styles.sheetTitle, { color: colors.text }]}>
+                Ajustar precio
+              </Text>
+              <Text style={[styles.sheetSub, { color: colors.textMuted }]} numberOfLines={1}>
+                {producto.descripcion}
+              </Text>
+
+              {errorMsg && (
+                <View style={{ backgroundColor: colors.danger + '22', padding: 8, borderRadius: 8, marginBottom: 8 }}>
+                  <Text style={{ color: colors.danger, fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold', textAlign: 'center' }}>
+                    {errorMsg}
+                  </Text>
+                </View>
+              )}
+
+              <Text style={[styles.sheetLabel, { color: colors.textMuted }]}>
+                Actual: {formatUSD(producto.precio_venta)} (con IVA)  ·  Nuevo precio:
+              </Text>
+
+              <View style={styles.inputContainer}>
+                <View style={[styles.qtyWrap, { flex: 1, backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+                  <TextInput
+                    style={[styles.qtyInput, { color: colors.text }]}
+                    keyboardType="numeric"
+                    value={newPrice}
+                    onChangeText={setNewPrice}
+                    placeholder="0.00"
+                    placeholderTextColor={colors.textDim}
+                    selectTextOnFocus
+                    autoFocus
+                  />
+                </View>
+              </View>
+
+              {/* Margin preview calculation */}
+              {(() => {
+                const parsedPrice = parseFloat(newPrice);
+                const priceToUse = isNaN(parsedPrice) ? producto.precio_venta : parsedPrice;
+                const precioSinIva = priceToUse / 1.16;
+                const pct = producto.costo > 0 ? ((precioSinIva - producto.costo) / precioSinIva) * 100 : 0;
+                const isNeg = pct < 0;
+                const barColor = isNeg ? colors.danger : pct < 20 ? colors.warning : colors.success;
+
+                return (
+                  <View style={styles.previewContainer}>
+                    <Text style={[styles.previewLabel, { color: colors.textMuted }]}>Margen estimado: </Text>
+                    <Text style={[styles.previewValue, { color: barColor }]}>
+                      {isNeg ? '-' : ''}{Math.abs(pct).toFixed(1)}%
+                    </Text>
+                  </View>
+                );
+              })()}
+
+              <Text style={[styles.sheetLabel, { color: colors.textMuted, marginTop: 12 }]}>
+                Nota / Observación (opcional):
+              </Text>
+              <TextInput
+                style={[styles.noteInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                placeholder="Ej. Cambio de tarifa, actualización..."
+                placeholderTextColor={colors.textDim}
+                value={adjustmentNote}
+                onChangeText={setAdjustmentNote}
+                maxLength={100}
+                returnKeyType="done"
+              />
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+                {/* Agregar al Borrador */}
+                <Pressable
+                  style={({ pressed }) => [
+                    {
+                      flex: 1,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      paddingVertical: 14,
+                      borderRadius: 14,
+                      borderWidth: 1,
+                      borderColor: colors.primary,
+                      backgroundColor: colors.surfaceAlt,
+                    },
+                    pressed && { opacity: 0.7 }
+                  ]}
+                  onPress={() => {
+                    const inputVal = parseFloat(newPrice);
+                    if (isNaN(inputVal)) {
+                      setErrorMsg('Ingresa un precio válido');
+                      return;
+                    }
+                    if (inputVal < 0) {
+                      setErrorMsg('El precio no puede ser negativo');
+                      return;
+                    }
+                    setErrorMsg(null);
+
+                    useOrdenCambio.getState().addItem({
                       codigo_producto: producto.codigo_interno,
                       descripcion: producto.descripcion,
                       existencia_actual: producto.existencia,
-                      nueva_existencia: finalQty,
-                      nota: noteText,
-                    };
-                    const html = buildPdfHtml([draftItem], noteText, orden.id, creadoPor);
+                      nueva_existencia: producto.existencia, // default: keep same
+                      precio_actual: producto.precio_venta,
+                      nuevo_precio: inputVal,
+                      nota: adjustmentNote.trim() || 'Ajuste de precio',
+                      costo: producto.costo,
+                    });
 
-                    // 6. Handle print/share depending on platform
-                    if (Platform.OS === 'web') {
-                      // Trigger clean isolated print
-                      await printHtml(html);
+                    notify('Éxito', 'Agregado al borrador de Ajustes');
+                    setAdjustmentNote('');
+                    setNewPrice('');
+                    setShowPriceSheet(false);
+                  }}
+                >
+                  <Text style={{ fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', color: colors.primary }}>
+                    Al Borrador
+                  </Text>
+                </Pressable>
 
-                      // Update order status to emitted
-                      await supabase
-                        .from('ordenes_cambio')
-                        .update({ status: 'emitido' })
-                        .eq('id', orden.id);
-                    } else {
-                      // Native: Print to file and upload to Supabase storage
-                      const { uri } = await Print.printToFileAsync({ html });
-                      const fileName = `orden-${orden.id}-${Date.now()}.pdf`;
+                {/* Aplicar Ahora (Quick Submit) */}
+                <Pressable
+                  style={({ pressed }) => [
+                    {
+                      flex: 1,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      paddingVertical: 14,
+                      borderRadius: 14,
+                      backgroundColor: colors.primary,
+                    },
+                    (isSavingPrice || pressed) && { opacity: 0.75 }
+                  ]}
+                  disabled={isSavingPrice}
+                  onPress={async () => {
+                    if (isSavingPrice) return;
 
-                      try {
-                        const pdfUrl = await uploadPdfAndGetUrl(uri, fileName);
-                        await supabase
-                          .from('ordenes_cambio')
-                          .update({ status: 'emitido', pdf_url: pdfUrl })
-                          .eq('id', orden.id);
-                      } catch (err) {
-                        console.error('Error uploading order PDF:', err);
-                        // Fallback: update status even if upload failed
-                        await supabase
-                          .from('ordenes_cambio')
-                          .update({ status: 'emitido' })
-                          .eq('id', orden.id);
-                      }
-
-                      // Open Native Share sheet
-                      const canShare = await Sharing.isAvailableAsync();
-                      if (canShare) {
-                        await Sharing.shareAsync(uri, { mimeType: 'application/pdf' });
-                      }
+                    const inputVal = parseFloat(newPrice);
+                    if (isNaN(inputVal)) {
+                      setErrorMsg('Ingresa un precio válido');
+                      return;
+                    }
+                    if (inputVal < 0) {
+                      setErrorMsg('El precio no puede ser negativo');
+                      return;
                     }
 
-                    // 7. Enqueue a remote sync command to tell POS to update the stock
-                    await supabase
-                      .from('comandos_remotos')
-                      .insert([{
-                        comando: 'sync_inventory',
-                        status: 'pendiente',
-                      }]);
+                    setErrorMsg(null);
+                    setIsSavingPrice(true);
 
-                    notify('Éxito', 'Ajuste guardado. Sincronizando stock...');
-                    
-                    // 8. Invalidate queries to reload details, history & sync badge
-                    queryClient.invalidateQueries({ queryKey: ['producto', id] });
-                    queryClient.invalidateQueries({ queryKey: ['movimientos-producto', id] });
-                    queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+                    try {
+                      const { data: { user } } = await supabase.auth.getUser();
+                      if (!user) throw new Error('Usuario no autenticado');
 
-                    // 9. Reset and close modal
-                    setAdjustmentNote('');
-                    setNewQty('');
-                    closeSheet();
-                  } catch (e: any) {
-                    console.error('Error al emitir ajuste:', e);
-                    setErrorMsg(e.message ?? 'Error inesperado al guardar el ajuste');
-                  } finally {
-                    setIsSaving(false);
-                  }
-                }}
-              >
-                {isSaving ? (
-                  <ActivityIndicator color={colors.onPrimary} />
-                ) : (
-                  <Text style={[styles.sheetBtnText, { color: colors.onPrimary }]}>
-                    Confirmar
-                  </Text>
-                )}
-              </Pressable>
+                      const noteText = adjustmentNote.trim() || 'Ajuste precio rápido';
+
+                      const { data: orden, error: ordenError } = await supabase
+                        .from('ordenes_cambio')
+                        .insert({ creado_por: user.id, nota: noteText, status: 'borrador' })
+                        .select('id')
+                        .single();
+
+                      if (ordenError || !orden) throw ordenError ?? new Error('Error al crear orden');
+
+                      const { error: itemError } = await supabase
+                        .from('ordenes_cambio_items')
+                        .insert({
+                          orden_id: orden.id,
+                          codigo_producto: producto.codigo_interno,
+                          descripcion: producto.descripcion,
+                          existencia_actual: producto.existencia,
+                          nueva_existencia: producto.existencia, // Keep same
+                          precio_actual: producto.precio_venta,
+                          nuevo_precio: inputVal,
+                          nota: noteText,
+                        });
+
+                      if (itemError) throw itemError;
+
+                      const { data: profileData } = await supabase
+                        .from('profiles')
+                        .select('display_name')
+                        .eq('id', user.id)
+                        .single();
+                      const creadoPor = profileData?.display_name || undefined;
+
+                      const draftItem: DraftItem = {
+                        codigo_producto: producto.codigo_interno,
+                        descripcion: producto.descripcion,
+                        existencia_actual: producto.existencia,
+                        nueva_existencia: producto.existencia,
+                        precio_actual: producto.precio_venta,
+                        nuevo_precio: inputVal,
+                        nota: noteText,
+                      };
+                      const html = buildPdfHtml([draftItem], noteText, orden.id, creadoPor);
+
+                      if (Platform.OS === 'web') {
+                        await printHtml(html);
+                        await supabase.from('ordenes_cambio').update({ status: 'emitido' }).eq('id', orden.id);
+                      } else {
+                        const { uri } = await Print.printToFileAsync({ html });
+                        const fileName = `orden-${orden.id}-${Date.now()}.pdf`;
+                        try {
+                          const pdfUrl = await uploadPdfAndGetUrl(uri, fileName);
+                          await supabase.from('ordenes_cambio').update({ status: 'emitido', pdf_url: pdfUrl }).eq('id', orden.id);
+                        } catch (err) {
+                          console.error(err);
+                          await supabase.from('ordenes_cambio').update({ status: 'emitido' }).eq('id', orden.id);
+                        }
+                        const canShare = await Sharing.isAvailableAsync();
+                        if (canShare) await Sharing.shareAsync(uri, { mimeType: 'application/pdf' });
+                      }
+
+                      await supabase.from('comandos_remotos').insert([{ comando: 'sync_inventory', status: 'pendiente' }]);
+
+                      notify('Éxito', 'Ajuste de precio guardado. Sincronizando...');
+                      queryClient.invalidateQueries({ queryKey: ['producto', id] });
+                      queryClient.invalidateQueries({ queryKey: ['movimientos-producto', id] });
+                      queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+
+                      setAdjustmentNote('');
+                      setNewPrice('');
+                      setShowPriceSheet(false);
+                    } catch (e: any) {
+                      console.error(e);
+                      setErrorMsg(e.message ?? 'Error al guardar el ajuste de precio');
+                    } finally {
+                      setIsSavingPrice(false);
+                    }
+                  }}
+                >
+                  {isSavingPrice ? (
+                    <ActivityIndicator color={colors.onPrimary} size="small" />
+                  ) : (
+                    <Text style={{ fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', color: colors.onPrimary }}>
+                      Aplicar Ahora
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
               </ScrollView>
             </Animated.View>
           </KeyboardAvoidingView>

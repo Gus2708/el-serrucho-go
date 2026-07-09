@@ -11,6 +11,9 @@ export interface DraftItem {
   existencia_actual: number;
   nueva_existencia:  number;
   nota:              string;
+  precio_actual?:    number | null;
+  nuevo_precio?:     number | null;
+  costo?:            number | null;
 }
 
 /* ─── Shared CSS tokens ──────────────────────────────────── */
@@ -489,17 +492,30 @@ export function buildPdfHtml(items: DraftItem[], nota: string, orderId: number, 
   const now = new Date().toLocaleString('es-VE');
 
   const rows = items.map((item) => {
-    const delta = item.nueva_existencia - item.existencia_actual;
-    const sign  = delta >= 0 ? '+' : '';
-    const cls   = delta >= 0 ? 'col-delta-pos' : 'col-delta-neg';
+    // Stock adjustment formatting
+    let stockStr = '—';
+    if (item.nueva_existencia !== undefined && item.nueva_existencia !== null && item.existencia_actual !== undefined && item.existencia_actual !== null) {
+      const delta = item.nueva_existencia - item.existencia_actual;
+      if (delta !== 0) {
+        const sign = delta >= 0 ? '+' : '';
+        stockStr = `${item.existencia_actual} → ${item.nueva_existencia} (${sign}${delta})`;
+      } else {
+        stockStr = `${item.existencia_actual} (Sin cambio)`;
+      }
+    }
+
+    // Price change formatting
+    let priceStr = '—';
+    if (item.nuevo_precio !== undefined && item.nuevo_precio !== null && item.precio_actual !== undefined && item.precio_actual !== null) {
+      priceStr = `$${item.precio_actual.toFixed(2)} → $${item.nuevo_precio.toFixed(2)}`;
+    }
 
     return `
       <tr>
         <td class="col-code">${escHtml(item.codigo_producto ?? '')}</td>
         <td class="col-desc">${escHtml(item.descripcion ?? '')}</td>
-        <td class="col-num-muted">${item.existencia_actual}</td>
-        <td class="col-num">${item.nueva_existencia}</td>
-        <td class="${cls}">${sign}${delta}</td>
+        <td class="col-num" style="text-align:left; white-space:nowrap;">${stockStr}</td>
+        <td class="col-money" style="text-align:left; white-space:nowrap;">${priceStr}</td>
         <td class="col-note">${escHtml(item.nota || '—')}</td>
       </tr>`;
   }).join('');
@@ -535,9 +551,8 @@ export function buildPdfHtml(items: DraftItem[], nota: string, orderId: number, 
         <tr>
           <th>Código</th>
           <th>Descripción</th>
-          <th style="text-align:center;">Actual</th>
-          <th style="text-align:center;">Nueva</th>
-          <th style="text-align:center;">Ajuste</th>
+          <th style="text-align:left;">Ajuste Stock</th>
+          <th style="text-align:left;">Ajuste Precio</th>
           <th>Nota</th>
         </tr>
       </thead>

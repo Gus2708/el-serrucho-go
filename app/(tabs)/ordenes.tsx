@@ -233,6 +233,74 @@ function BorradorView({ router }: { router: any }) {
                     </View>
                   </View>
 
+                  {/* Price adjustment row */}
+                  {item.nuevo_precio !== undefined && item.nuevo_precio !== null && (
+                    <View style={[styles.itemBottom, { marginTop: 10, borderTopWidth: 0.5, borderColor: colors.border, paddingTop: 10 }]}>
+                      <View style={styles.qtyColumn}>
+                        <Text style={[styles.qtyLabel, { color: colors.textMuted }]}>PRECIO ACT</Text>
+                        <View style={styles.qtyValueWrapper}>
+                          <Text style={[styles.qtyVal, { color: colors.text }]}>{formatUSD(item.precio_actual ?? 0)}</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.qtySeparator}>
+                        <Feather name="arrow-right" size={14} color={colors.textDim} />
+                      </View>
+
+                      <View style={[styles.qtyColumn, { flex: 1 }]}>
+                        <Text style={[styles.qtyLabel, { color: colors.textMuted }]}>NUEVO PRECIO</Text>
+                        <View style={styles.qtyValueWrapper}>
+                          <TextInput
+                            style={[
+                              styles.qtyEdit, 
+                              { 
+                                color: colors.text, 
+                                borderColor: colors.border, 
+                                backgroundColor: colors.surfaceAlt,
+                                width: 80,
+                                flex: 0,
+                                textAlign: 'center'
+                              }
+                            ]}
+                            keyboardType="numeric"
+                            value={String(item.nuevo_precio)}
+                            onChangeText={v => {
+                              const n = parseFloat(v);
+                              if (!isNaN(n) && n >= 0) {
+                                updateItem(item.codigo_producto, { nuevo_precio: n });
+                              } else if (v === '') {
+                                updateItem(item.codigo_producto, { nuevo_precio: null });
+                              }
+                            }}
+                            selectTextOnFocus
+                          />
+                        </View>
+                      </View>
+
+                      {item.costo !== undefined && item.costo !== null && item.nuevo_precio !== null && (
+                        <View style={styles.qtyColumn}>
+                          <Text style={[styles.qtyLabel, { color: colors.textMuted, textAlign: 'right' }]}>MARGEN</Text>
+                          <View style={[styles.qtyValueWrapper, { justifyContent: 'flex-end' }]}>
+                            {(() => {
+                              const precioSinIva = (item.nuevo_precio ?? 0) / 1.16;
+                              const pct = precioSinIva > 0 ? ((precioSinIva - (item.costo ?? 0)) / precioSinIva) * 100 : 0;
+                              const isNegMargin = pct < 0;
+                              const marginColor = isNegMargin ? colors.danger : pct < 20 ? colors.warning : colors.success;
+
+                              return (
+                                <View style={[styles.deltaBadge, { backgroundColor: marginColor + '22', borderColor: marginColor + '55' }]}>
+                                  <Text style={[styles.deltaText, { color: marginColor }]} numberOfLines={1} adjustsFontSizeToFit>
+                                    {isNegMargin ? '' : '+'}{pct.toFixed(1)}%
+                                  </Text>
+                                </View>
+                              );
+                            })()}
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  )}
+
                   <TextInput
                     style={[styles.notaInput, { color: colors.text, borderColor: colors.border }]}
                     placeholder="Nota (opcional)…"
@@ -815,6 +883,17 @@ function BackendBadge({ resumen }: { resumen?: BackendResumen }): React.JSX.Elem
         <Feather name="clock" size={10} color={colors.warning} />
         <Text style={[styles.backendBadgeText, { color: colors.warning }]} numberOfLines={1}>
           {resumen.pendientes} en cola
+        </Text>
+      </View>
+    );
+  }
+
+  if (resumen.completados === resumen.total && resumen.total > 0) {
+    return (
+      <View style={[styles.backendBadge, { backgroundColor: colors.success + '18', borderColor: colors.success + '40' }]}>
+        <Feather name="check" size={10} color={colors.success} />
+        <Text style={[styles.backendBadgeText, { color: colors.success }]} numberOfLines={1}>
+          Aplicado
         </Text>
       </View>
     );

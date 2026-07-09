@@ -27,7 +27,7 @@ export const useOrdenCambio = create<OrdenStore>()((set, get) => ({
         const { items } = get();
         const existing = items.find(i => i.codigo_producto === item.codigo_producto);
         if (existing) {
-          set({ items: items.map(i => i.codigo_producto === item.codigo_producto ? item : i) });
+          set({ items: items.map(i => i.codigo_producto === item.codigo_producto ? { ...existing, ...item } : i) });
         } else {
           set({ items: [...items, item] });
         }
@@ -71,6 +71,8 @@ export const useOrdenCambio = create<OrdenStore>()((set, get) => ({
             descripcion:        item.descripcion,
             existencia_actual:  item.existencia_actual,
             nueva_existencia:   item.nueva_existencia,
+            precio_actual:      item.precio_actual ?? null,
+            nuevo_precio:       item.nuevo_precio ?? null,
             nota:               item.nota || null,
           }))
         );

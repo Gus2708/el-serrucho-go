@@ -2,9 +2,11 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase, OrdenCambio } from '../lib/supabase';
 
 export interface BackendResumen {
-  pendientes: number;
-  aplicando:  number;
-  errores:    number;
+  pendientes:  number;
+  aplicando:   number;
+  errores:     number;
+  completados: number;
+  total:       number;
 }
 
 export type OrdenConItems = OrdenCambio & {
@@ -52,7 +54,7 @@ async function fetchOrdenes(): Promise<OrdenConItems[]> {
     }
   }
 
-  // Batch-fetch backend status resumen (solo items no completados)
+  // Batch-fetch backend status resumen (todos los items para resumir el total)
   const ids = rows.map((o: any) => o.id);
   let resumenMap: Record<number, BackendResumen> = {};
 
@@ -60,19 +62,20 @@ async function fetchOrdenes(): Promise<OrdenConItems[]> {
     const { data: backendItems, error: backendError } = await supabase
       .from('ordenes_cambio_items')
       .select('orden_id, backend_status')
-      .in('orden_id', ids)
-      .neq('backend_status', 'completado');
+      .in('orden_id', ids);
 
     if (backendError) {
       console.warn('No se pudo cargar backend_resumen del historial:', backendError.message);
     } else if (backendItems) {
       resumenMap = backendItems.reduce((acc: Record<number, BackendResumen>, item: any) => {
         const ordenId = Number(item.orden_id);
-        const resumen = acc[ordenId] ?? { pendientes: 0, aplicando: 0, errores: 0 };
+        const resumen = acc[ordenId] ?? { pendientes: 0, aplicando: 0, errores: 0, completados: 0, total: 0 };
 
+        resumen.total += 1;
         if (item.backend_status === 'pendiente') resumen.pendientes += 1;
-        if (item.backend_status === 'aplicando') resumen.aplicando += 1;
-        if (item.backend_status === 'error') resumen.errores += 1;
+        else if (item.backend_status === 'aplicando') resumen.aplicando += 1;
+        else if (item.backend_status === 'error') resumen.errores += 1;
+        else if (item.backend_status === 'completado') resumen.completados += 1;
 
         acc[ordenId] = resumen;
         return acc;
