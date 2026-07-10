@@ -66,6 +66,7 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
   const [removedIds, setRemovedIds] = useState<number[]>([]);
   const [nota, setNota] = useState('');
   const [priceWarnings, setPriceWarnings] = useState<Record<string, string | null>>({});
+  const [priceInputs, setPriceInputs] = useState<Record<string, string>>({});
   const [addOpen, setAddOpen] = useState(false);
   const [enBs, setEnBs] = useState(false);
   const [tasaCambio, setTasaCambio] = useState<number | null>(null);
@@ -142,6 +143,7 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
     setEnBs(false);
     setTasaCambio(null);
     setPorcentajeRecargo(null);
+    setPriceInputs({});
     onClose();
   }
 
@@ -171,6 +173,7 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
       ? item.precioVentaOriginal
       : parseFloat((item.precioVentaOriginal * (1 + markup_porcentaje / 100)).toFixed(2));
     setPrice(item.codigo_producto, newPrice);
+    setPriceInputs(prev => ({ ...prev, [item.codigo_producto]: String(newPrice) }));
   }
 
   function removeLine(codigo: string): void {
@@ -455,8 +458,9 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                               <TextInput
                                 style={[styles.priceInput, { color: colors.text }] as any}
                                 keyboardType="numeric"
-                                value={String(item.precio_unitario)}
+                                value={priceInputs[item.codigo_producto] !== undefined ? priceInputs[item.codigo_producto] : String(item.precio_unitario)}
                                 onChangeText={(v) => {
+                                  setPriceInputs(prev => ({ ...prev, [item.codigo_producto]: v }));
                                   if (v === '' || v === '.') {
                                     setPrice(item.codigo_producto, 0);
                                     return;

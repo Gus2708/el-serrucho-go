@@ -90,8 +90,16 @@ function BorradorView({ router }: { router: any }) {
 
   const [session, setSession] = useState<string | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [priceInputs, setPriceInputs] = useState<Record<string, string>>({});
+  const [costInputs, setCostInputs] = useState<Record<string, string>>({});
 
   const showBanner = items.length > 0 && !bannerDismissed;
+
+  function handleClear() {
+    clear();
+    setPriceInputs({});
+    setCostInputs({});
+  }
 
   // Lazy-load userId once
   async function getUserId(): Promise<string> {
@@ -103,7 +111,7 @@ function BorradorView({ router }: { router: any }) {
     try {
       const userId = await getUserId();
       const { orderId, html } = await submit(userId);
-      clear();
+      handleClear();
       
       const msg = `OC-${String(orderId).padStart(4, '0')} generada.`;
       
@@ -272,10 +280,11 @@ function BorradorView({ router }: { router: any }) {
                             }
                           ]}
                           keyboardType="numeric"
-                          value={item.nuevo_precio !== undefined && item.nuevo_precio !== null ? String(item.nuevo_precio) : ''}
+                          value={priceInputs[item.codigo_producto] !== undefined ? priceInputs[item.codigo_producto] : (item.nuevo_precio !== undefined && item.nuevo_precio !== null ? String(item.nuevo_precio) : '')}
                           placeholder={item.precio_actual !== undefined && item.precio_actual !== null ? String(item.precio_actual) : '0.00'}
                           placeholderTextColor={colors.textDim}
                           onChangeText={v => {
+                            setPriceInputs(prev => ({ ...prev, [item.codigo_producto]: v }));
                             const n = parseFloat(v);
                             if (!isNaN(n) && n >= 0) {
                               updateItem(item.codigo_producto, { nuevo_precio: n });
@@ -306,10 +315,11 @@ function BorradorView({ router }: { router: any }) {
                             }
                           ]}
                           keyboardType="numeric"
-                          value={item.costo !== undefined && item.costo !== null ? String(item.costo) : ''}
+                          value={costInputs[item.codigo_producto] !== undefined ? costInputs[item.codigo_producto] : (item.costo !== undefined && item.costo !== null ? String(item.costo) : '')}
                           placeholder="0.00"
                           placeholderTextColor={colors.textDim}
                           onChangeText={v => {
+                            setCostInputs(prev => ({ ...prev, [item.codigo_producto]: v }));
                             const n = parseFloat(v);
                             if (!isNaN(n) && n >= 0) {
                               updateItem(item.codigo_producto, { costo: n });
@@ -384,7 +394,7 @@ function BorradorView({ router }: { router: any }) {
             <Text style={[styles.submitCount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
               {items.length} ítem{items.length > 1 ? 's' : ''}
             </Text>
-            <Pressable onPress={clear} style={({ pressed }) => pressed && { opacity: 0.7 }}>
+            <Pressable onPress={handleClear} style={({ pressed }) => pressed && { opacity: 0.7 }}>
               <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>Limpiar borrador</Text>
             </Pressable>
           </View>
@@ -410,7 +420,7 @@ function BorradorView({ router }: { router: any }) {
           nota={nota || undefined}
           onRestore={() => setBannerDismissed(true)}
           onDiscard={() => {
-            clear();
+            handleClear();
             setBannerDismissed(true);
           }}
         />

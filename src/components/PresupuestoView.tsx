@@ -34,6 +34,7 @@ export default function PresupuestoView({ router }: { router: any }) {
   } = usePresupuestoStore();
   const [isLoading, setIsLoading] = useState(false);
   const [priceWarnings, setPriceWarnings] = useState<Record<string, string | null>>({});
+  const [priceInputs, setPriceInputs] = useState<Record<string, string>>({});
 
   const { data: config } = usePresupuestoConfig();
   const { data: tasa } = useTazas();
@@ -67,6 +68,7 @@ export default function PresupuestoView({ router }: { router: any }) {
       }
       const { presupuestoId, html } = result;
       reset();
+      setPriceInputs({});
       
       const msg = `P-${String(presupuestoId).padStart(4, '0')} generado.`;
       
@@ -264,8 +266,9 @@ export default function PresupuestoView({ router }: { router: any }) {
                           <TextInput
                             style={[styles.priceInput, { color: colors.text }] as any}
                             keyboardType="numeric"
-                            value={String(item.precio_unitario)}
+                            value={priceInputs[item.producto.codigo_interno] !== undefined ? priceInputs[item.producto.codigo_interno] : String(item.precio_unitario)}
                             onChangeText={v => {
+                              setPriceInputs(prev => ({ ...prev, [item.producto.codigo_interno]: v }));
                               if (v === '' || v === '.') {
                                 const w = updateItemPrice(item.producto.codigo_interno, 0);
                                 setPriceWarnings(prev => ({ ...prev, [item.producto.codigo_interno]: w }));
@@ -293,11 +296,13 @@ export default function PresupuestoView({ router }: { router: any }) {
                                   // Reset to original price
                                   const w = updateItemPrice(item.producto.codigo_interno, originalPrice);
                                   setPriceWarnings(prev => ({ ...prev, [item.producto.codigo_interno]: w }));
+                                  setPriceInputs(prev => ({ ...prev, [item.producto.codigo_interno]: String(originalPrice) }));
                                 } else {
                                   // Apply dynamic markup
                                   const newPrice = parseFloat((originalPrice * (1 + markup_porcentaje / 100)).toFixed(2));
                                   const w = updateItemPrice(item.producto.codigo_interno, newPrice);
                                   setPriceWarnings(prev => ({ ...prev, [item.producto.codigo_interno]: w }));
+                                  setPriceInputs(prev => ({ ...prev, [item.producto.codigo_interno]: String(newPrice) }));
                                 }
                               }}
                               style={({ pressed }) => [
@@ -392,7 +397,7 @@ export default function PresupuestoView({ router }: { router: any }) {
                 Bs. {(total * bcv).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </Text>
             )}
-            <Pressable onPress={reset} style={({ pressed }) => [pressed && { opacity: 0.7 }, { marginTop: 4 }]} hitSlop={6}>
+            <Pressable onPress={() => { reset(); setPriceInputs({}); }} style={({ pressed }) => [pressed && { opacity: 0.7 }, { marginTop: 4 }]} hitSlop={6}>
               <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>Limpiar presupuesto</Text>
             </Pressable>
           </View>
