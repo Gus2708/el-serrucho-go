@@ -209,7 +209,7 @@ function BorradorView({ router }: { router: any }) {
                         
                         <TextInput
                           style={[styles.qtyEdit, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
-                          keyboardType="numeric"
+                          keyboardType="decimal-pad"
                           value={String(item.nueva_existencia)}
                           onChangeText={v => {
                             const n = parseFloat(v);

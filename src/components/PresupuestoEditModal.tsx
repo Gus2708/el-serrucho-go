@@ -428,7 +428,7 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
 
                             <TextInput
                               style={[styles.ctrlInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }] as any}
-                              keyboardType="numeric"
+                              keyboardType="decimal-pad"
                               value={String(item.cantidad)}
                               onChangeText={(v) => {
                                 const n = parseFloat(v);
@@ -457,7 +457,7 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                               <Text style={[styles.priceCurrency, { color: colors.textDim }]}>$</Text>
                               <TextInput
                                 style={[styles.priceInput, { color: colors.text }] as any}
-                                keyboardType="numeric"
+                                keyboardType="decimal-pad"
                                 value={priceInputs[item.codigo_producto] !== undefined ? priceInputs[item.codigo_producto] : String(item.precio_unitario)}
                                 onChangeText={(v) => {
                                   setPriceInputs(prev => ({ ...prev, [item.codigo_producto]: v }));

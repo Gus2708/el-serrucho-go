@@ -398,7 +398,7 @@ export default function ProductoDetail() {
                 <View style={[styles.qtyWrap, { flex: 1, backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
                   <TextInput
                     style={[styles.qtyInput, { color: colors.text }]}
-                    keyboardType="numeric"
+                    keyboardType="decimal-pad"
                     value={newQty}
                     onChangeText={setNewQty}
                     placeholder="0"
@@ -704,7 +704,7 @@ export default function ProductoDetail() {
                   <View style={[styles.qtyWrap, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, height: 48 }]}>
                     <TextInput
                       style={[styles.qtyInput, { color: colors.text, fontSize: scaleFont(15) }]}
-                      keyboardType="numeric"
+                      keyboardType="decimal-pad"
                       value={newPrice}
                       onChangeText={setNewPrice}
                       placeholder={producto.precio_venta !== undefined && producto.precio_venta !== null ? producto.precio_venta.toFixed(2) : '0.00'}
@@ -722,7 +722,7 @@ export default function ProductoDetail() {
                   <View style={[styles.qtyWrap, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, height: 48 }]}>
                     <TextInput
                       style={[styles.qtyInput, { color: colors.text, fontSize: scaleFont(15) }]}
-                      keyboardType="numeric"
+                      keyboardType="decimal-pad"
                       value={newCost}
                       onChangeText={setNewCost}
                       placeholder={producto.costo !== undefined && producto.costo !== null ? producto.costo.toFixed(2) : '0.00'}
