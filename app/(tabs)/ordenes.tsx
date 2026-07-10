@@ -209,10 +209,11 @@ function BorradorView({ router }: { router: any }) {
                         
                         <TextInput
                           style={[styles.qtyEdit, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
-                          keyboardType="decimal-pad"
+                          keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad'}
                           value={String(item.nueva_existencia)}
                           onChangeText={v => {
-                            const n = parseFloat(v);
+                            const val = v.replace(',', '.');
+                            const n = parseFloat(val);
                             if (!isNaN(n) && n >= 0) {
                               updateItem(item.codigo_producto, { nueva_existencia: n });
                             }
@@ -279,16 +280,17 @@ function BorradorView({ router }: { router: any }) {
                               paddingVertical: 4
                             }
                           ]}
-                          keyboardType="numeric"
+                          keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad'}
                           value={priceInputs[item.codigo_producto] !== undefined ? priceInputs[item.codigo_producto] : (item.nuevo_precio !== undefined && item.nuevo_precio !== null ? String(item.nuevo_precio) : '')}
                           placeholder={item.precio_actual !== undefined && item.precio_actual !== null ? String(item.precio_actual) : '0.00'}
                           placeholderTextColor={colors.textDim}
                           onChangeText={v => {
-                            setPriceInputs(prev => ({ ...prev, [item.codigo_producto]: v }));
-                            const n = parseFloat(v);
+                            const val = v.replace(',', '.');
+                            setPriceInputs(prev => ({ ...prev, [item.codigo_producto]: val }));
+                            const n = parseFloat(val);
                             if (!isNaN(n) && n >= 0) {
                               updateItem(item.codigo_producto, { nuevo_precio: n });
-                            } else if (v === '') {
+                            } else if (val === '') {
                               updateItem(item.codigo_producto, { nuevo_precio: null });
                             }
                           }}
@@ -314,16 +316,17 @@ function BorradorView({ router }: { router: any }) {
                               paddingVertical: 4
                             }
                           ]}
-                          keyboardType="numeric"
+                          keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad'}
                           value={costInputs[item.codigo_producto] !== undefined ? costInputs[item.codigo_producto] : (item.costo !== undefined && item.costo !== null ? String(item.costo) : '')}
                           placeholder="0.00"
                           placeholderTextColor={colors.textDim}
                           onChangeText={v => {
-                            setCostInputs(prev => ({ ...prev, [item.codigo_producto]: v }));
-                            const n = parseFloat(v);
+                            const val = v.replace(',', '.');
+                            setCostInputs(prev => ({ ...prev, [item.codigo_producto]: val }));
+                            const n = parseFloat(val);
                             if (!isNaN(n) && n >= 0) {
                               updateItem(item.codigo_producto, { costo: n });
-                            } else if (v === '') {
+                            } else if (val === '') {
                               updateItem(item.codigo_producto, { costo: null });
                             }
                           }}

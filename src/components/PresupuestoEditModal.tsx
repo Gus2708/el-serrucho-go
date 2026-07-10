@@ -428,10 +428,11 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
 
                             <TextInput
                               style={[styles.ctrlInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }] as any}
-                              keyboardType="decimal-pad"
+                              keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad'}
                               value={String(item.cantidad)}
                               onChangeText={(v) => {
-                                const n = parseFloat(v);
+                                const val = v.replace(',', '.');
+                                const n = parseFloat(val);
                                 if (!isNaN(n) && n > 0) setQuantity(item.codigo_producto, n);
                               }}
                               selectTextOnFocus
@@ -457,15 +458,16 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                               <Text style={[styles.priceCurrency, { color: colors.textDim }]}>$</Text>
                               <TextInput
                                 style={[styles.priceInput, { color: colors.text }] as any}
-                                keyboardType="decimal-pad"
+                                keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad'}
                                 value={priceInputs[item.codigo_producto] !== undefined ? priceInputs[item.codigo_producto] : String(item.precio_unitario)}
                                 onChangeText={(v) => {
-                                  setPriceInputs(prev => ({ ...prev, [item.codigo_producto]: v }));
-                                  if (v === '' || v === '.') {
+                                  const val = v.replace(',', '.');
+                                  setPriceInputs(prev => ({ ...prev, [item.codigo_producto]: val }));
+                                  if (val === '' || val === '.') {
                                     setPrice(item.codigo_producto, 0);
                                     return;
                                   }
-                                  const p = parseFloat(v);
+                                  const p = parseFloat(val);
                                   if (!isNaN(p) && p >= 0) setPrice(item.codigo_producto, p);
                                 }}
                                 selectTextOnFocus

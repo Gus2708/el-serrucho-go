@@ -398,9 +398,9 @@ export default function ProductoDetail() {
                 <View style={[styles.qtyWrap, { flex: 1, backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
                   <TextInput
                     style={[styles.qtyInput, { color: colors.text }]}
-                    keyboardType="decimal-pad"
+                    keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad'}
                     value={newQty}
-                    onChangeText={setNewQty}
+                    onChangeText={v => setNewQty(v.replace(',', '.'))}
                     placeholder="0"
                     placeholderTextColor={colors.textDim}
                     selectTextOnFocus
@@ -704,9 +704,9 @@ export default function ProductoDetail() {
                   <View style={[styles.qtyWrap, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, height: 48 }]}>
                     <TextInput
                       style={[styles.qtyInput, { color: colors.text, fontSize: scaleFont(15) }]}
-                      keyboardType="decimal-pad"
+                      keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad'}
                       value={newPrice}
-                      onChangeText={setNewPrice}
+                      onChangeText={v => setNewPrice(v.replace(',', '.'))}
                       placeholder={producto.precio_venta !== undefined && producto.precio_venta !== null ? producto.precio_venta.toFixed(2) : '0.00'}
                       placeholderTextColor={colors.textDim}
                       selectTextOnFocus
@@ -722,9 +722,9 @@ export default function ProductoDetail() {
                   <View style={[styles.qtyWrap, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, height: 48 }]}>
                     <TextInput
                       style={[styles.qtyInput, { color: colors.text, fontSize: scaleFont(15) }]}
-                      keyboardType="decimal-pad"
+                      keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad'}
                       value={newCost}
-                      onChangeText={setNewCost}
+                      onChangeText={v => setNewCost(v.replace(',', '.'))}
                       placeholder={producto.costo !== undefined && producto.costo !== null ? producto.costo.toFixed(2) : '0.00'}
                       placeholderTextColor={colors.textDim}
                       selectTextOnFocus

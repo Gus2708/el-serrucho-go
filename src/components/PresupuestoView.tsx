@@ -233,10 +233,11 @@ export default function PresupuestoView({ router }: { router: any }) {
                         
                         <TextInput
                           style={[styles.ctrlInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }] as any}
-                          keyboardType="decimal-pad"
+                          keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad'}
                           value={String(item.cantidad)}
                           onChangeText={v => {
-                            const n = parseFloat(v);
+                            const val = v.replace(',', '.');
+                            const n = parseFloat(val);
                             if (!isNaN(n) && n > 0) {
                               updateItemQuantity(item.producto.codigo_interno, n);
                             }
@@ -265,16 +266,17 @@ export default function PresupuestoView({ router }: { router: any }) {
                           <Text style={[styles.priceCurrency, { color: colors.textDim }]}>$</Text>
                           <TextInput
                             style={[styles.priceInput, { color: colors.text }] as any}
-                            keyboardType="decimal-pad"
+                            keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad'}
                             value={priceInputs[item.producto.codigo_interno] !== undefined ? priceInputs[item.producto.codigo_interno] : String(item.precio_unitario)}
                             onChangeText={v => {
-                              setPriceInputs(prev => ({ ...prev, [item.producto.codigo_interno]: v }));
-                              if (v === '' || v === '.') {
+                              const val = v.replace(',', '.');
+                              setPriceInputs(prev => ({ ...prev, [item.producto.codigo_interno]: val }));
+                              if (val === '' || val === '.') {
                                 const w = updateItemPrice(item.producto.codigo_interno, 0);
                                 setPriceWarnings(prev => ({ ...prev, [item.producto.codigo_interno]: w }));
                                 return;
                               }
-                              const p = parseFloat(v);
+                              const p = parseFloat(val);
                               if (!isNaN(p) && p >= 0) {
                                 const w = updateItemPrice(item.producto.codigo_interno, p);
                                 setPriceWarnings(prev => ({ ...prev, [item.producto.codigo_interno]: w }));
