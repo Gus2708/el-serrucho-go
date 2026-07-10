@@ -16,7 +16,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../theme/ThemeContext';
-import { useOrdenCambioDetalle, useReencolarItem, OrdenCambioItem } from '../hooks/useOrdenCambioDetalle';
+import { useOrdenCambioDetalle, useReencolarItem, OrdenCambioItem, BackendStatus } from '../hooks/useOrdenCambioDetalle';
 import { OrdenConItems } from '../hooks/useOrdenesHistory';
 import { useUserRole } from '../hooks/useUserRole';
 import { confirm, notify } from '../lib/notify';
@@ -164,6 +164,58 @@ interface BackendStatusChipProps {
   ordenId:       number | null;
 }
 
+function TimelineSteps({ status }: { status: BackendStatus }): React.JSX.Element {
+  const { colors } = useTheme();
+  
+  // Determine active index
+  let activeIndex = 0;
+  if (status === 'pendiente') activeIndex = 1;
+  else if (status === 'aplicando') activeIndex = 2;
+  else if (status === 'completado') activeIndex = 3;
+  else if (status === 'error') activeIndex = 3;
+
+  return (
+    <View style={styles.timelineRow}>
+      {/* Step 1: Emitido */}
+      <View style={styles.timelineStep}>
+        <View style={[styles.timelineDot, { backgroundColor: colors.success }]} />
+        <Text style={[styles.timelineText, { color: colors.textMuted }]}>Emitido</Text>
+      </View>
+      
+      <View style={[styles.timelineLine, { backgroundColor: activeIndex >= 1 ? (status === 'error' ? colors.danger : colors.primary) : colors.border }]} />
+
+      {/* Step 2: En cola */}
+      <View style={styles.timelineStep}>
+        <View style={[
+          styles.timelineDot, 
+          activeIndex >= 1 && { backgroundColor: status === 'error' ? colors.danger : (activeIndex === 1 ? colors.warning : colors.success) },
+          activeIndex < 1 && { borderColor: colors.border, borderWidth: 1, backgroundColor: 'transparent' }
+        ]} />
+        <Text style={[styles.timelineText, { color: activeIndex >= 1 ? colors.text : colors.textMuted }]}>En Cola</Text>
+      </View>
+
+      <View style={[styles.timelineLine, { backgroundColor: activeIndex >= 2 ? (status === 'error' ? colors.danger : colors.primary) : colors.border }]} />
+
+      {/* Step 3: POS */}
+      <View style={styles.timelineStep}>
+        <View style={[
+          styles.timelineDot,
+          status === 'error' && { backgroundColor: colors.danger },
+          status === 'completado' && { backgroundColor: colors.success },
+          status === 'aplicando' && { backgroundColor: colors.primary },
+          status !== 'error' && status !== 'completado' && status !== 'aplicando' && { borderColor: colors.border, borderWidth: 1, backgroundColor: 'transparent' }
+        ]} />
+        <Text style={[
+          styles.timelineText, 
+          { color: status === 'error' ? colors.danger : (status === 'completado' ? colors.success : (status === 'aplicando' ? colors.primary : colors.textMuted)) }
+        ]}>
+          {status === 'error' ? 'Error' : status === 'completado' ? 'Aplicado' : 'POS'}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 function BackendStatusChip({ item, esDueno, isExpanded, onToggleExpand, ordenId }: BackendStatusChipProps): React.JSX.Element {
   const { colors } = useTheme();
   const reencolar = useReencolarItem(ordenId);
@@ -202,14 +254,15 @@ function BackendStatusChip({ item, esDueno, isExpanded, onToggleExpand, ordenId 
     const esPrueba = item.backend_resultado?.startsWith('[PREVIEW]');
     return (
       <View style={styles.backendChipBlock}>
-        <View style={[styles.backendChip, { backgroundColor: colors.warning + '18', borderColor: colors.warning + '40' }]}>
+        <TimelineSteps status="pendiente" />
+        <View style={[styles.backendChip, { backgroundColor: colors.warning + '18', borderColor: colors.warning + '40', marginTop: 4 }]}>
           <Feather name="clock" size={11} color={colors.warning} />
           <Text style={[styles.backendChipText, { color: colors.warning }]}>
             {esPrueba ? 'EN COLA · PRUEBA' : 'EN COLA'}
           </Text>
         </View>
         <Text style={[styles.backendChipSubtext, { color: colors.textDim }]}>
-          Se aplica automático fuera de horario
+          Se aplica automático fuera de horario comercial
         </Text>
       </View>
     );
@@ -217,50 +270,78 @@ function BackendStatusChip({ item, esDueno, isExpanded, onToggleExpand, ordenId 
 
   if (item.backend_status === 'aplicando') {
     return (
-      <View style={[styles.backendChip, styles.backendChipStandalone, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '40' }]}>
-        <ActivityIndicator size="small" color={colors.primary} />
-        <Text style={[styles.backendChipText, { color: colors.primary }]}>APLICANDO…</Text>
+      <View style={styles.backendChipBlock}>
+        <TimelineSteps status="aplicando" />
+        <View style={[styles.backendChip, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '40', marginTop: 4 }]}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={[styles.backendChipText, { color: colors.primary }]}>APLICANDO A LA BASE REAL...</Text>
+        </View>
       </View>
     );
   }
 
   if (item.backend_status === 'completado') {
     return (
-      <View style={[styles.backendChip, styles.backendChipStandalone, { backgroundColor: colors.success + '18', borderColor: colors.success + '40' }]}>
-        <Feather name="check-circle" size={11} color={colors.success} />
-        <Text style={[styles.backendChipText, { color: colors.success }]}>
-          APLICADO EN HYBRID{item.backend_aplicado_en ? ` · ${formatFechaCorta(item.backend_aplicado_en)}` : ''}
-        </Text>
+      <View style={styles.backendChipBlock}>
+        <TimelineSteps status="completado" />
+        <View style={[styles.backendChip, { backgroundColor: colors.success + '18', borderColor: colors.success + '40', marginTop: 4 }]}>
+          <Feather name="check-circle" size={11} color={colors.success} />
+          <Text style={[styles.backendChipText, { color: colors.success }]}>
+            APLICADO EN HYBRID{item.backend_aplicado_en ? ` · ${formatFechaCorta(item.backend_aplicado_en)}` : ''}
+          </Text>
+        </View>
       </View>
     );
   }
 
   // error
+  const esRiesgoso = /ATENCIÓN|riesgo de ajuste doble/i.test(item.backend_resultado ?? '');
   return (
     <View style={styles.backendChipBlock}>
-      <View style={[styles.backendChip, { backgroundColor: colors.danger + '18', borderColor: colors.danger + '40' }]}>
+      <TimelineSteps status="error" />
+      <View style={[styles.backendChip, { backgroundColor: colors.danger + '18', borderColor: colors.danger + '40', marginTop: 4 }]}>
         <Feather name="alert-triangle" size={11} color={colors.danger} />
         <Text style={[styles.backendChipText, { color: colors.danger }]}>
-          ERROR{item.backend_intentos > 0 ? ` · ${item.backend_intentos} intentos` : ''}
+          ERROR EN POS{item.backend_intentos > 0 ? ` · ${item.backend_intentos} intentos` : ''}
         </Text>
       </View>
+      
+      {esRiesgoso && (
+        <View style={[styles.inlineWarning, { backgroundColor: colors.danger + '08', borderColor: colors.danger + '30' }]}>
+          <Feather name="alert-octagon" size={12} color={colors.danger} />
+          <Text style={[styles.inlineWarningText, { color: colors.danger }]}>
+            RIESGO AJUSTE DOBLE: Verifica el stock actual en el POS antes de reintentar.
+          </Text>
+        </View>
+      )}
+
       {item.backend_resultado ? (
-        <Pressable onPress={onToggleExpand}>
+        <Pressable 
+          onPress={onToggleExpand} 
+          style={[styles.errorLogContainer, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+        >
+          <View style={styles.errorLogHeader}>
+            <Text style={[styles.errorLogTitle, { color: colors.textMuted }]}>
+              Detalle del Error ({isExpanded ? 'Contraer' : 'Expandir'})
+            </Text>
+            <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={12} color={colors.textMuted} />
+          </View>
           <Text
-            style={[styles.backendErrorText, { color: colors.textMuted }]}
+            style={[styles.backendErrorText, { color: colors.text }]}
             numberOfLines={isExpanded ? undefined : 2}
           >
             {item.backend_resultado}
           </Text>
         </Pressable>
       ) : null}
+
       {esDueno ? (
         <Pressable
           onPress={handleReencolar}
           disabled={reencolar.isPending}
           style={({ pressed }) => [
             styles.backendRetryBtn,
-            { borderColor: colors.primary + '40', backgroundColor: colors.primary + '10' },
+            { borderColor: colors.primary + '40', backgroundColor: colors.primary + '10', marginTop: 4 },
             (pressed || reencolar.isPending) && { opacity: 0.7 },
           ]}
         >
@@ -269,7 +350,7 @@ function BackendStatusChip({ item, esDueno, isExpanded, onToggleExpand, ordenId 
           ) : (
             <>
               <Feather name="refresh-cw" size={11} color={colors.primary} />
-              <Text style={[styles.backendRetryText, { color: colors.primary }]}>Reintentar</Text>
+              <Text style={[styles.backendRetryText, { color: colors.primary }]}>Reintentar Sincronización</Text>
             </>
           )}
         </Pressable>
@@ -382,6 +463,7 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
   const totalItemsAdjusted = details.reduce((acc, d) => acc + Math.abs(d.delta), 0);
   const netDelta = details.reduce((acc, d) => acc + d.delta, 0);
   const resumenApp = esOrdenApp ? resumenAplicacion(details, colors) : null;
+  const hasErrors = details.some(d => d.backend_status === 'error');
 
   return (
     <Modal
@@ -508,7 +590,21 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
                     </View>
                   </View>
 
-                  <View style={{ height: 32 }} />
+                  {hasErrors && (
+                    <View style={[styles.modalWarningBanner, { backgroundColor: colors.danger + '10', borderColor: colors.danger + '30' }]}>
+                      <Feather name="alert-triangle" size={16} color={colors.danger} style={{ marginTop: 2 }} />
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={[styles.modalWarningTitle, { color: colors.danger }]}>
+                          Errores de Sincronización POS
+                        </Text>
+                        <Text style={[styles.modalWarningText, { color: colors.textMuted }]}>
+                          Algunos ítems no pudieron aplicarse en el punto de venta. Revisa las advertencias y detalles de error a continuación.
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
+                  <View style={{ height: hasErrors ? 16 : 32 }} />
 
                   {/* Items List - Internal scroll for 3+ items */}
                   <View style={{ height: 16 }} />
@@ -883,5 +979,87 @@ const styles = StyleSheet.create({
     fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_400Regular',
     lineHeight: scaleFont(18),
+  },
+  timelineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 8,
+    alignSelf: 'stretch',
+    justifyContent: 'space-between',
+    paddingRight: 10,
+  },
+  timelineStep: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  timelineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  timelineLine: {
+    flex: 1,
+    height: 1,
+    marginHorizontal: 8,
+  },
+  timelineText: {
+    fontSize: scaleFont(9.5),
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
+  inlineWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 8,
+    borderWidth: 0.5,
+    padding: 8,
+    marginTop: 6,
+    alignSelf: 'stretch',
+  },
+  inlineWarningText: {
+    fontSize: scaleFont(9.5),
+    fontFamily: 'JetBrainsMono_700Bold',
+    flex: 1,
+    lineHeight: scaleFont(13),
+  },
+  errorLogContainer: {
+    borderWidth: 0.5,
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 6,
+    alignSelf: 'stretch',
+    gap: 4,
+  },
+  errorLogHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  errorLogTitle: {
+    fontSize: scaleFont(9.5),
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
+  modalWarningBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginHorizontal: 24,
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 0.5,
+  },
+  modalWarningTitle: {
+    fontSize: scaleFont(12),
+    fontFamily: 'JetBrainsMono_700Bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  modalWarningText: {
+    fontSize: scaleFont(11),
+    fontFamily: 'JetBrainsMono_400Regular',
+    lineHeight: scaleFont(15),
   },
 });

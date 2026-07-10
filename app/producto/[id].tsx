@@ -36,6 +36,8 @@ export default function ProductoDetail() {
   const [isSavingPrice, setIsSavingPrice] = useState(false);
 
   const { data: movimientos, isLoading: isLoadingMovs } = useMovimientosProducto(id);
+  const hasPendingSync = movimientos?.some(m => m.backend_status === 'pendiente' || m.backend_status === 'aplicando');
+  const pendingDelta = movimientos?.find(m => m.backend_status === 'pendiente' || m.backend_status === 'aplicando')?.cantidad ?? 0;
 
   const [selectedVentaId, setSelectedVentaId] = useState<number | null>(null);
 
@@ -225,6 +227,14 @@ export default function ProductoDetail() {
           <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>Existencia actual</Text>
             <StockDisplay producto={producto} colors={colors} />
+            {hasPendingSync && (
+              <View style={[styles.stockPendingBanner, { backgroundColor: colors.warning + '12', borderColor: colors.warning + '40', marginTop: 12 }]}>
+                <Feather name="clock" size={12} color={colors.warning} />
+                <Text style={[styles.stockPendingText, { color: colors.textMuted }]} numberOfLines={2}>
+                  Sincronización pendiente: Ajuste de {pendingDelta > 0 ? '+' : ''}{pendingDelta} uds en cola para aplicarse en el POS.
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Last sync */}
@@ -347,9 +357,17 @@ export default function ProductoDetail() {
               <Text style={[styles.sheetTitle, { color: colors.text }]}>
                 Ajustar existencia
               </Text>
-              <Text style={[styles.sheetSub, { color: colors.textMuted }]} numberOfLines={1}>
+              <Text style={[styles.sheetSub, { color: colors.textMuted, marginBottom: 8 }]} numberOfLines={1}>
                 {producto.descripcion}
               </Text>
+
+              {/* Banner de writeback automático */}
+              <View style={[styles.sheetBanner, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30', marginBottom: 12 }]}>
+                <Feather name="zap" size={13} color={colors.primary} style={{ marginRight: 6, marginTop: 1 }} />
+                <Text style={[styles.sheetBannerText, { color: colors.textMuted }]}>
+                  Este stock se encolará y actualizará automáticamente en el POS Hybrid.
+                </Text>
+              </View>
 
               {/* Mode Selector */}
               <View style={[styles.modeSelector, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
@@ -607,7 +625,7 @@ export default function ProductoDetail() {
                     <ActivityIndicator color={colors.onPrimary} size="small" />
                   ) : (
                     <Text style={{ fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', color: colors.onPrimary }}>
-                      Aplicar Ahora
+                      Aplicar y Encolar
                     </Text>
                   )}
                 </Pressable>
@@ -683,9 +701,17 @@ export default function ProductoDetail() {
                 </Pressable>
               </View>
 
-              <Text style={{ fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium', color: colors.textMuted }} numberOfLines={1}>
+              <Text style={{ fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium', color: colors.textMuted, marginBottom: 8 }} numberOfLines={1}>
                 {producto.descripcion}
               </Text>
+
+              {/* Banner de writeback automático */}
+              <View style={[styles.sheetBanner, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30', marginBottom: 12 }]}>
+                <Feather name="zap" size={13} color={colors.primary} style={{ marginRight: 6, marginTop: 1 }} />
+                <Text style={[styles.sheetBannerText, { color: colors.textMuted }]}>
+                  Los precios y costos se encolarán y actualizarán automáticamente.
+                </Text>
+              </View>
 
               {errorMsg && (
                 <View style={{ backgroundColor: colors.danger + '22', padding: 8, borderRadius: 8, marginVertical: 8 }}>
@@ -943,7 +969,7 @@ export default function ProductoDetail() {
                     <ActivityIndicator color={colors.onPrimary} size="small" />
                   ) : (
                     <Text style={{ fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', color: colors.onPrimary }}>
-                      Aplicar Ahora
+                      Aplicar y Encolar
                     </Text>
                   )}
                 </Pressable>
@@ -1085,9 +1111,27 @@ function HistorialMovimientos({
                 </View>
 
                 <View style={styles.movInfo}>
-                  <Text style={[styles.movText, { color: colors.text }]} numberOfLines={1}>
-                    {mov.referencia}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <Text style={[styles.movText, { color: colors.text, flex: 0, marginRight: 0 }]} numberOfLines={1}>
+                      {mov.referencia}
+                    </Text>
+                    {mov.backend_status && mov.backend_status !== 'completado' && (
+                      <View style={[
+                        styles.miniStatusBadge,
+                        { 
+                          backgroundColor: mov.backend_status === 'error' ? colors.danger + '18' : colors.warning + '18',
+                          borderColor: mov.backend_status === 'error' ? colors.danger + '40' : colors.warning + '40'
+                        }
+                      ]}>
+                        <Text style={[
+                          styles.miniStatusBadgeText, 
+                          { color: mov.backend_status === 'error' ? colors.danger : colors.warning }
+                        ]}>
+                          {mov.backend_status === 'error' ? 'Error' : mov.backend_status === 'aplicando' ? 'Aplicando' : 'En cola'}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
                   {mov.nota ? (
                     <Text style={[styles.movNota, { color: colors.textMuted }]} numberOfLines={1}>
                       {mov.nota}
@@ -1437,5 +1481,44 @@ const styles = StyleSheet.create({
     fontSize: scaleFont(14),
     fontFamily: 'JetBrainsMono_400Regular',
     marginTop: 6,
+  },
+  stockPendingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 8,
+    borderWidth: 0.5,
+    padding: 10,
+  },
+  stockPendingText: {
+    fontSize: scaleFont(11),
+    fontFamily: 'JetBrainsMono_500Medium',
+    flex: 1,
+    lineHeight: scaleFont(15),
+  },
+  sheetBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderRadius: 8,
+    borderWidth: 0.5,
+    padding: 10,
+  },
+  sheetBannerText: {
+    fontSize: scaleFont(11),
+    fontFamily: 'JetBrainsMono_400Regular',
+    flex: 1,
+    lineHeight: scaleFont(15),
+  },
+  miniStatusBadge: {
+    borderRadius: 4,
+    borderWidth: 0.5,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniStatusBadgeText: {
+    fontSize: scaleFont(9),
+    fontFamily: 'JetBrainsMono_700Bold',
   },
 });

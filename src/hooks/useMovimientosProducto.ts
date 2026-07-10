@@ -10,6 +10,8 @@ export interface MovimientoProducto {
   fechaFormateada: string;
   timestamp:       number;
   ventaId?:        number;
+  backend_status?: string;
+  backend_resultado?: string | null;
 }
 
 /**
@@ -88,6 +90,8 @@ async function fetchMovimientos(codigoProducto: string): Promise<MovimientoProdu
       id,
       delta,
       nota,
+      backend_status,
+      backend_resultado,
       ordenes_cambio:orden_id (
         creado_en,
         nota,
@@ -166,6 +170,8 @@ async function fetchMovimientos(codigoProducto: string): Promise<MovimientoProdu
         nota:            notaDetalle || undefined,
         fechaFormateada: formatIsoDateToLocal(dateStr),
         timestamp:       ts,
+        backend_status:  o.backend_status,
+        backend_resultado: o.backend_resultado,
       });
     });
   }

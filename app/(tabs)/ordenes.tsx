@@ -137,6 +137,19 @@ function BorradorView({ router }: { router: any }) {
     <View style={styles.flex}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
+        {/* Banner educativo de Writeback */}
+        <View style={[styles.infoBanner, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}>
+          <Feather name="zap" size={15} color={colors.primary} style={styles.infoBannerIcon} />
+          <View style={styles.infoBannerTextContainer}>
+            <Text style={[styles.infoBannerTitle, { color: colors.primary }]}>
+              Sincronización de Stock en Cola (Writeback)
+            </Text>
+            <Text style={[styles.infoBannerSub, { color: colors.textMuted }]}>
+              Los cambios de existencia se registrarán como órdenes relativas (deltas) y el backend los aplicará automáticamente en el POS Hybrid.
+            </Text>
+          </View>
+        </View>
+
         {/* Add products CTA */}
         <Pressable
           style={({ pressed }) => [styles.addProductBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }, pressed && { opacity: 0.75 }]}
@@ -397,7 +410,8 @@ function BorradorView({ router }: { router: any }) {
             <Text style={[styles.submitCount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
               {items.length} ítem{items.length > 1 ? 's' : ''}
             </Text>
-            <Pressable onPress={handleClear} style={({ pressed }) => pressed && { opacity: 0.7 }}>
+            <Text style={{ fontSize: scaleFont(10), color: colors.textMuted, fontFamily: 'JetBrainsMono_400Regular' }}>Sincronización POS en cola</Text>
+            <Pressable onPress={handleClear} style={({ pressed }) => [pressed && { opacity: 0.7 }, { marginTop: 4 }]}>
               <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>Limpiar borrador</Text>
             </Pressable>
           </View>
@@ -410,7 +424,7 @@ function BorradorView({ router }: { router: any }) {
               ? <ActivityIndicator color={colors.onPrimary} />
               : <>
                   <Feather name="send" size={16} color={colors.onPrimary} />
-                  <Text style={[styles.submitBtnText, { color: colors.onPrimary }]} numberOfLines={1} adjustsFontSizeToFit>Emitir y PDF</Text>
+                  <Text style={[styles.submitBtnText, { color: colors.onPrimary }]} numberOfLines={1} adjustsFontSizeToFit>Emitir y Encolar POS</Text>
                 </>
             }
           </Pressable>
@@ -914,12 +928,11 @@ function BackendBadge({ resumen }: { resumen?: BackendResumen }): React.JSX.Elem
   if (!resumen) return null;
 
   if (resumen.errores > 0) {
-    const label = resumen.errores > 1 ? 'errores' : 'error';
     return (
       <View style={[styles.backendBadge, { backgroundColor: colors.danger + '18', borderColor: colors.danger + '40' }]}>
         <Feather name="alert-triangle" size={10} color={colors.danger} />
         <Text style={[styles.backendBadgeText, { color: colors.danger }]} numberOfLines={1}>
-          {resumen.errores} {label}
+          ⚠️ Error ({resumen.errores})
         </Text>
       </View>
     );
@@ -930,7 +943,7 @@ function BackendBadge({ resumen }: { resumen?: BackendResumen }): React.JSX.Elem
       <View style={[styles.backendBadge, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '40' }]}>
         <ActivityIndicator size="small" color={colors.primary} />
         <Text style={[styles.backendBadgeText, { color: colors.primary }]} numberOfLines={1}>
-          Aplicando…
+          ⚙️ Aplicando…
         </Text>
       </View>
     );
@@ -941,7 +954,7 @@ function BackendBadge({ resumen }: { resumen?: BackendResumen }): React.JSX.Elem
       <View style={[styles.backendBadge, { backgroundColor: colors.warning + '18', borderColor: colors.warning + '40' }]}>
         <Feather name="clock" size={10} color={colors.warning} />
         <Text style={[styles.backendBadgeText, { color: colors.warning }]} numberOfLines={1}>
-          {resumen.pendientes} en cola
+          ⏳ En cola ({resumen.pendientes})
         </Text>
       </View>
     );
@@ -952,7 +965,7 @@ function BackendBadge({ resumen }: { resumen?: BackendResumen }): React.JSX.Elem
       <View style={[styles.backendBadge, { backgroundColor: colors.success + '18', borderColor: colors.success + '40' }]}>
         <Feather name="check" size={10} color={colors.success} />
         <Text style={[styles.backendBadgeText, { color: colors.success }]} numberOfLines={1}>
-          Aplicado
+          ✅ Sincronizado POS
         </Text>
       </View>
     );
@@ -1229,5 +1242,34 @@ const styles = StyleSheet.create({
     fontSize: scaleFont(13),
     fontFamily: 'JetBrainsMono_700Bold',
     marginTop: 4,
+  },
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 0.5,
+  },
+  infoBannerIcon: {
+    marginTop: 2,
+    marginRight: 10,
+  },
+  infoBannerTextContainer: {
+    flex: 1,
+  },
+  infoBannerTitle: {
+    fontSize: scaleFont(12),
+    fontFamily: 'JetBrainsMono_700Bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  infoBannerSub: {
+    fontSize: scaleFont(11),
+    fontFamily: 'JetBrainsMono_400Regular',
+    lineHeight: scaleFont(15),
   },
 });
