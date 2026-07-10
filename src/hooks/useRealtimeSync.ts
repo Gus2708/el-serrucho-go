@@ -54,6 +54,14 @@ export function useRealtimeSync() {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'ordenes_cambio' }, () => {
           queryClient.invalidateQueries({ queryKey: ['ordenes-history'] });
         })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'ordenes_cambio_items' }, () => {
+          // Write-back: el backend reporta avance actualizando backend_status en
+          // los ITEMS (la cabecera nunca cambia). Sin esta suscripción, el badge
+          // del historial no se entera de pendiente→completado hasta un refetch
+          // manual — el detalle del modal sí, porque tiene su propio canal.
+          queryClient.invalidateQueries({ queryKey: ['ordenes-history'] });
+          queryClient.invalidateQueries({ queryKey: ['orden-cambio-detalle'] });
+        })
         .subscribe();
 
       // ── Canal 2: NOTIFICACIONES (aislado para que Realtime no lo pierda) ──────
