@@ -1111,8 +1111,8 @@ function HistorialMovimientos({
                 </View>
 
                 <View style={styles.movInfo}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <Text style={[styles.movText, { color: colors.text, flex: 0, marginRight: 0 }]} numberOfLines={1}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={[styles.movText, { color: colors.text, flexShrink: 1, flexGrow: 0, flexBasis: 'auto', marginRight: 0 }]} numberOfLines={1}>
                       {mov.referencia}
                     </Text>
                     {mov.backend_status && mov.backend_status !== 'completado' && (
