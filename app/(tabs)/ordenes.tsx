@@ -37,8 +37,10 @@ import { usePresupuestosHistory } from '../../src/hooks/usePresupuestosHistory';
 import { OrdenCambioDetailModal } from '../../src/components/OrdenCambioDetailModal';
 import { PresupuestoEditModal } from '../../src/components/PresupuestoEditModal';
 import { DraftRestoreBanner } from '../../src/components/DraftRestoreBanner';
+import ComprasView from '../../src/components/ComprasView';
+import ComprasHistorialView from '../../src/components/ComprasHistorialView';
 
-type Tab = 'ajuste' | 'presupuesto' | 'historial' | 'fallas';
+type Tab = 'ajuste' | 'presupuesto' | 'historial' | 'fallas' | 'compras';
 
 export default function Ordenes() {
   const { colors, formatUSD } = useTheme();
@@ -48,7 +50,7 @@ export default function Ordenes() {
   const [tab, setTab] = useState<Tab>('ajuste');
 
   useEffect(() => {
-    if (params.tab === 'ajuste' || params.tab === 'presupuesto' || params.tab === 'historial' || params.tab === 'fallas') {
+    if (params.tab === 'ajuste' || params.tab === 'presupuesto' || params.tab === 'historial' || params.tab === 'fallas' || params.tab === 'compras') {
       setTab(params.tab as Tab);
     }
   }, [params.tab]);
@@ -67,6 +69,7 @@ export default function Ordenes() {
         >
           <TabBtn label="Ajuste" active={tab === 'ajuste'} onPress={() => setTab('ajuste')} />
           <TabBtn label="Presupuesto" active={tab === 'presupuesto'} onPress={() => setTab('presupuesto')} />
+          <TabBtn label="Compras" active={tab === 'compras'} onPress={() => setTab('compras')} />
           <TabBtn label="Fallas" active={tab === 'fallas'} onPress={() => setTab('fallas')} />
           <TabBtn label="Historial" active={tab === 'historial'} onPress={() => setTab('historial')} />
         </ScrollView>
@@ -74,9 +77,39 @@ export default function Ordenes() {
 
       {tab === 'ajuste' && <BorradorView router={router} />}
       {tab === 'presupuesto' && <PresupuestoView router={router} />}
+      {tab === 'compras' && <ComprasTab router={router} />}
       {tab === 'fallas' && <FallasView />}
       {tab === 'historial' && <HistorialView queryClient={queryClient} />}
     </SafeAreaView>
+  );
+}
+
+// ── Compras (armar compra + historial en sub-toggle) ─────────────────────────
+
+function ComprasTab({ router }: { router: any }) {
+  const { colors } = useTheme();
+  const [subTab, setSubTab] = useState<'armar' | 'historial'>('armar');
+
+  return (
+    <View style={styles.flex}>
+      <View style={[styles.subTabContainer, { backgroundColor: '#0A0A0A', borderColor: colors.border }]}>
+        <Pressable
+          style={[styles.subTabBtn, subTab === 'armar' && { backgroundColor: colors.surface, borderColor: '#333' }]}
+          onPress={() => setSubTab('armar')}
+        >
+          <Text style={[styles.subTabText, { color: subTab === 'armar' ? colors.primary : colors.textMuted }]}>Nueva compra</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.subTabBtn, subTab === 'historial' && { backgroundColor: colors.surface, borderColor: '#333' }]}
+          onPress={() => setSubTab('historial')}
+        >
+          <Text style={[styles.subTabText, { color: subTab === 'historial' ? colors.primary : colors.textMuted }]}>Historial</Text>
+        </Pressable>
+      </View>
+
+      {subTab === 'armar' && <ComprasView router={router} />}
+      {subTab === 'historial' && <ComprasHistorialView />}
+    </View>
   );
 }
 
