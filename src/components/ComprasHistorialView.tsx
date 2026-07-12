@@ -122,9 +122,24 @@ function CompraHistCard({ compra, expanded, onToggleExpand }: CompraHistCardProp
         </Text>
       ) : null}
 
+      {showResultado ? (
+        <View style={styles.expandHintRow}>
+          <Text style={[styles.expandHint, { color: colors.danger }]}>
+            {expanded ? 'Ocultar detalle' : 'Ver detalle del error'}
+          </Text>
+          <Feather name={expanded ? 'chevron-up' : 'chevron-down'} size={12} color={colors.danger} />
+        </View>
+      ) : null}
+
       {expanded && showResultado ? (
         <View style={[styles.resultadoBox, { backgroundColor: colors.danger + '12', borderColor: colors.danger + '30' }]}>
           <Text style={[styles.resultadoText, { color: colors.danger }]}>{compra.backend_resultado}</Text>
+          <View style={styles.resultadoWarnRow}>
+            <Feather name="alert-octagon" size={12} color={colors.warning} style={{ marginTop: 1 }} />
+            <Text style={[styles.resultadoWarn, { color: colors.warning }]}>
+              Antes de volver a emitirla, verifica en Hybrid si la compra ya se registró: re-emitir duplicaría el ingreso de stock.
+            </Text>
+          </View>
         </View>
       ) : null}
     </Pressable>
@@ -222,6 +237,18 @@ const styles = StyleSheet.create({
     padding:      10,
     borderRadius: 8,
     borderWidth:  0.5,
+    gap:          8,
   },
   resultadoText: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', lineHeight: scaleFont(16) },
+  expandHintRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  expandHint: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold' },
+  resultadoWarnRow: {
+    flexDirection: 'row',
+    alignItems:    'flex-start',
+    gap:           6,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(128,128,128,0.2)',
+    paddingTop:    8,
+  },
+  resultadoWarn: { flex: 1, fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_700Bold', lineHeight: scaleFont(14) },
 });

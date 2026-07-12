@@ -107,7 +107,7 @@ function ComprasTab({ router }: { router: any }) {
         </Pressable>
       </View>
 
-      {subTab === 'armar' && <ComprasView router={router} />}
+      {subTab === 'armar' && <ComprasView router={router} onEmitted={() => setSubTab('historial')} />}
       {subTab === 'historial' && <ComprasHistorialView />}
     </View>
   );
@@ -965,7 +965,7 @@ function BackendBadge({ resumen }: { resumen?: BackendResumen }): React.JSX.Elem
       <View style={[styles.backendBadge, { backgroundColor: colors.danger + '18', borderColor: colors.danger + '40' }]}>
         <Feather name="alert-triangle" size={10} color={colors.danger} />
         <Text style={[styles.backendBadgeText, { color: colors.danger }]} numberOfLines={1}>
-          ⚠️ Error ({resumen.errores})
+          Error ({resumen.errores})
         </Text>
       </View>
     );
@@ -976,7 +976,7 @@ function BackendBadge({ resumen }: { resumen?: BackendResumen }): React.JSX.Elem
       <View style={[styles.backendBadge, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '40' }]}>
         <ActivityIndicator size="small" color={colors.primary} />
         <Text style={[styles.backendBadgeText, { color: colors.primary }]} numberOfLines={1}>
-          ⚙️ Aplicando…
+          Aplicando…
         </Text>
       </View>
     );
@@ -987,7 +987,7 @@ function BackendBadge({ resumen }: { resumen?: BackendResumen }): React.JSX.Elem
       <View style={[styles.backendBadge, { backgroundColor: colors.warning + '18', borderColor: colors.warning + '40' }]}>
         <Feather name="clock" size={10} color={colors.warning} />
         <Text style={[styles.backendBadgeText, { color: colors.warning }]} numberOfLines={1}>
-          ⏳ En cola ({resumen.pendientes})
+          En cola ({resumen.pendientes})
         </Text>
       </View>
     );
@@ -998,7 +998,7 @@ function BackendBadge({ resumen }: { resumen?: BackendResumen }): React.JSX.Elem
       <View style={[styles.backendBadge, { backgroundColor: colors.success + '18', borderColor: colors.success + '40' }]}>
         <Feather name="check" size={10} color={colors.success} />
         <Text style={[styles.backendBadgeText, { color: colors.success }]} numberOfLines={1}>
-          ✅ Sincronizado POS
+          Sincronizado POS
         </Text>
       </View>
     );

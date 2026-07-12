@@ -24,10 +24,11 @@ import { useCompra, CompraDraftItem } from '../hooks/useCompra';
 import { useProductos } from '../hooks/useProductos';
 
 interface ComprasViewProps {
-  router: any;
+  router:     any;
+  onEmitted?: () => void;
 }
 
-export default function ComprasView({ router }: ComprasViewProps): React.JSX.Element {
+export default function ComprasView({ router, onEmitted }: ComprasViewProps): React.JSX.Element {
   const { colors, formatUSD } = useTheme();
   const insets = useSafeAreaInsets();
   const { isDesktop } = useDeviceSize();
@@ -58,16 +59,30 @@ export default function ComprasView({ router }: ComprasViewProps): React.JSX.Ele
   }
 
   function handleSelectProducto(producto: Producto): void {
+    // Pre-llenar costo y precio con los valores ACTUALES de la DB: el comprador
+    // solo ajusta lo que cambió, y si los deja igual el backend salta la
+    // reescritura ("skip si es igual"). costo = ex-IVA, precio_venta = con IVA,
+    // igual que lo que el flujo escribe en Hybrid.
     addItem({
       codigo_producto: producto.codigo_interno,
       descripcion:     producto.descripcion,
       cantidad:        1,
-      costo:           0,
-      precio:          0,
-      referencia:      null,
+      costo:           producto.costo ?? 0,
+      precio:          producto.precio_venta ?? 0,
+      referencia:      producto.referencia ?? null,
       es_nuevo:        false,
     });
     setProductoModalVisible(false);
+  }
+
+  /** Devuelve el primer problema que impide emitir, o null si todo está listo. */
+  function primerItemInvalido(): string | null {
+    for (const it of items) {
+      if (!(it.cantidad > 0)) return `${it.descripcion}: la cantidad debe ser mayor a 0.`;
+      if (!(it.costo > 0))    return `${it.descripcion}: falta el costo.`;
+      if (!(it.precio > 0))   return `${it.descripcion}: falta el precio.`;
+    }
+    return null;
   }
 
   async function getUserId(): Promise<string> {
@@ -79,7 +94,9 @@ export default function ComprasView({ router }: ComprasViewProps): React.JSX.Ele
     try {
       const userId = await getUserId();
       const { compraId } = await submit(userId);
-      notify('Éxito', `Compra #${compraId} emitida`);
+      clear();
+      notify('Compra emitida', `C-${String(compraId).padStart(4, '0')} en cola para registrarse en Hybrid.`);
+      onEmitted?.();   // saltar a Historial para ver el estado del write-back
     } catch (e: any) {
       notify('Error', e.message ?? 'No se pudo emitir la compra');
     }
@@ -87,6 +104,11 @@ export default function ComprasView({ router }: ComprasViewProps): React.JSX.Ele
 
   function handleSubmit(): void {
     if (!proveedorCodigo || items.length === 0) return;
+    const problema = primerItemInvalido();
+    if (problema) {
+      notify('Falta información', problema);
+      return;
+    }
     confirm({
       title:       'Emitir compra',
       message:     `Se registrará una compra a ${proveedorNombre} con ${items.length} ítem${items.length > 1 ? 's' : ''}.`,
@@ -291,6 +313,19 @@ function CompraItemCard({ item, onRemove, onUpdate }: CompraItemCardProps): Reac
   const subtotal = item.cantidad * item.costo;
   const decimalKeyboard = Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad';
 
+  // Margen IVA-aware: precio incluye IVA 16%, costo no. Misma fórmula que
+  // getMarginPct en ProductRow. null hasta que haya costo y precio.
+  const precioSinIva = item.precio / 1.16;
+  const margin =
+    item.precio > 0 && item.costo > 0
+      ? ((precioSinIva - item.costo) / precioSinIva) * 100
+      : null;
+  const marginColor =
+    margin === null ? colors.textDim
+    : margin < 0    ? colors.danger
+    : margin < 15   ? colors.warning
+    : colors.success;
+
   function handleCantidadChange(v: string): void {
     const val = v.replace(',', '.');
     setCantidadInput(val);
@@ -374,8 +409,21 @@ function CompraItemCard({ item, onRemove, onUpdate }: CompraItemCardProps): Reac
       </View>
 
       <View style={styles.subtotalRow}>
-        <Text style={[styles.subtotalLabel, { color: colors.textMuted }]}>Subtotal</Text>
-        <Text style={[styles.subtotalValue, { color: colors.text }]}>{formatUSD(subtotal)}</Text>
+        {margin !== null ? (
+          <View style={[styles.marginPill, { backgroundColor: marginColor + '18', borderColor: marginColor + '38' }]}>
+            <Feather name={margin < 0 ? 'trending-down' : 'trending-up'} size={11} color={marginColor} />
+            <Text style={[styles.marginText, { color: marginColor }]}>{margin.toFixed(0)}% margen</Text>
+          </View>
+        ) : (
+          <View style={[styles.marginPill, { backgroundColor: colors.warning + '14', borderColor: colors.warning + '30' }]}>
+            <Feather name="alert-circle" size={11} color={colors.warning} />
+            <Text style={[styles.marginText, { color: colors.warning }]}>falta costo/precio</Text>
+          </View>
+        )}
+        <View style={styles.subtotalRight}>
+          <Text style={[styles.subtotalLabel, { color: colors.textMuted }]}>Subtotal </Text>
+          <Text style={[styles.subtotalValue, { color: colors.text }]}>{formatUSD(subtotal)}</Text>
+        </View>
       </View>
     </View>
   );
@@ -864,6 +912,17 @@ const styles = StyleSheet.create({
     borderTopWidth:    0.5,
     borderTopColor:    'rgba(128,128,128,0.2)',
   },
+  marginPill: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               4,
+    borderRadius:      999,
+    borderWidth:       0.5,
+    paddingVertical:   2,
+    paddingHorizontal: 8,
+  },
+  marginText:    { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_700Bold' },
+  subtotalRight: { flexDirection: 'row', alignItems: 'baseline' },
   subtotalLabel: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular' },
   subtotalValue: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
 
