@@ -48,6 +48,7 @@ export default function ComprasView({ router }: ComprasViewProps): React.JSX.Ele
 
   const [proveedorModalVisible, setProveedorModalVisible] = useState(false);
   const [productoModalVisible, setProductoModalVisible] = useState(false);
+  const [productoNuevoModalVisible, setProductoNuevoModalVisible] = useState(false);
 
   const total = items.reduce((sum, item) => sum + item.cantidad * item.costo, 0);
 
@@ -63,6 +64,8 @@ export default function ComprasView({ router }: ComprasViewProps): React.JSX.Ele
       cantidad:        1,
       costo:           0,
       precio:          0,
+      referencia:      null,
+      es_nuevo:        false,
     });
     setProductoModalVisible(false);
   }
@@ -133,18 +136,32 @@ export default function ComprasView({ router }: ComprasViewProps): React.JSX.Ele
           <Feather name="chevron-right" size={18} color={colors.textDim} />
         </Pressable>
 
-        {/* Agregar producto CTA */}
-        <Pressable
-          style={({ pressed }) => [
-            styles.addProductBtn,
-            { borderColor: colors.primary, backgroundColor: colors.primaryFaded },
-            pressed && { opacity: 0.75 },
-          ]}
-          onPress={() => setProductoModalVisible(true)}
-        >
-          <Feather name="plus" size={18} color={colors.primary} />
-          <Text style={[styles.addProductText, { color: colors.primary }]}>Agregar producto</Text>
-        </Pressable>
+        {/* Agregar producto CTAs */}
+        <View style={styles.addProductRow}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.addProductBtn,
+              { borderColor: colors.primary, backgroundColor: colors.primaryFaded },
+              pressed && { opacity: 0.75 },
+            ]}
+            onPress={() => setProductoModalVisible(true)}
+          >
+            <Feather name="search" size={16} color={colors.primary} />
+            <Text style={[styles.addProductText, { color: colors.primary }]}>Buscar existente</Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.addProductBtn,
+              { borderColor: colors.primary, backgroundColor: colors.primaryFaded },
+              pressed && { opacity: 0.75 },
+            ]}
+            onPress={() => setProductoNuevoModalVisible(true)}
+          >
+            <Feather name="plus" size={16} color={colors.primary} />
+            <Text style={[styles.addProductText, { color: colors.primary }]}>Producto nuevo</Text>
+          </Pressable>
+        </View>
 
         {items.length === 0 ? (
           <View style={styles.empty}>
@@ -247,6 +264,12 @@ export default function ComprasView({ router }: ComprasViewProps): React.JSX.Ele
         onClose={() => setProductoModalVisible(false)}
         onSelect={handleSelectProducto}
       />
+      <ProductoNuevoModal
+        visible={productoNuevoModalVisible}
+        existingCodes={items.map(i => i.codigo_producto)}
+        onClose={() => setProductoNuevoModalVisible(false)}
+        onAdd={addItem}
+      />
     </View>
   );
 }
@@ -293,10 +316,22 @@ function CompraItemCard({ item, onRemove, onUpdate }: CompraItemCardProps): Reac
     <View style={[styles.itemCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <View style={styles.itemTop}>
         <View style={styles.itemInfo}>
-          <Text style={[styles.itemName, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
-            {item.descripcion}
-          </Text>
+          <View style={styles.itemNameRow}>
+            <Text style={[styles.itemName, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
+              {item.descripcion}
+            </Text>
+            {item.es_nuevo ? (
+              <View style={[styles.nuevoBadge, { backgroundColor: colors.primary + '20', borderColor: colors.primary + '40' }]}>
+                <Text style={[styles.nuevoBadgeText, { color: colors.primary }]}>NUEVO</Text>
+              </View>
+            ) : null}
+          </View>
           <Text style={[styles.itemCode, { color: colors.textMuted }]}>{item.codigo_producto}</Text>
+          {item.referencia ? (
+            <Text style={[styles.itemRef, { color: colors.textMuted }]} numberOfLines={1}>
+              Ref: {item.referencia}
+            </Text>
+          ) : null}
         </View>
         <Pressable onPress={onRemove} hitSlop={8} style={({ pressed }) => [styles.removeBtn, pressed && { opacity: 0.6 }]}>
           <Feather name="x" size={16} color={colors.textDim} />
@@ -502,6 +537,189 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
   );
 }
 
+// ── Modal: producto nuevo ────────────────────────────────────────────────────
+
+interface ProductoNuevoModalProps {
+  visible:       boolean;
+  existingCodes: string[];
+  onClose:       () => void;
+  onAdd:         (item: CompraDraftItem) => void;
+}
+
+function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: ProductoNuevoModalProps): React.JSX.Element {
+  const { colors } = useTheme();
+  const [codigo, setCodigo] = useState<string>('');
+  const [descripcion, setDescripcion] = useState<string>('');
+  const [referencia, setReferencia] = useState<string>('');
+  const [cantidadInput, setCantidadInput] = useState<string>('1');
+  const [costoInput, setCostoInput] = useState<string>('');
+  const [precioInput, setPrecioInput] = useState<string>('');
+  const decimalKeyboard = Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad';
+
+  function resetForm(): void {
+    setCodigo('');
+    setDescripcion('');
+    setReferencia('');
+    setCantidadInput('1');
+    setCostoInput('');
+    setPrecioInput('');
+  }
+
+  function handleClose(): void {
+    resetForm();
+    onClose();
+  }
+
+  function handleAdd(): void {
+    const codigoTrim = codigo.trim();
+    const descripcionTrim = descripcion.trim();
+    const cantidad = parseFloat(cantidadInput.replace(',', '.'));
+    const costo = parseFloat(costoInput.replace(',', '.'));
+    const precio = parseFloat(precioInput.replace(',', '.'));
+
+    if (!codigoTrim) {
+      notify('Error', 'El código es obligatorio');
+      return;
+    }
+    if (!descripcionTrim) {
+      notify('Error', 'La descripción es obligatoria');
+      return;
+    }
+    if (isNaN(cantidad) || cantidad <= 0) {
+      notify('Error', 'La cantidad debe ser mayor a 0');
+      return;
+    }
+    if (isNaN(costo) || costo < 0) {
+      notify('Error', 'El costo es obligatorio');
+      return;
+    }
+    if (isNaN(precio) || precio < 0) {
+      notify('Error', 'El precio es obligatorio');
+      return;
+    }
+    if (existingCodes.includes(codigoTrim)) {
+      notify('Error', 'Ya agregaste ese código');
+      return;
+    }
+
+    onAdd({
+      codigo_producto: codigoTrim,
+      descripcion:     descripcionTrim,
+      referencia:      referencia.trim() || null,
+      cantidad,
+      costo,
+      precio,
+      es_nuevo:        true,
+    });
+    resetForm();
+    onClose();
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Producto nuevo</Text>
+            <Pressable onPress={handleClose} hitSlop={8}>
+              <Feather name="x" size={22} color={colors.textMuted} />
+            </Pressable>
+          </View>
+
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <View style={styles.formField}>
+              <Text style={[styles.formLabel, { color: colors.textMuted }]}>CÓDIGO</Text>
+              <TextInput
+                style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
+                placeholder="Código del producto"
+                placeholderTextColor={colors.textDim}
+                value={codigo}
+                onChangeText={setCodigo}
+                autoCapitalize="characters"
+              />
+            </View>
+
+            <View style={styles.formField}>
+              <Text style={[styles.formLabel, { color: colors.textMuted }]}>DESCRIPCIÓN</Text>
+              <TextInput
+                style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
+                placeholder="Descripción del producto"
+                placeholderTextColor={colors.textDim}
+                value={descripcion}
+                onChangeText={setDescripcion}
+              />
+            </View>
+
+            <View style={styles.formField}>
+              <Text style={[styles.formLabel, { color: colors.textMuted }]}>REFERENCIA (OPCIONAL)</Text>
+              <TextInput
+                style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
+                placeholder="Referencia del proveedor"
+                placeholderTextColor={colors.textDim}
+                value={referencia}
+                onChangeText={setReferencia}
+              />
+            </View>
+
+            <View style={styles.formRow}>
+              <View style={[styles.formField, styles.formFieldFlex]}>
+                <Text style={[styles.formLabel, { color: colors.textMuted }]}>CANTIDAD</Text>
+                <TextInput
+                  style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
+                  keyboardType={decimalKeyboard}
+                  value={cantidadInput}
+                  onChangeText={v => setCantidadInput(v.replace(',', '.'))}
+                  selectTextOnFocus
+                />
+              </View>
+
+              <View style={[styles.formField, styles.formFieldFlex]}>
+                <Text style={[styles.formLabel, { color: colors.textMuted }]}>COSTO ($)</Text>
+                <TextInput
+                  style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
+                  keyboardType={decimalKeyboard}
+                  placeholder="0.00"
+                  placeholderTextColor={colors.textDim}
+                  value={costoInput}
+                  onChangeText={v => setCostoInput(v.replace(',', '.'))}
+                  selectTextOnFocus
+                />
+              </View>
+
+              <View style={[styles.formField, styles.formFieldFlex]}>
+                <Text style={[styles.formLabel, { color: colors.textMuted }]}>PRECIO ($)</Text>
+                <TextInput
+                  style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
+                  keyboardType={decimalKeyboard}
+                  placeholder="0.00"
+                  placeholderTextColor={colors.textDim}
+                  value={precioInput}
+                  onChangeText={v => setPrecioInput(v.replace(',', '.'))}
+                  selectTextOnFocus
+                />
+              </View>
+            </View>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.formSubmitBtn,
+                { backgroundColor: colors.primary },
+                pressed && { opacity: 0.75 },
+              ]}
+              onPress={handleAdd}
+            >
+              <Feather name="plus" size={16} color={colors.onPrimary} />
+              <Text style={[styles.formSubmitText, { color: colors.onPrimary }]}>Agregar a la compra</Text>
+            </Pressable>
+
+            <View style={{ height: 24 }} />
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -553,18 +771,23 @@ const styles = StyleSheet.create({
   },
   proveedorValue: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
 
+  addProductRow: {
+    flexDirection:    'row',
+    gap:              8,
+    marginHorizontal: 16,
+  },
   addProductBtn: {
+    flex:              1,
     flexDirection:     'row',
     alignItems:        'center',
     justifyContent:    'center',
     gap:               8,
-    marginHorizontal:  16,
     paddingVertical:   14,
     borderRadius:      12,
     borderWidth:       1,
     borderStyle:       'dashed',
   },
-  addProductText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
+  addProductText: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
 
   empty: {
     alignItems:      'center',
@@ -588,9 +811,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   itemInfo:  { flex: 1 },
-  itemName:  { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
+  itemNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  itemName:  { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', flexShrink: 1 },
   itemCode:  { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', marginTop: 1 },
+  itemRef:   { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_400Regular', marginTop: 1 },
   removeBtn: { padding: 4, marginLeft: 8 },
+  nuevoBadge: {
+    paddingHorizontal: 6,
+    paddingVertical:   2,
+    borderRadius:      6,
+    borderWidth:       0.5,
+  },
+  nuevoBadgeText: {
+    fontSize:      scaleFont(9),
+    fontFamily:    'JetBrainsMono_700Bold',
+    letterSpacing: 0.3,
+  },
 
   itemBottom: {
     flexDirection: 'row',
@@ -726,4 +962,33 @@ const styles = StyleSheet.create({
   },
   pickerRowTitle: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
   pickerRowSub:   { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', marginTop: 2 },
+
+  formField:     { marginBottom: 14 },
+  formFieldFlex: { flex: 1, marginBottom: 0 },
+  formRow:       { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  formLabel: {
+    fontSize:      scaleFont(9),
+    fontFamily:    'JetBrainsMono_500Medium',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    marginBottom:  6,
+  },
+  formInput: {
+    fontSize:          scaleFont(14),
+    fontFamily:        'JetBrainsMono_400Regular',
+    borderWidth:       0.5,
+    borderRadius:      10,
+    paddingHorizontal: 12,
+    paddingVertical:   10,
+  },
+  formSubmitBtn: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'center',
+    gap:               8,
+    borderRadius:      12,
+    paddingVertical:   14,
+    marginTop:         4,
+  },
+  formSubmitText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
 });

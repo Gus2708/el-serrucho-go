@@ -7,6 +7,8 @@ export interface CompraDraftItem {
   cantidad:        number;
   costo:           number;
   precio:          number;
+  referencia:      string | null;   // opcional; null para productos existentes
+  es_nuevo:        boolean;         // true = producto a dar de alta en Hybrid
 }
 
 interface CompraStore {
@@ -93,6 +95,8 @@ export const useCompra = create<CompraStore>()((set, get) => ({
             cantidad:        item.cantidad,
             costo:           item.costo,
             precio:          item.precio,
+            referencia:      item.referencia,
+            es_nuevo:        item.es_nuevo,
           }))
         );
 
