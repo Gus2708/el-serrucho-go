@@ -1,7 +1,7 @@
 import { scaleFont } from '../../src/theme/responsive';
 import * as React from 'react';
 import { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Modal, TextInput, Animated, PanResponder, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Modal, TextInput, Animated, PanResponder, Dimensions, KeyboardAvoidingView, Platform, Easing } from 'react-native';
 import { notify } from '../../src/lib/notify';
 
 const screenHeight = Dimensions.get('window').height;
@@ -80,12 +80,17 @@ export default function ProductoDetail() {
   const [errorMsg,     setErrorMsg]     = useState<string | null>(null);
 
   const panY = useRef(new Animated.Value(screenHeight)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  const closeSheet = () => {
-    Animated.timing(panY, {
+
+
+  const closeSheet = (velocity?: number) => {
+    Animated.spring(panY, {
       toValue: screenHeight,
-      duration: 200,
+      velocity: velocity ?? 0,
       useNativeDriver: Platform.OS !== 'web',
+      tension: 40,
+      friction: 8,
     }).start(() => {
       setShowAddSheet(false);
       setShowPriceSheet(false);
@@ -117,7 +122,7 @@ export default function ProductoDetail() {
       },
       onPanResponderRelease: (_, gestureState) => {
         if (gestureState.dy > 100 || gestureState.vy > 0.5) {
-          closeSheet();
+          closeSheet(gestureState.vy);
         } else {
           Animated.spring(panY, {
             toValue: 0,
@@ -135,6 +140,17 @@ export default function ProductoDetail() {
     queryFn:   () => fetchProducto(id),
     staleTime: 30_000,
   });
+
+  // Trigger page fade-in when loaded
+  useEffect(() => {
+    if (!isLoading && producto) {
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 350,
+        useNativeDriver: Platform.OS !== 'web',
+      }).start();
+    }
+  }, [isLoading, producto]);
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
@@ -172,6 +188,7 @@ export default function ProductoDetail() {
         </View>
       ) : (
         <>
+        <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           {/* Product name + code */}
           <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -296,6 +313,7 @@ export default function ProductoDetail() {
             onSelectVenta={setSelectedVentaId}
           />
         </ScrollView>
+        </Animated.View>
 
         {/* Modal de Detalle de Venta */}
         <VentaDetailModal 
@@ -1022,6 +1040,22 @@ function MarginBar({ producto, colors }: { producto: Producto; colors: any }) {
   const barPct = Math.min(Math.abs(pct), 100);
   const barColor = isNeg ? colors.danger : pct < 20 ? colors.warning : colors.success;
 
+  const widthAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(widthAnim, {
+      toValue: barPct,
+      duration: 650,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false, // width cannot be animated with native driver
+    }).start();
+  }, [barPct]);
+
+  const animatedWidth = widthAnim.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
+  });
+
   return (
     <View>
       <View style={styles.marginHeader}>
@@ -1031,7 +1065,7 @@ function MarginBar({ producto, colors }: { producto: Producto; colors: any }) {
         </Text>
       </View>
       <View style={[styles.barBg, { backgroundColor: colors.border }]}>
-        <View style={[styles.barFill, { width: `${barPct}%` as any, backgroundColor: barColor }]} />
+        <Animated.View style={[styles.barFill, { width: animatedWidth, backgroundColor: barColor }]} />
       </View>
     </View>
   );
@@ -1068,6 +1102,37 @@ function HistorialMovimientos({
   colors,
   onSelectVenta,
 }: HistorialMovimientosProps): React.JSX.Element {
+  const visibleMovs = movimientos?.slice(0, 15) ?? [];
+  const rowAnims = useRef<Animated.Value[]>([]);
+
+  // Ensure we have enough animated values for visible items
+  if (rowAnims.current.length < visibleMovs.length) {
+    const diff = visibleMovs.length - rowAnims.current.length;
+    for (let i = 0; i < diff; i++) {
+      rowAnims.current.push(new Animated.Value(0));
+    }
+  }
+
+  useEffect(() => {
+    if (!isLoading && visibleMovs.length > 0) {
+      // Reset values to 0
+      rowAnims.current.forEach(v => v.setValue(0));
+      
+      // Create animations
+      const animations = visibleMovs.map((_, index) =>
+        Animated.spring(rowAnims.current[index], {
+          toValue: 1,
+          friction: 8,
+          tension: 50,
+          useNativeDriver: Platform.OS !== 'web',
+        })
+      );
+      
+      // Trigger staggered start
+      Animated.stagger(45, animations).start();
+    }
+  }, [isLoading, movimientos]);
+
   return (
     <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border, marginTop: 10, paddingBottom: 6 }]}>
       <Text style={[styles.sectionLabel, { color: colors.textMuted, marginBottom: 12 }]}>
@@ -1116,8 +1181,23 @@ function HistorialMovimientos({
               labelText = mov.cantidad > 0 ? `+${mov.cantidad}` : `${mov.cantidad}`;
             }
 
+            const isAnimated = index < 15;
+            const rowAnim = isAnimated ? rowAnims.current[index] : null;
+
+            const rowStyle = rowAnim ? {
+              opacity: rowAnim,
+              transform: [
+                {
+                  translateY: rowAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [12, 0],
+                  }),
+                },
+              ],
+            } : {};
+
             const rowContent = (
-              <>
+              <Animated.View style={[{ flexDirection: 'row', alignItems: 'center', flex: 1 }, rowStyle]}>
                 <View style={[styles.movIconContainer, { backgroundColor: badgeBg }]}>
                   <Feather name={iconName} size={14} color={iconColor} />
                 </View>
@@ -1159,7 +1239,7 @@ function HistorialMovimientos({
                     {mov.fechaFormateada}
                   </Text>
                 </View>
-              </>
+              </Animated.View>
             );
 
             if (isVenta) {
