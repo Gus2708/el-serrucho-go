@@ -26,7 +26,7 @@ function saveRoleToLocal(data: { role: string; is_active: boolean; profile: Prof
   } catch {}
 }
 
-function loadRoleFromLocal(): { role: 'admin' | 'empleado'; is_active: boolean; profile: Profile | null } | null {
+function loadRoleFromLocal(): CachedRole | null {
   if (Platform.OS !== 'web') return null;
   try {
     const raw = localStorage.getItem(ROLE_CACHE_KEY);
@@ -37,7 +37,7 @@ function loadRoleFromLocal(): { role: 'admin' | 'empleado'; is_active: boolean; 
       localStorage.removeItem(ROLE_CACHE_KEY);
       return null;
     }
-    return { role: parsed.role, is_active: parsed.is_active, profile: parsed.profile };
+    return parsed;
   } catch {
     return null;
   }
@@ -124,6 +124,13 @@ export function useUserRole(userId?: string) {
     staleTime: 5 * 60_000,
     gcTime:    30 * 60_000,
     retry: false,
+    // Arranque instantáneo: si hay un rol cacheado en localStorage (guardado en
+    // el último fetch exitoso), lo usamos como dato inicial para que el
+    // AuthGuard y el dashboard no bloqueen con "Cargando perfil...". Al marcar
+    // initialDataUpdatedAt con la hora real del cache, TanStack refetchea en
+    // background si ya está stale y corrige cualquier cambio de rol.
+    initialData: () => loadRoleFromLocal() ?? undefined,
+    initialDataUpdatedAt: () => loadRoleFromLocal()?.cachedAt,
   });
 }
 

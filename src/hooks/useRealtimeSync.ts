@@ -22,6 +22,24 @@ export function useRealtimeSync() {
     let notifChannel: ReturnType<typeof supabase.channel> | null = null;
     let cancelled = false;
 
+    // ── Invalidación con debounce ──
+    // El widget sube ventas/productos en lotes: cada fila insertada dispara un
+    // evento de Realtime. Sin debounce, un sync de 50 facturas provocaba 50×7
+    // invalidaciones (y sus refetches) en segundos. Acumulamos las keys y
+    // disparamos UNA invalidación por key cuando el lote se calma (1.5s).
+    const pendingKeys = new Set<string>();
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const invalidateDebounced = (...keys: string[]) => {
+      keys.forEach(k => pendingKeys.add(k));
+      if (flushTimer) clearTimeout(flushTimer);
+      flushTimer = setTimeout(() => {
+        flushTimer = null;
+        const toRun = [...pendingKeys];
+        pendingKeys.clear();
+        toRun.forEach(k => queryClient.invalidateQueries({ queryKey: [k] }));
+      }, 1500);
+    };
+
     function subscribeChannels() {
       if (cancelled) return;
 
@@ -29,24 +47,24 @@ export function useRealtimeSync() {
       dataChannel = supabase
         .channel('global-db-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas' }, () => {
-          queryClient.invalidateQueries({ queryKey: ['ventas-period'] });
-          queryClient.invalidateQueries({ queryKey: ['ventas-infinite'] });
-          queryClient.invalidateQueries({ queryKey: ['profit-summary'] });
-          queryClient.invalidateQueries({ queryKey: ['profit-daily'] });
-          queryClient.invalidateQueries({ queryKey: ['profit-hourly'] });
-          queryClient.invalidateQueries({ queryKey: ['top-productos'] });
-          queryClient.invalidateQueries({ queryKey: ['velocidad'] });
+          invalidateDebounced(
+            'ventas-period',
+            'ventas-infinite',
+            'profit-summary',
+            'profit-daily',
+            'profit-hourly',
+            'top-productos',
+            'velocidad',
+          );
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'productos' }, () => {
-          queryClient.invalidateQueries({ queryKey: ['productos'] });
-          queryClient.invalidateQueries({ queryKey: ['sync-status'] });
-          queryClient.invalidateQueries({ queryKey: ['velocidad'] });
+          invalidateDebounced('productos', 'sync-status', 'velocidad');
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tazas' }, () => {
-          queryClient.invalidateQueries({ queryKey: ['tazas-actual'] });
+          invalidateDebounced('tazas-actual');
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'comandos_remotos' }, () => {
-          queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+          invalidateDebounced('sync-status');
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'anomalias' }, () => {
           queryClient.invalidateQueries({ queryKey: ['anomalias'] });
@@ -112,6 +130,7 @@ export function useRealtimeSync() {
 
     return () => {
       cancelled = true;
+      if (flushTimer) clearTimeout(flushTimer);
       if (dataChannel) supabase.removeChannel(dataChannel);
       if (notifChannel) supabase.removeChannel(notifChannel);
       subscription.unsubscribe();

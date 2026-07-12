@@ -6,7 +6,10 @@ import { Slot, useRouter, useSegments } from 'expo-router';
 if (typeof window !== 'undefined') {
   require('./global.css');
 }
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../src/lib/supabase';
@@ -23,16 +26,50 @@ if (Platform.OS !== 'web') {
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { 
-      retry: 1, 
+    queries: {
+      retry: 1,
       staleTime: 30_000,
-      gcTime: 30 * 60_000,           // Keep cached data for 30 min (offline resilience)
+      gcTime: 24 * 60 * 60_000,       // >= maxAge del persister (los datos restaurados no se recolectan antes de usarse)
       refetchOnWindowFocus: false,    // Prevents flickering/reloading when switching windows
       refetchOnReconnect: 'always',   // Refresh data when coming back online
       networkMode: 'offlineFirst',    // Use cache first, then try network
     },
   },
 });
+
+// ── Persistencia del cache de queries ──
+// Al reabrir la app (PWA o nativa), el dashboard pinta al instante con los
+// últimos datos conocidos mientras refetchea en background. Solo se persisten
+// las queries chicas del dashboard — nunca las listas infinitas (productos /
+// ventas) que pueden crecer sin límite.
+// AsyncStorage usa localStorage en web y almacenamiento nativo en Android/iOS.
+const PERSISTED_QUERY_KEYS = new Set([
+  'profit-summary',
+  'profit-daily',
+  'profit-hourly',
+  'tazas-actual',
+  'user-role',
+  'top-productos',
+  'velocidad',
+  'atenciones-count',
+  'sync-status',
+]);
+
+const queryPersister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: 'serrucho-query-cache-v1',
+  throttleTime: 2000,
+});
+
+const persistOptions = {
+  persister: queryPersister,
+  maxAge: 24 * 60 * 60_000,
+  buster: 'v1.2.0',
+  dehydrateOptions: {
+    shouldDehydrateQuery: (query: { state: { status: string }; queryKey: readonly unknown[] }) =>
+      query.state.status === 'success' && PERSISTED_QUERY_KEYS.has(String(query.queryKey[0])),
+  },
+};
 
 import { useUserRole } from '../src/hooks/useUserRole';
 import { usePWAInstallStore } from '../src/hooks/usePWAInstall';
@@ -383,7 +420,7 @@ export default function RootLayout() {
   const inner = (
     <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <QueryClientProvider client={queryClient}>
+        <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
           <RealtimeInitializer>
             <ThemeProvider>
               <>
@@ -392,7 +429,7 @@ export default function RootLayout() {
               </>
             </ThemeProvider>
           </RealtimeInitializer>
-        </QueryClientProvider>
+        </PersistQueryClientProvider>
       </GestureHandlerRootView>
     </SafeAreaProvider>
   );
