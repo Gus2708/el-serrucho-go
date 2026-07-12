@@ -149,7 +149,7 @@ export default function ProductoDetail() {
             // usando la posición guardada en el Store (Zustand).
             router.navigate('/inventario');
           }} 
-          style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}
+          style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7, transform: [{ scale: 0.94 }] }]}
         >
           <Feather name="arrow-left" size={22} color={colors.text} />
         </Pressable>
@@ -253,7 +253,7 @@ export default function ProductoDetail() {
             style={({ pressed }) => [
               styles.addBtn,
               { backgroundColor: colors.primaryFaded, borderColor: colors.primary },
-              pressed && { opacity: 0.75 }
+              pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }
             ]}
             onPress={() => {
               setNewQty('');
@@ -273,7 +273,7 @@ export default function ProductoDetail() {
             style={({ pressed }) => [
               styles.addBtn,
               { backgroundColor: colors.primaryFaded, borderColor: colors.primary, marginTop: 8 },
-              pressed && { opacity: 0.75 }
+              pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }
             ]}
             onPress={() => {
               setNewPrice('');
@@ -376,7 +376,11 @@ export default function ProductoDetail() {
                     setAdjMode('fixed');
                     setNewQty('');
                   }}
-                  style={[styles.modeBtn, adjMode === 'fixed' && { backgroundColor: colors.primaryFaded, borderColor: colors.primary }]}
+                  style={({ pressed }) => [
+                    styles.modeBtn, 
+                    adjMode === 'fixed' && { backgroundColor: colors.primaryFaded, borderColor: colors.primary },
+                    pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] }
+                  ]}
                 >
                   <Text style={[styles.modeBtnText, { color: adjMode === 'fixed' ? colors.primary : colors.textMuted }]}>Nueva Total</Text>
                 </Pressable>
@@ -385,7 +389,11 @@ export default function ProductoDetail() {
                     setAdjMode('relative');
                     setNewQty('');
                   }}
-                  style={[styles.modeBtn, adjMode === 'relative' && { backgroundColor: colors.primaryFaded, borderColor: colors.primary }]}
+                  style={({ pressed }) => [
+                    styles.modeBtn, 
+                    adjMode === 'relative' && { backgroundColor: colors.primaryFaded, borderColor: colors.primary },
+                    pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] }
+                  ]}
                 >
                   <Text style={[styles.modeBtnText, { color: adjMode === 'relative' ? colors.primary : colors.textMuted }]}>Sumar/Restar</Text>
                 </Pressable>
@@ -407,7 +415,11 @@ export default function ProductoDetail() {
                 {adjMode === 'relative' && (
                   <Pressable 
                     onPress={() => setAdjOp(adjOp === '+' ? '-' : '+')}
-                    style={[styles.opBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+                    style={({ pressed }) => [
+                      styles.opBtn,
+                      { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+                      pressed && { opacity: 0.7, transform: [{ scale: 0.95 }] }
+                    ]}
                   >
                     <Text style={[styles.opText, { color: adjOp === '+' ? colors.success : colors.danger }]}>{adjOp}</Text>
                   </Pressable>
@@ -466,7 +478,7 @@ export default function ProductoDetail() {
                       borderColor: colors.primary,
                       backgroundColor: colors.surfaceAlt,
                     },
-                    pressed && { opacity: 0.7 }
+                    pressed && { opacity: 0.7, transform: [{ scale: 0.97 }] }
                   ]}
                   onPress={() => {
                     const inputVal = parseFloat(newQty);
@@ -516,7 +528,7 @@ export default function ProductoDetail() {
                       borderRadius: 14,
                       backgroundColor: colors.primary,
                     },
-                    (isSaving || pressed) && { opacity: 0.75 }
+                    (isSaving || pressed) && { opacity: 0.75, transform: [{ scale: isSaving ? 1.0 : 0.97 }] }
                   ]}
                   disabled={isSaving}
                   onPress={async () => {
@@ -687,7 +699,7 @@ export default function ProductoDetail() {
                       borderWidth: 0.5,
                       borderColor: colors.border
                     },
-                    pressed && { opacity: 0.7 }
+                    pressed && { opacity: 0.7, transform: [{ scale: 0.94 }] }
                   ]}
                   onPress={() => {
                     setNewPrice('');
@@ -809,7 +821,7 @@ export default function ProductoDetail() {
                       borderColor: colors.primary,
                       backgroundColor: colors.surfaceAlt,
                     },
-                    pressed && { opacity: 0.7 }
+                    pressed && { opacity: 0.7, transform: [{ scale: 0.97 }] }
                   ]}
                   onPress={() => {
                     const finalPrice = newPrice === '' ? producto.precio_venta : parseFloat(newPrice);
@@ -859,7 +871,7 @@ export default function ProductoDetail() {
                       borderRadius: 14,
                       backgroundColor: colors.primary,
                     },
-                    (isSavingPrice || pressed) && { opacity: 0.75 }
+                    (isSavingPrice || pressed) && { opacity: 0.75, transform: [{ scale: isSavingPrice ? 1.0 : 0.97 }] }
                   ]}
                   disabled={isSavingPrice}
                   onPress={async () => {

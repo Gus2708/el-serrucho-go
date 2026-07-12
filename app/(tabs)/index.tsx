@@ -353,7 +353,7 @@ export default function Index() {
                     backgroundColor: colors.surface,
                     borderColor: pendingCount > 0 ? colors.primary + '50' : colors.border,
                   },
-                  pressed && { opacity: 0.7 },
+                  pressed && { opacity: 0.7, transform: [{ scale: 0.94 }] },
                 ]}
                 onPress={() => router.push('/(tabs)/notificaciones' as any)}
               >
@@ -371,7 +371,7 @@ export default function Index() {
             </View>
 
             <Pressable
-              style={({ pressed }) => [styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.7 }]}
+              style={({ pressed }) => [styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.7, transform: [{ scale: 0.94 }] }]}
               onPress={() => router.push('/perfil')}
             >
               <Feather name="user" size={18} color={colors.textMuted} />
@@ -417,7 +417,7 @@ export default function Index() {
                     backgroundColor: active ? colors.primary    : colors.surface,
                     borderColor:     active ? colors.primary    : colors.border,
                   },
-                  pressed && { opacity: 0.75 },
+                  pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
                 ]}
                 onPress={() => setPeriod(p.key)}
               >
