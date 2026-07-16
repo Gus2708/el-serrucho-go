@@ -6,6 +6,7 @@ export interface CompraConItems {
   proveedor_codigo:    string;
   proveedor_nombre:    string | null;
   nota:                string | null;
+  numero_documento:    string | null;
   status:              string;
   creado_en:           string;
   item_count:          number;
@@ -27,7 +28,7 @@ async function fetchComprasHistory(): Promise<CompraConItems[]> {
   const { data, error } = await supabase
     .from('compras_app')
     .select(`
-      id, creado_por, proveedor_codigo, proveedor_nombre, nota, status, creado_en,
+      id, creado_por, proveedor_codigo, proveedor_nombre, nota, numero_documento, status, creado_en,
       backend_status, backend_resultado, backend_aplicado_en
     `)
     .order('creado_en', { ascending: false })
@@ -80,6 +81,7 @@ async function fetchComprasHistory(): Promise<CompraConItems[]> {
     proveedor_codigo:    c.proveedor_codigo,
     proveedor_nombre:    c.proveedor_nombre,
     nota:                c.nota,
+    numero_documento:    c.numero_documento,
     status:              c.status,
     creado_en:           c.creado_en,
     item_count:          countMap[Number(c.id)] ?? 0,

@@ -37,12 +37,14 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
     proveedorNombre,
     items,
     nota,
+    numeroDocumento,
     isLoading,
     setProveedor,
     addItem,
     removeItem,
     updateItem,
     setNota,
+    setNumeroDocumento,
     clear,
     submit,
   } = useCompra();
@@ -210,12 +212,25 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
               <Text style={[styles.totalValue, { color: colors.primary }]}>{formatUSD(total)}</Text>
             </View>
 
+            {/* Número de orden/factura */}
+            <View style={[styles.notaCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.notaLabel, { color: colors.textMuted }]}>Número de orden / factura (opcional)</Text>
+              <TextInput
+                style={[styles.numeroDocInput, { color: colors.text }]}
+                placeholder="En blanco = número automático"
+                placeholderTextColor={colors.textDim}
+                value={numeroDocumento}
+                onChangeText={v => setNumeroDocumento(v.replace(/\D/g, ''))}
+                keyboardType="number-pad"
+              />
+            </View>
+
             {/* Nota */}
             <View style={[styles.notaCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Text style={[styles.notaLabel, { color: colors.textMuted }]}>Nota de la compra</Text>
               <TextInput
                 style={[styles.notaInput, { color: colors.text }]}
-                placeholder="Observaciones, número de factura…"
+                placeholder="Observaciones…"
                 placeholderTextColor={colors.textDim}
                 value={nota}
                 onChangeText={setNota}
@@ -947,6 +962,7 @@ const styles = StyleSheet.create({
   },
   notaLabel: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold', textTransform: 'uppercase', letterSpacing: 0.3 },
   notaInput: { fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_400Regular', lineHeight: scaleFont(22), minHeight: 44 },
+  numeroDocInput: { fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_700Bold', minHeight: 28 },
 
   submitBar: {
     position:          'absolute',

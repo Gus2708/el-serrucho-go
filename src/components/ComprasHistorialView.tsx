@@ -114,6 +114,7 @@ function CompraHistCard({ compra, expanded, onToggleExpand }: CompraHistCardProp
         {dateStr}
         {'  ·  '}{compra.item_count} ítem{compra.item_count !== 1 ? 's' : ''}
         {compra.creado_por_nombre ? `  ·  ${compra.creado_por_nombre}` : ''}
+        {compra.numero_documento ? `  ·  Doc: ${compra.numero_documento}` : ''}
       </Text>
 
       {compra.nota ? (

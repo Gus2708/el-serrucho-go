@@ -12,18 +12,20 @@ export interface CompraDraftItem {
 }
 
 interface CompraStore {
-  proveedorCodigo: string | null;
-  proveedorNombre: string | null;
-  items:           CompraDraftItem[];
-  nota:            string;
-  isLoading:       boolean;
-  setProveedor: (codigo: string, nombre: string) => void;
-  addItem:      (item: CompraDraftItem) => void;
-  removeItem:   (codigo: string) => void;
-  updateItem:   (codigo: string, updates: Partial<CompraDraftItem>) => void;
-  setNota:      (nota: string) => void;
-  clear:        () => void;
-  submit:       (userId: string) => Promise<{ compraId: number }>;
+  proveedorCodigo:  string | null;
+  proveedorNombre:  string | null;
+  items:            CompraDraftItem[];
+  nota:             string;
+  numeroDocumento:  string;   // opcional; vacío = el backend usa el id de la compra
+  isLoading:        boolean;
+  setProveedor:      (codigo: string, nombre: string) => void;
+  addItem:           (item: CompraDraftItem) => void;
+  removeItem:        (codigo: string) => void;
+  updateItem:        (codigo: string, updates: Partial<CompraDraftItem>) => void;
+  setNota:           (nota: string) => void;
+  setNumeroDocumento: (numero: string) => void;
+  clear:             () => void;
+  submit:            (userId: string) => Promise<{ compraId: number }>;
 }
 
 export const useCompra = create<CompraStore>()((set, get) => ({
@@ -31,6 +33,7 @@ export const useCompra = create<CompraStore>()((set, get) => ({
   proveedorNombre: null,
   items:           [],
   nota:            '',
+  numeroDocumento: '',
   isLoading:       false,
 
   setProveedor: (codigo, nombre) => set({ proveedorCodigo: codigo, proveedorNombre: nombre }),
@@ -55,10 +58,12 @@ export const useCompra = create<CompraStore>()((set, get) => ({
 
   setNota: (nota) => set({ nota }),
 
-  clear: () => set({ proveedorCodigo: null, proveedorNombre: null, items: [], nota: '' }),
+  setNumeroDocumento: (numero) => set({ numeroDocumento: numero }),
+
+  clear: () => set({ proveedorCodigo: null, proveedorNombre: null, items: [], nota: '', numeroDocumento: '' }),
 
   submit: async (userId: string) => {
-    const { proveedorCodigo, proveedorNombre, items, nota } = get();
+    const { proveedorCodigo, proveedorNombre, items, nota, numeroDocumento } = get();
 
     if (!proveedorCodigo) throw new Error('Selecciona un proveedor antes de emitir la compra.');
     if (items.length === 0) throw new Error('Agrega al menos un producto antes de emitir la compra.');
@@ -76,6 +81,7 @@ export const useCompra = create<CompraStore>()((set, get) => ({
           proveedor_codigo: proveedorCodigo,
           proveedor_nombre: proveedorNombre,
           nota:              nota || null,
+          numero_documento:  numeroDocumento.trim() || null,   // vacío -> el backend usa el id de la compra
           status:            'emitido',
         })
         .select('id')
