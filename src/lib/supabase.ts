@@ -83,6 +83,8 @@ export type Anomalia = {
   resuelto:        boolean;
 };
 
+export type AprobacionEstado = 'no_aplica' | 'pendiente' | 'aprobado' | 'rechazado';
+
 export type OrdenCambio = {
   id:         number;
   creado_por: string;
@@ -90,6 +92,10 @@ export type OrdenCambio = {
   status:     'borrador' | 'emitido';
   pdf_url:    string | null;
   creado_en:  string;
+  aprobacion_estado?: AprobacionEstado;
+  aprobado_por?:      string | null;
+  aprobado_en?:       string | null;
+  rechazo_motivo?:    string | null;
 };
 
 export type OrdenCambioItem = {
@@ -132,11 +138,14 @@ export type PresupuestoDetalle = {
   subtotal:        number;
 };
 
+export type UserRole = 'admin' | 'superempleado' | 'empleado';
+
 export type Profile = {
   id:           string;
-  role:         'admin' | 'empleado';
+  role:         UserRole;
   email:        string | null;
   display_name: string | null;
+  is_active?:   boolean;
   updated_at:   string;
 };
 

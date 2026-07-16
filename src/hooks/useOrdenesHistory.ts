@@ -2,11 +2,13 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase, OrdenCambio } from '../lib/supabase';
 
 export interface BackendResumen {
-  pendientes:  number;
-  aplicando:   number;
-  errores:     number;
-  completados: number;
-  total:       number;
+  pendientes:         number;
+  aplicando:          number;
+  errores:            number;
+  completados:        number;
+  espera_aprobacion:  number;
+  rechazados:         number;
+  total:              number;
 }
 
 export type OrdenConItems = OrdenCambio & {
@@ -28,6 +30,7 @@ async function fetchOrdenes(): Promise<OrdenConItems[]> {
     .from('ordenes_cambio')
     .select(`
       id, creado_por, nota, status, pdf_url, creado_en,
+      aprobacion_estado, aprobado_por, aprobado_en, rechazo_motivo,
       item_count
     `)
     .order('creado_en', { ascending: false })
@@ -69,13 +72,18 @@ async function fetchOrdenes(): Promise<OrdenConItems[]> {
     } else if (backendItems) {
       resumenMap = backendItems.reduce((acc: Record<number, BackendResumen>, item: any) => {
         const ordenId = Number(item.orden_id);
-        const resumen = acc[ordenId] ?? { pendientes: 0, aplicando: 0, errores: 0, completados: 0, total: 0 };
+        const resumen = acc[ordenId] ?? {
+          pendientes: 0, aplicando: 0, errores: 0, completados: 0,
+          espera_aprobacion: 0, rechazados: 0, total: 0,
+        };
 
         resumen.total += 1;
         if (item.backend_status === 'pendiente') resumen.pendientes += 1;
         else if (item.backend_status === 'aplicando') resumen.aplicando += 1;
         else if (item.backend_status === 'error') resumen.errores += 1;
         else if (item.backend_status === 'completado') resumen.completados += 1;
+        else if (item.backend_status === 'espera_aprobacion') resumen.espera_aprobacion += 1;
+        else if (item.backend_status === 'rechazado') resumen.rechazados += 1;
 
         acc[ordenId] = resumen;
         return acc;
@@ -90,6 +98,10 @@ async function fetchOrdenes(): Promise<OrdenConItems[]> {
     status:     o.status,
     pdf_url:    o.pdf_url,
     creado_en:  o.creado_en,
+    aprobacion_estado: o.aprobacion_estado ?? 'no_aplica',
+    aprobado_por:      o.aprobado_por ?? null,
+    aprobado_en:       o.aprobado_en ?? null,
+    rechazo_motivo:    o.rechazo_motivo ?? null,
     item_count: o.item_count || 0,
     creado_por_nombre: profileMap[o.creado_por] ?? undefined,
     backend_resumen: resumenMap[Number(o.id)],

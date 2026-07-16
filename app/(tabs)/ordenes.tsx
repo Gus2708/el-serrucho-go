@@ -28,7 +28,7 @@ import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
 import { useOrdenesHistory, BackendResumen } from '../../src/hooks/useOrdenesHistory';
-import { useUserRole } from '../../src/hooks/useUserRole';
+import { useUserRole, isPrivilegedRole } from '../../src/hooks/useUserRole';
 import { supabase } from '../../src/lib/supabase';
 import { buildPdfHtml, buildPresupuestoPdfHtml, printHtml, getPresupuestoFilename } from '../../src/utils/pdfGenerator';
 import PresupuestoView from '../../src/components/PresupuestoView';
@@ -39,8 +39,9 @@ import { PresupuestoEditModal } from '../../src/components/PresupuestoEditModal'
 import { DraftRestoreBanner } from '../../src/components/DraftRestoreBanner';
 import ComprasView from '../../src/components/ComprasView';
 import ComprasHistorialView from '../../src/components/ComprasHistorialView';
+import AprobacionesView from '../../src/components/AprobacionesView';
 
-type Tab = 'ajuste' | 'presupuesto' | 'historial' | 'fallas' | 'compras';
+type Tab = 'ajuste' | 'presupuesto' | 'historial' | 'fallas' | 'compras' | 'aprobaciones';
 
 export default function Ordenes() {
   const { colors, formatUSD } = useTheme();
@@ -49,11 +50,24 @@ export default function Ordenes() {
   const params       = useLocalSearchParams<{ tab?: string }>();
   const [tab, setTab] = useState<Tab>('ajuste');
 
+  const { data: userAuth } = useUserRole();
+  const isPrivileged = isPrivilegedRole(userAuth?.role);
+
   useEffect(() => {
-    if (params.tab === 'ajuste' || params.tab === 'presupuesto' || params.tab === 'historial' || params.tab === 'fallas' || params.tab === 'compras') {
+    const valid: Tab[] = ['ajuste', 'presupuesto', 'historial', 'fallas', 'compras', 'aprobaciones'];
+    if (params.tab && valid.includes(params.tab as Tab)) {
+      // Compras/Aprobaciones son solo para privilegiados: no dejar caer un empleado ahí.
+      if ((params.tab === 'compras' || params.tab === 'aprobaciones') && !isPrivileged) return;
       setTab(params.tab as Tab);
     }
-  }, [params.tab]);
+  }, [params.tab, isPrivileged]);
+
+  // Si un empleado estaba en una pestaña privilegiada y pierde el privilegio, regresa a Ajuste.
+  useEffect(() => {
+    if (!isPrivileged && (tab === 'compras' || tab === 'aprobaciones')) {
+      setTab('ajuste');
+    }
+  }, [isPrivileged, tab]);
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
@@ -61,23 +75,25 @@ export default function Ordenes() {
 
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Órdenes y Presupuestos</Text>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false} 
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.tabRow}
           style={styles.tabRowWrapper}
         >
           <TabBtn label="Ajuste" active={tab === 'ajuste'} onPress={() => setTab('ajuste')} />
+          {isPrivileged && <TabBtn label="Aprobaciones" active={tab === 'aprobaciones'} onPress={() => setTab('aprobaciones')} />}
           <TabBtn label="Presupuesto" active={tab === 'presupuesto'} onPress={() => setTab('presupuesto')} />
-          <TabBtn label="Compras" active={tab === 'compras'} onPress={() => setTab('compras')} />
+          {isPrivileged && <TabBtn label="Compras" active={tab === 'compras'} onPress={() => setTab('compras')} />}
           <TabBtn label="Fallas" active={tab === 'fallas'} onPress={() => setTab('fallas')} />
           <TabBtn label="Historial" active={tab === 'historial'} onPress={() => setTab('historial')} />
         </ScrollView>
       </View>
 
-      {tab === 'ajuste' && <BorradorView router={router} />}
+      {tab === 'ajuste' && <BorradorView router={router} isPrivileged={isPrivileged} />}
+      {tab === 'aprobaciones' && isPrivileged && <AprobacionesView />}
       {tab === 'presupuesto' && <PresupuestoView router={router} />}
-      {tab === 'compras' && <ComprasTab router={router} />}
+      {tab === 'compras' && isPrivileged && <ComprasTab router={router} />}
       {tab === 'fallas' && <FallasView />}
       {tab === 'historial' && <HistorialView queryClient={queryClient} />}
     </SafeAreaView>
@@ -115,7 +131,7 @@ function ComprasTab({ router }: { router: any }) {
 
 // ── Borrador (draft order builder) ───────────────────────────────────────────
 
-function BorradorView({ router }: { router: any }) {
+function BorradorView({ router, isPrivileged }: { router: any; isPrivileged: boolean }) {
   const { colors, formatUSD } = useTheme();
   const insets = useSafeAreaInsets();
   const { isDesktop } = useDeviceSize();
@@ -160,8 +176,10 @@ function BorradorView({ router }: { router: any }) {
     if (items.length === 0) return;
     confirm({
       title:       'Emitir orden',
-      message:     `Se creará una orden con ${items.length} ítem${items.length > 1 ? 's' : ''} y se generará el PDF.`,
-      confirmText: 'Emitir',
+      message:     isPrivileged
+        ? `Se creará una orden con ${items.length} ítem${items.length > 1 ? 's' : ''} y se generará el PDF.`
+        : `Se creará una orden con ${items.length} ítem${items.length > 1 ? 's' : ''} y quedará en espera de aprobación.`,
+      confirmText: isPrivileged ? 'Emitir' : 'Enviar',
       onConfirm:   performSubmit,
     });
   }
@@ -170,18 +188,32 @@ function BorradorView({ router }: { router: any }) {
     <View style={styles.flex}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* Banner educativo de Writeback */}
-        <View style={[styles.infoBanner, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}>
-          <Feather name="zap" size={15} color={colors.primary} style={styles.infoBannerIcon} />
-          <View style={styles.infoBannerTextContainer}>
-            <Text style={[styles.infoBannerTitle, { color: colors.primary }]}>
-              Sincronización de Stock en Cola (Writeback)
-            </Text>
-            <Text style={[styles.infoBannerSub, { color: colors.textMuted }]}>
-              Los cambios de existencia se registrarán como órdenes relativas (deltas) y el backend los aplicará automáticamente en el POS Hybrid.
-            </Text>
+        {/* Banner educativo de Writeback — varía según privilegio */}
+        {isPrivileged ? (
+          <View style={[styles.infoBanner, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}>
+            <Feather name="zap" size={15} color={colors.primary} style={styles.infoBannerIcon} />
+            <View style={styles.infoBannerTextContainer}>
+              <Text style={[styles.infoBannerTitle, { color: colors.primary }]}>
+                Sincronización de Stock en Cola (Writeback)
+              </Text>
+              <Text style={[styles.infoBannerSub, { color: colors.textMuted }]}>
+                Los cambios de existencia se registrarán como órdenes relativas (deltas) y el backend los aplicará automáticamente en el POS Hybrid.
+              </Text>
+            </View>
           </View>
-        </View>
+        ) : (
+          <View style={[styles.infoBanner, { backgroundColor: colors.warning + '10', borderColor: colors.warning + '30' }]}>
+            <Feather name="clock" size={15} color={colors.warning} style={styles.infoBannerIcon} />
+            <View style={styles.infoBannerTextContainer}>
+              <Text style={[styles.infoBannerTitle, { color: colors.warning }]}>
+                Requiere aprobación
+              </Text>
+              <Text style={[styles.infoBannerSub, { color: colors.textMuted }]}>
+                Tu ajuste quedará en espera hasta que un administrador o superempleado lo apruebe. Solo entonces se aplicará en el POS Hybrid.
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Add products CTA */}
         <Pressable
@@ -443,7 +475,9 @@ function BorradorView({ router }: { router: any }) {
             <Text style={[styles.submitCount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
               {items.length} ítem{items.length > 1 ? 's' : ''}
             </Text>
-            <Text style={{ fontSize: scaleFont(10), color: colors.textMuted, fontFamily: 'JetBrainsMono_400Regular' }}>Sincronización POS en cola</Text>
+            <Text style={{ fontSize: scaleFont(10), color: colors.textMuted, fontFamily: 'JetBrainsMono_400Regular' }}>
+              {isPrivileged ? 'Sincronización POS en cola' : 'Se enviará para aprobación'}
+            </Text>
             <Pressable onPress={handleClear} style={({ pressed }) => [pressed && { opacity: 0.7 }, { marginTop: 4 }]}>
               <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>Limpiar borrador</Text>
             </Pressable>
@@ -457,7 +491,9 @@ function BorradorView({ router }: { router: any }) {
               ? <ActivityIndicator color={colors.onPrimary} />
               : <>
                   <Feather name="send" size={16} color={colors.onPrimary} />
-                  <Text style={[styles.submitBtnText, { color: colors.onPrimary }]} numberOfLines={1} adjustsFontSizeToFit>Emitir y Encolar POS</Text>
+                  <Text style={[styles.submitBtnText, { color: colors.onPrimary }]} numberOfLines={1} adjustsFontSizeToFit>
+                    {isPrivileged ? 'Emitir y Encolar POS' : 'Enviar para aprobación'}
+                  </Text>
                 </>
             }
           </Pressable>
@@ -959,6 +995,28 @@ function TabBtn({ label, active, onPress }: { label: string; active: boolean; on
 function BackendBadge({ resumen }: { resumen?: BackendResumen }): React.JSX.Element | null {
   const { colors } = useTheme();
   if (!resumen) return null;
+
+  if (resumen.espera_aprobacion > 0) {
+    return (
+      <View style={[styles.backendBadge, { backgroundColor: colors.warning + '18', borderColor: colors.warning + '40' }]}>
+        <Feather name="clock" size={10} color={colors.warning} />
+        <Text style={[styles.backendBadgeText, { color: colors.warning }]} numberOfLines={1}>
+          Espera aprobación
+        </Text>
+      </View>
+    );
+  }
+
+  if (resumen.rechazados > 0 && resumen.rechazados === resumen.total) {
+    return (
+      <View style={[styles.backendBadge, { backgroundColor: colors.danger + '18', borderColor: colors.danger + '40' }]}>
+        <Feather name="slash" size={10} color={colors.danger} />
+        <Text style={[styles.backendBadgeText, { color: colors.danger }]} numberOfLines={1}>
+          Rechazado
+        </Text>
+      </View>
+    );
+  }
 
   if (resumen.errores > 0) {
     return (

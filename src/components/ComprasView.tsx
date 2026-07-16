@@ -22,6 +22,7 @@ import { supabase, Producto } from '../lib/supabase';
 import { useProveedores, Proveedor } from '../hooks/useProveedores';
 import { useCompra, CompraDraftItem } from '../hooks/useCompra';
 import { useProductos } from '../hooks/useProductos';
+import { useUserRole, isPrivilegedRole } from '../hooks/useUserRole';
 
 interface ComprasViewProps {
   router:     any;
@@ -48,6 +49,9 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
     clear,
     submit,
   } = useCompra();
+
+  const { data: userAuth } = useUserRole();
+  const isPrivileged = isPrivilegedRole(userAuth?.role);
 
   const [proveedorModalVisible, setProveedorModalVisible] = useState(false);
   const [productoModalVisible, setProductoModalVisible] = useState(false);
@@ -105,6 +109,10 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
   }
 
   function handleSubmit(): void {
+    if (!isPrivileged) {
+      notify('No autorizado', 'Solo un administrador o superempleado puede registrar compras.');
+      return;
+    }
     if (!proveedorCodigo || items.length === 0) return;
     const problema = primerItemInvalido();
     if (problema) {
@@ -119,7 +127,7 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
     });
   }
 
-  const canSubmit = Boolean(proveedorCodigo) && items.length > 0 && !isLoading;
+  const canSubmit = isPrivileged && Boolean(proveedorCodigo) && items.length > 0 && !isLoading;
 
   return (
     <View style={styles.flex}>

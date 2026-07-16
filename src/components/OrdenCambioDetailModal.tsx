@@ -18,7 +18,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../theme/ThemeContext';
 import { useOrdenCambioDetalle, useReencolarItem, OrdenCambioItem, BackendStatus } from '../hooks/useOrdenCambioDetalle';
 import { OrdenConItems } from '../hooks/useOrdenesHistory';
-import { useUserRole } from '../hooks/useUserRole';
+import { useUserRole, isPrivilegedRole } from '../hooks/useUserRole';
+import { useAprobarOrden, useRechazarOrden } from '../hooks/useAprobaciones';
 import { confirm, notify } from '../lib/notify';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -36,7 +37,13 @@ export interface OrdenCambioDetailModalProps {
 /** Un item muestra el chip de write-back solo si viene de la app y su estado es informativo. */
 function esItemRastreable(esOrdenApp: boolean, item: OrdenCambioItem): boolean {
   if (!esOrdenApp) return false;
-  if (item.backend_status === 'pendiente' || item.backend_status === 'aplicando' || item.backend_status === 'error') {
+  if (
+    item.backend_status === 'pendiente' ||
+    item.backend_status === 'aplicando' ||
+    item.backend_status === 'error' ||
+    item.backend_status === 'espera_aprobacion' ||
+    item.backend_status === 'rechazado'
+  ) {
     return true;
   }
   return item.backend_status === 'completado' && !!item.backend_aplicado_en;
@@ -250,6 +257,31 @@ function BackendStatusChip({ item, esDueno, isExpanded, onToggleExpand, ordenId 
     });
   }
 
+  if (item.backend_status === 'espera_aprobacion') {
+    return (
+      <View style={styles.backendChipBlock}>
+        <View style={[styles.backendChip, { backgroundColor: colors.warning + '18', borderColor: colors.warning + '40' }]}>
+          <Feather name="clock" size={11} color={colors.warning} />
+          <Text style={[styles.backendChipText, { color: colors.warning }]}>EN ESPERA DE APROBACIÓN</Text>
+        </View>
+        <Text style={[styles.backendChipSubtext, { color: colors.textDim }]}>
+          Un administrador o superempleado debe aprobarlo antes de aplicarse al POS
+        </Text>
+      </View>
+    );
+  }
+
+  if (item.backend_status === 'rechazado') {
+    return (
+      <View style={styles.backendChipBlock}>
+        <View style={[styles.backendChip, { backgroundColor: colors.danger + '18', borderColor: colors.danger + '40' }]}>
+          <Feather name="slash" size={11} color={colors.danger} />
+          <Text style={[styles.backendChipText, { color: colors.danger }]}>RECHAZADO</Text>
+        </View>
+      </View>
+    );
+  }
+
   if (item.backend_status === 'pendiente') {
     const esPrueba = item.backend_resultado?.startsWith('[PREVIEW]');
     return (
@@ -365,6 +397,9 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
   const { colors } = useTheme();
   const { data: details = [], isLoading } = useOrdenCambioDetalle(orden?.id ?? null);
   const { data: userAuth } = useUserRole();
+  const isPrivileged = isPrivilegedRole(userAuth?.role);
+  const aprobarOrden = useAprobarOrden();
+  const rechazarOrden = useRechazarOrden();
   const distinctCount = details.length;
 
   function toggleErrorExpanded(itemId: number): void {
@@ -464,6 +499,40 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
   const netDelta = details.reduce((acc, d) => acc + d.delta, 0);
   const resumenApp = esOrdenApp ? resumenAplicacion(details, colors) : null;
   const hasErrors = details.some(d => d.backend_status === 'error');
+
+  const ordenId = orden.id;
+  const requiereAprobacion = orden.aprobacion_estado === 'pendiente';
+  const puedeAprobar = isPrivileged && requiereAprobacion;
+  const resolviendo = aprobarOrden.isPending || rechazarOrden.isPending;
+
+  function handleAprobar(): void {
+    confirm({
+      title:       'Aprobar ajuste',
+      message:     `OC-${String(ordenId).padStart(4, '0')} se enviará al POS Hybrid para aplicarse automáticamente.`,
+      confirmText: 'Aprobar',
+      onConfirm: () => {
+        aprobarOrden.mutate(ordenId, {
+          onSuccess: () => closeModal(),
+          onError:   (e: Error) => notify('Error', e.message),
+        });
+      },
+    });
+  }
+
+  function handleRechazar(): void {
+    confirm({
+      title:       'Rechazar ajuste',
+      message:     `OC-${String(ordenId).padStart(4, '0')} no se aplicará al POS y quedará marcado como rechazado.`,
+      confirmText: 'Rechazar',
+      destructive: true,
+      onConfirm: () => {
+        rechazarOrden.mutate({ ordenId }, {
+          onSuccess: () => closeModal(),
+          onError:   (e: Error) => notify('Error', e.message),
+        });
+      },
+    });
+  }
 
   return (
     <Modal
@@ -604,7 +673,57 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
                     </View>
                   )}
 
-                  <View style={{ height: hasErrors ? 16 : 32 }} />
+                  {requiereAprobacion && (
+                    <View style={[styles.approvalBanner, { backgroundColor: colors.warning + '10', borderColor: colors.warning + '30' }]}>
+                      <Feather name="clock" size={16} color={colors.warning} style={{ marginTop: 2 }} />
+                      <View style={{ flex: 1, gap: 10 }}>
+                        <View style={{ gap: 2 }}>
+                          <Text style={[styles.modalWarningTitle, { color: colors.warning }]}>En espera de aprobación</Text>
+                          <Text style={[styles.modalWarningText, { color: colors.textMuted }]}>
+                            {puedeAprobar
+                              ? 'Revisa el ajuste y decide si aplicarlo al POS Hybrid.'
+                              : 'Un administrador o superempleado debe aprobarlo antes de aplicarse al POS.'}
+                          </Text>
+                        </View>
+                        {puedeAprobar && (
+                          <View style={styles.approvalActions}>
+                            <Pressable
+                              disabled={resolviendo}
+                              onPress={handleRechazar}
+                              style={({ pressed }) => [
+                                styles.approvalBtn,
+                                { borderColor: colors.danger + '55', backgroundColor: colors.danger + '12' },
+                                (pressed || resolviendo) && { opacity: 0.6 },
+                              ]}
+                            >
+                              <Feather name="x" size={14} color={colors.danger} />
+                              <Text style={[styles.approvalBtnText, { color: colors.danger }]}>Rechazar</Text>
+                            </Pressable>
+                            <Pressable
+                              disabled={resolviendo}
+                              onPress={handleAprobar}
+                              style={({ pressed }) => [
+                                styles.approvalBtn,
+                                { borderColor: colors.success + '55', backgroundColor: colors.success + '12' },
+                                (pressed || resolviendo) && { opacity: 0.6 },
+                              ]}
+                            >
+                              {resolviendo ? (
+                                <ActivityIndicator size="small" color={colors.success} />
+                              ) : (
+                                <>
+                                  <Feather name="check" size={14} color={colors.success} />
+                                  <Text style={[styles.approvalBtnText, { color: colors.success }]}>Aprobar</Text>
+                                </>
+                              )}
+                            </Pressable>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  )}
+
+                  <View style={{ height: hasErrors || requiereAprobacion ? 16 : 32 }} />
 
                   {/* Items List - Internal scroll for 3+ items */}
                   <View style={{ height: 16 }} />
@@ -1049,6 +1168,34 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     borderWidth: 0.5,
+  },
+  approvalBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginHorizontal: 24,
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 0.5,
+  },
+  approvalActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  approvalBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 10,
+    borderWidth: 0.5,
+    paddingVertical: 10,
+  },
+  approvalBtnText: {
+    fontSize: scaleFont(13),
+    fontFamily: 'JetBrainsMono_700Bold',
   },
   modalWarningTitle: {
     fontSize: scaleFont(12),

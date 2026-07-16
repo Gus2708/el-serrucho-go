@@ -260,7 +260,11 @@ export default function Perfil() {
 
               <View style={[styles.badge, { backgroundColor: colors.primary + '15' }]}>
                 <Text style={[styles.badgeText, { color: colors.primary }]}>
-                  {profile?.role === 'admin' ? 'ADMINISTRADOR' : 'EMPLEADO'}
+                  {profile?.role === 'admin'
+                    ? 'ADMINISTRADOR'
+                    : profile?.role === 'superempleado'
+                      ? 'SUPER EMPLEADO'
+                      : 'EMPLEADO'}
                 </Text>
               </View>
             </View>
@@ -277,6 +281,18 @@ export default function Perfil() {
         </View>
 
         <PWAProfileControl />
+
+        {/* Gestión de usuarios — solo admin */}
+        {profile?.role === 'admin' && (
+          <Pressable
+            style={({ pressed }) => [styles.adminRow, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.75 }]}
+            onPress={() => router.push('/admin-usuarios')}
+          >
+            <Feather name="users" size={18} color={colors.primary} />
+            <Text style={[styles.adminRowText, { color: colors.text }]}>Gestionar usuarios</Text>
+            <Feather name="chevron-right" size={18} color={colors.textDim} />
+          </Pressable>
+        )}
 
         {/* Salida */}
         <Pressable
@@ -397,5 +413,15 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   logoutText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1 },
+  adminRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    height: 58,
+    borderRadius: 18,
+    borderWidth: 0.5,
+    paddingHorizontal: 18,
+  },
+  adminRowText: { flex: 1, fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
 });
 

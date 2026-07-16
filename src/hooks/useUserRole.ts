@@ -1,23 +1,28 @@
 import { useQuery } from '@tanstack/react-query';
 import { Platform } from 'react-native';
-import { supabase, Profile } from '../lib/supabase';
+import { supabase, Profile, UserRole } from '../lib/supabase';
 
 // ── Offline cache for user role (Web/PWA only) ────────────────────────────────
 const ROLE_CACHE_KEY    = 'serrucho:user-role';
 const ROLE_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 type CachedRole = {
-  role:      'admin' | 'empleado';
+  role:      UserRole;
   is_active: boolean;
   profile:   Profile | null;
   cachedAt:  number;
 };
 
+/** admin o superempleado: pueden hacer write-back directo, compras y aprobar ajustes. */
+export function isPrivilegedRole(role: UserRole | undefined | null): boolean {
+  return role === 'admin' || role === 'superempleado';
+}
+
 function saveRoleToLocal(data: { role: string; is_active: boolean; profile: Profile | null }) {
   if (Platform.OS !== 'web') return;
   try {
     const entry: CachedRole = {
-      role:      data.role as 'admin' | 'empleado',
+      role:      data.role as UserRole,
       is_active: data.is_active,
       profile:   data.profile,
       cachedAt:  Date.now(),
@@ -89,10 +94,10 @@ export function useUserRole(userId?: string) {
           return { role: 'empleado' as const, is_active: false, profile: null };
         }
 
-        const result = { 
-          role: data.role as 'admin' | 'empleado', 
+        const result = {
+          role: data.role as UserRole,
           is_active: data.is_active as boolean,
-          profile: data as Profile 
+          profile: data as Profile
         };
 
         // Cache successful result for offline use

@@ -19,20 +19,45 @@ sync normal de inventario         ←  la existencia nueva vuelve a `productos`
 
 | Columna | Tipo | Semántica |
 |---|---|---|
-| `backend_status` | text | `pendiente` → `aplicando` → `completado` \| `error` |
+| `backend_status` | text | `espera_aprobacion` (empleado) → `pendiente` → `aplicando` → `completado` \| `error` \| `rechazado` |
 | `backend_resultado` | text | Detalle del resultado o del error (para mostrar al usuario). |
 | `backend_intentos` | int | Reintentos consumidos (máx. 3, solo fallos "seguros"). |
 | `backend_aplicado_en` | timestamptz | Cuándo se confirmó el commit en HybridLite. |
 
 ### Ciclo de vida de `backend_status`
 
-- **`pendiente`** — en cola. Es el default al insertar; el backend solo procesa items
-  de órdenes con `status='emitido'` **y `creado_por` NOT NULL** (ver "doble uso").
+- **`espera_aprobacion`** — creado por un **empleado** normal; NO está en cola todavía.
+  Un trigger lo fuerza a este estado al insertar (el backend, que solo mira `pendiente`,
+  lo ignora). Ver "Gate de aprobación por rol".
+- **`pendiente`** — en cola. Es el default al insertar para usuarios **privilegiados**
+  (admin/superempleado); el backend solo procesa items de órdenes con `status='emitido'`
+  **y `creado_por` NOT NULL** (ver "doble uso").
 - **`aplicando`** — el backend lo está ejecutando ahora (transitorio, ~30s por item).
 - **`completado`** — aplicado y **verificado contra la base real** de HybridLite
   (o `delta=0`: nada que aplicar). `backend_aplicado_en` queda seteado.
 - **`error`** — no se aplicó (o no se sabe si se aplicó; ver advertencia). El motivo
   está en `backend_resultado`.
+- **`rechazado`** — un admin/superempleado rechazó el ajuste del empleado; no se aplica.
+
+## Gate de aprobación por rol (migración 026/027/028)
+
+Modelo de tres niveles para quién puede disparar el write-back:
+
+| Rol | Ajustes | Compras | Write-back de ajustes |
+|---|---|---|---|
+| **admin** | sí | sí | directo |
+| **superempleado** | sí | sí | directo; además aprueba/rechaza ajustes de empleados |
+| **empleado** | sí | **no** | **requiere aprobación** |
+
+- Al emitir un ajuste, el trigger `fn_gate_item_aprobacion()` mira el rol del creador:
+  privilegiado → items nacen `pendiente` (como siempre); empleado → items `espera_aprobacion`
+  y la cabecera `ordenes_cambio.aprobacion_estado='pendiente'`.
+- **Aprobar/Rechazar** son RPCs `aprobar_orden(p_orden)` / `rechazar_orden(p_orden, p_motivo)`
+  (SECURITY DEFINER, exigen `is_privileged()`). Aprobar pasa los items a `pendiente`
+  (recién ahí el backend los toma) y la cabecera a `aprobado`. Rechazar → items `rechazado`,
+  cabecera `rechazado` (+ `rechazo_motivo`).
+- **El backend NO cambió**: sigue sondeando `backend_status='pendiente'`. El gate vive
+  100% en la DB; un item `espera_aprobacion`/`rechazado` simplemente nunca entra a su cola.
 
 ## Qué debería hacer la app (fase siguiente)
 

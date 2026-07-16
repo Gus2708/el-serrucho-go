@@ -109,16 +109,21 @@ tazas            (id PK, bcv_usd, bcv_eur, binance_p2p, tasa_promedio, nombre,
 -- APP-WRITABLE
 anomalias              (id PK, codigo_producto, tipo, severidad, explicacion,
                         detectado_en, resuelto)
-ordenes_cambio         (id PK, creado_por, nota, status, pdf_url, creado_en)
+ordenes_cambio         (id PK, creado_por, nota, status, pdf_url, creado_en,
+                        aprobacion_estado,   -- no_aplica|pendiente|aprobado|rechazado (migr. 026)
+                        aprobado_por, aprobado_en, rechazo_motivo)
 ordenes_cambio_items   (id PK, orden_id FK, codigo_producto, descripcion,
                         existencia_actual, nueva_existencia, delta GENERATED,
                         nota,
-                        backend_status,      -- write-back: pendiente|aplicando|completado|error
+                        backend_status,      -- espera_aprobacion|pendiente|aplicando|completado|error|rechazado
                         backend_resultado, backend_intentos, backend_aplicado_en)
                        -- write-back de stock a HybridLite: migraciones 018/019/020,
+                       -- gate de aprobación por rol 026/027/028,
                        -- contrato en docs/WRITEBACK-PIPELINE.md
-profiles               (id PK = auth.users.id, role: 'admin' | 'empleado',
-                        email, display_name, updated_at)
+profiles               (id PK = auth.users.id, role: 'admin' | 'superempleado' | 'empleado',
+                        email, display_name, is_active, allowed_sid, updated_at)
+                       -- roles write-back: admin/superempleado = write-back directo + compras;
+                       -- empleado = solo ajustes, requieren aprobación (RPCs aprobar_orden/rechazar_orden)
 comandos_remotos       (id PK, comando, executed, created_at)
                        -- queue for cloud → local sync triggering
 ```
@@ -152,9 +157,16 @@ vw_ticket_promedio          -- AVG total_neto current month
 All tables have RLS enabled.
 - `productos`, `ventas`, `ventas_detalle`, `clientes`, `tazas`, `anomalias`,
   `vw_*` → `auth_read` for `authenticated`.
-- `ordenes_cambio` / `ordenes_cambio_items` → `owner_all` (creado_por = auth.uid()).
+- `ordenes_cambio` / `ordenes_cambio_items` → active employees read all, write own;
+  admins delete all. Aprobación de ajustes de empleados vía RPCs `aprobar_orden` /
+  `rechazar_orden` (SECURITY DEFINER, exigen `is_privileged()`).
+- `compras_app` / `compras_app_items` → escritura solo `is_privileged()`
+  (admin/superempleado); lectura para empleados activos.
 - `comandos_remotos` → `auth_insert` + `auth_read` for authenticated.
-- `profiles` → owner-only RW.
+- `profiles` → owner RW + admins update any (asignar roles). Trigger
+  `fn_protect_profile_privileges` impide que un no-admin cambie su `role`/`is_active`.
+- Helpers: `is_admin()`, `is_privileged()` (admin|superempleado activo),
+  `is_active_employee()`, `validate_session()`.
 
 ---
 

@@ -2,7 +2,13 @@ import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 
-export type BackendStatus = 'pendiente' | 'aplicando' | 'completado' | 'error';
+export type BackendStatus =
+  | 'pendiente'
+  | 'aplicando'
+  | 'completado'
+  | 'error'
+  | 'espera_aprobacion'
+  | 'rechazado';
 
 export interface OrdenCambioItem {
   id:                number;
