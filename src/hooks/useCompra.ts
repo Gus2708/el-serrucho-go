@@ -97,7 +97,7 @@ export const useCompra = create<CompraStore>()((set, get) => ({
           items.map(item => ({
             compra_id:       compra.id,
             codigo_producto: item.codigo_producto,
-            descripcion:     item.descripcion,
+            descripcion:     item.es_nuevo ? item.descripcion.toUpperCase() : item.descripcion,
             cantidad:        item.cantidad,
             costo:           item.costo,
             precio:          item.precio,
