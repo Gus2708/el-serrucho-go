@@ -234,7 +234,7 @@ self.addEventListener('message', (event) => {
 // Recibe el push del servidor (Edge Function send-push) y muestra la notificación
 // AUNQUE la app esté cerrada o en segundo plano.
 self.addEventListener('push', (event) => {
-  let data = { title: 'El Serrucho GO', body: '', url: '/' };
+  let data = { title: 'El Serrucho GO', body: '', url: '/', urgent: false };
   try {
     if (event.data) data = Object.assign(data, event.data.json());
   } catch (e) {
@@ -246,9 +246,12 @@ self.addEventListener('push', (event) => {
       icon: '/elserruchogo512x512.png',
       badge: '/elserruchogo512x512.png',
       data: { url: data.url || '/' },
-      vibrate: [200, 100, 200],
+      vibrate: data.urgent ? [300, 150, 300, 150, 300, 150, 300] : [200, 100, 200],
       tag: 'serrucho-' + (data.url || 'notif'),
       renotify: true,
+      // Alertas urgentes (intento de estafa) se quedan en pantalla hasta que
+      // alguien las descarte, en vez de auto-cerrarse a los pocos segundos.
+      requireInteraction: !!data.urgent,
     })
   );
 });
