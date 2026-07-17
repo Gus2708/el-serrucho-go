@@ -24,7 +24,7 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { useProfitSummary, useProfitDaily, useProfitHourly } from '../../src/hooks/useProfitSummary';
-import { useUserRole } from '../../src/hooks/useUserRole';
+import { useUserRole, isPrivilegedRole } from '../../src/hooks/useUserRole';
 import { usePWAInstallStore } from '../../src/hooks/usePWAInstall';
 import { SyncBadge } from '../../src/components/SyncBadge';
 import { SparklineChart } from '../../src/components/SparklineChart';
@@ -187,6 +187,7 @@ export default function Index() {
   const role = userAuth?.role ?? 'empleado';
   const profile = userAuth?.profile;
   const isAdmin = role === 'admin';
+  const isPrivileged = isPrivilegedRole(role);
   const sessionUser = profile;
 
   useEffect(() => {
@@ -345,6 +346,18 @@ export default function Index() {
           </View>
           
           <View style={styles.headerActions}>
+            {isPrivileged && (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.iconBtn,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  pressed && { opacity: 0.7, transform: [{ scale: 0.94 }] },
+                ]}
+                onPress={() => router.push('/pagos' as any)}
+              >
+                <Feather name="dollar-sign" size={18} color={colors.primary} />
+              </Pressable>
+            )}
             <View style={styles.iconBtnContainer}>
               <Pressable
                 style={({ pressed }) => [

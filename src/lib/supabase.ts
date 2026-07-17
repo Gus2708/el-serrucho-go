@@ -175,6 +175,22 @@ export type SolicitudAyuda = {
 };
 
 
+export type PagoZelle = {
+  id:             string;
+  message_id:     string;
+  monto:          number | null;
+  remitente:      string | null;
+  banco:          string | null;
+  asunto:         string;
+  cuerpo_snippet: string | null;
+  raw_parse_ok:   boolean;
+  recibido_en:    string | null;
+  procesado_en:   string;
+  conciliado:     boolean;
+  conciliado_por: string | null;
+};
+
+
 // ── View row types ────────────────────────────────────────────────────────────
 
 export type ProfitSummaryRow = {

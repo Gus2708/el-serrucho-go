@@ -99,6 +99,22 @@ export function useRealtimeSync() {
             );
           }
         })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'pagos_zelle' }, (payload) => {
+          // Solo admin/superempleado reciben estos eventos (Realtime respeta la RLS).
+          queryClient.invalidateQueries({ queryKey: ['pagos-zelle'] });
+
+          if (payload.eventType === 'INSERT' && payload.new) {
+            const { monto, remitente, asunto } = payload.new;
+            const montoTxt = monto == null ? null : `$${Number(monto).toFixed(2)}`;
+            playNotificationSound();
+            showLocalNotification(
+              '💰 Zelle recibido',
+              montoTxt
+                ? `${montoTxt} — ${remitente || 'remitente desconocido'}`
+                : (asunto || 'Nuevo pago Zelle (revisar correo)'),
+            );
+          }
+        })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'solicitudes_ayuda' }, (payload) => {
           queryClient.invalidateQueries({ queryKey: ['solicitudes-pendientes'] });
 
