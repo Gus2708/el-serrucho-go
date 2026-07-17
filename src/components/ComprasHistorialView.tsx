@@ -125,13 +125,11 @@ function CompraHistCard({ compra, expanded, onToggleExpand, onEditRetry, isLoadi
   const showResultado = compra.backend_status === 'error' && Boolean(compra.backend_resultado);
 
   return (
-    <Pressable
-      style={({ pressed }) => [
+    <View
+      style={[
         styles.histCard,
         { backgroundColor: colors.surface, borderColor: colors.border },
-        pressed && showResultado && { opacity: 0.75 },
       ]}
-      onPress={showResultado ? onToggleExpand : undefined}
     >
       <View style={styles.histTop}>
         <Text style={[styles.histId, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
@@ -159,15 +157,6 @@ function CompraHistCard({ compra, expanded, onToggleExpand, onEditRetry, isLoadi
         </Text>
       ) : null}
 
-      {showResultado ? (
-        <View style={styles.expandHintRow}>
-          <Text style={[styles.expandHint, { color: colors.danger }]}>
-            {expanded ? 'Ocultar detalle' : 'Ver detalle del error'}
-          </Text>
-          <Feather name={expanded ? 'chevron-up' : 'chevron-down'} size={12} color={colors.danger} />
-        </View>
-      ) : null}
-
       {expanded && showResultado ? (
         <View style={[styles.resultadoBox, { backgroundColor: colors.danger + '12', borderColor: colors.danger + '30' }]}>
           <Text style={[styles.resultadoText, { color: colors.danger }]}>{compra.backend_resultado}</Text>
@@ -177,27 +166,43 @@ function CompraHistCard({ compra, expanded, onToggleExpand, onEditRetry, isLoadi
               Antes de volver a emitirla, verifica en Hybrid si la compra ya se registró: re-emitir duplicaría el ingreso de stock.
             </Text>
           </View>
+        </View>
+      ) : null}
+
+      {/* Acciones para compras en error: siempre visibles en la card */}
+      {showResultado ? (
+        <View style={styles.actionRow}>
+          <Pressable
+            onPress={onToggleExpand}
+            hitSlop={6}
+            style={({ pressed }) => [styles.expandHintRow, pressed && { opacity: 0.7 }]}
+          >
+            <Text style={[styles.expandHint, { color: colors.danger }]}>
+              {expanded ? 'Ocultar detalle' : 'Ver detalle del error'}
+            </Text>
+            <Feather name={expanded ? 'chevron-up' : 'chevron-down'} size={12} color={colors.danger} />
+          </Pressable>
           <Pressable
             onPress={onEditRetry}
             disabled={isLoadingEdit}
             style={({ pressed }) => [
               styles.editRetryBtn,
-              { borderColor: colors.primary },
+              { backgroundColor: colors.primary },
               (pressed || isLoadingEdit) && { opacity: 0.7 },
             ]}
           >
             {isLoadingEdit ? (
-              <ActivityIndicator size="small" color={colors.primary} />
+              <ActivityIndicator size="small" color={colors.onPrimary} />
             ) : (
               <>
-                <Feather name="edit-2" size={13} color={colors.primary} />
-                <Text style={[styles.editRetryBtnText, { color: colors.primary }]}>Editar y reintentar</Text>
+                <Feather name="edit-2" size={13} color={colors.onPrimary} />
+                <Text style={[styles.editRetryBtnText, { color: colors.onPrimary }]}>Editar y reintentar</Text>
               </>
             )}
           </Pressable>
         </View>
       ) : null}
-    </Pressable>
+    </View>
   );
 }
 
@@ -306,17 +311,21 @@ const styles = StyleSheet.create({
     paddingTop:    8,
   },
   resultadoWarn: { flex: 1, fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_700Bold', lineHeight: scaleFont(14) },
+  actionRow: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+    gap:            8,
+    marginTop:      8,
+  },
   editRetryBtn: {
     flexDirection:     'row',
     alignItems:        'center',
     justifyContent:    'center',
     gap:               6,
-    alignSelf:         'flex-start',
-    borderWidth:       1,
     borderRadius:      999,
-    paddingVertical:   6,
-    paddingHorizontal: 12,
-    marginTop:         2,
+    paddingVertical:   8,
+    paddingHorizontal: 14,
   },
   editRetryBtnText: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold' },
 });
