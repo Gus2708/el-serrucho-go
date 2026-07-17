@@ -45,33 +45,70 @@ export function playNotificationSound() {
   }
 }
 
+type LocalNotificationOptions = {
+  /** Si es true, la notificación web NO se auto-cierra sola (requiere que el usuario la descarte). */
+  requireInteraction?: boolean;
+};
+
 /**
  * Dispara una notificación del sistema.
  * En Web/PWA, utiliza la API de Notificaciones HTML5.
  */
-export function showLocalNotification(title: string, body: string) {
+export function showLocalNotification(title: string, body: string, options: LocalNotificationOptions = {}) {
   if (Platform.OS === 'web') {
     if ('Notification' in window) {
+      const notifOptions: NotificationOptions = {
+        body,
+        icon: '/elserruchogo512x512.png',
+        requireInteraction: options.requireInteraction ?? false,
+      };
       if (Notification.permission === 'granted') {
         try {
-          new Notification(title, {
-            body,
-            icon: '/elserruchogo512x512.png',
-          });
+          new Notification(title, notifOptions);
         } catch (e) {
           console.warn('Error launching local Notification:', e);
         }
       } else if (Notification.permission !== 'denied') {
         Notification.requestPermission().then(permission => {
           if (permission === 'granted') {
-            new Notification(title, {
-              body,
-              icon: '/elserruchogo512x512.png',
-            });
+            new Notification(title, notifOptions);
           }
         });
       }
     }
+  }
+}
+
+/**
+ * Alerta de seguridad (intento de estafa): suena más fuerte/urgente que la
+ * notificación estándar — en Web repite un tono agudo 3 veces en ráfaga; en
+ * nativo usa un patrón de vibración largo y agresivo.
+ */
+export function playSecurityAlertSound() {
+  if (Platform.OS === 'web') {
+    try {
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContext) return;
+      const audioCtx = new AudioContext();
+
+      for (let i = 0; i < 3; i++) {
+        const start = audioCtx.currentTime + i * 0.35;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(1046.5, start); // Do6 — tono agudo de alarma
+        gain.gain.setValueAtTime(0.15, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.25);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(start);
+        osc.stop(start + 0.25);
+      }
+    } catch (e) {
+      console.warn('Web Audio play failed or blocked:', e);
+    }
+  } else {
+    Vibration.vibrate([0, 500, 200, 500, 200, 500, 200, 500]);
   }
 }
 

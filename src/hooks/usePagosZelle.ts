@@ -5,7 +5,9 @@ const PAGE_SIZE = 100;
 
 /**
  * Últimos pagos Zelle detectados en el correo (tabla pagos_zelle).
- * Solo admin/superempleado ven filas (RLS); para empleados llega vacío.
+ * Cualquier empleado activo puede leer (RLS); app/pagos.tsx recorta la vista
+ * a los últimos 5 para quien no sea admin. Conciliar sigue restringido a
+ * admin/superempleado.
  * La lista se mantiene al día por la invalidación de useRealtimeSync.
  */
 export function usePagosZelle() {

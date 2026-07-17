@@ -175,6 +175,24 @@ export type SolicitudAyuda = {
 };
 
 
+export type PagoZelleEstado = 'recibido' | 'en_revision';
+
+export type SpoofMotivo = 'dominio_no_autorizado' | 'dmarc_fallido' | 'header_from_no_alinea';
+
+export type AlertaZelleSpoof = {
+  id:             string;
+  message_id:     string;
+  from_addr:      string;
+  asunto:         string;
+  motivo:         SpoofMotivo;
+  auth_snippet:   string | null;
+  cuerpo_snippet: string | null;
+  recibido_en:    string | null;
+  detectado_en:   string;
+  revisado:       boolean;
+  revisado_por:   string | null;
+};
+
 export type PagoZelle = {
   id:             string;
   message_id:     string;
@@ -184,6 +202,7 @@ export type PagoZelle = {
   asunto:         string;
   cuerpo_snippet: string | null;
   raw_parse_ok:   boolean;
+  estado:         PagoZelleEstado;
   recibido_en:    string | null;
   procesado_en:   string;
   conciliado:     boolean;

@@ -16,15 +16,22 @@ import { FlashList } from '@shopify/flash-list';
 import Svg, { Path } from 'react-native-svg';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { supabase, AtencionPendiente, SolicitudAyuda } from '../../src/lib/supabase';
+import { supabase, AtencionPendiente, SolicitudAyuda, AlertaZelleSpoof } from '../../src/lib/supabase';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { useUserRole } from '../../src/hooks/useUserRole';
 import { useAtenciones } from '../../src/hooks/useAtenciones';
 import { useSolicitudes } from '../../src/hooks/useSolicitudes';
 import { useResolverSolicitud } from '../../src/hooks/useResolverSolicitud';
+import { useAlertasSpoof, useRevisarAlertaSpoof } from '../../src/hooks/useAlertasSpoof';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { notify, confirm } from '../../src/lib/notify';
 import { requestNotificationPermission } from '../../src/utils/notifications';
+
+const MOTIVO_LABEL: Record<AlertaZelleSpoof['motivo'], string> = {
+  dominio_no_autorizado: 'Dirección de remitente falsa',
+  dmarc_fallido:          'Correo no verificado (autenticación falló)',
+  header_from_no_alinea:  'Correo no verificado (dominio no coincide)',
+};
 
 function WhatsAppIcon({ size = 22, color = '#25D366' }: { size?: number; color?: string }) {
   return (
@@ -68,19 +75,22 @@ export default function Notificaciones() {
   const { data: userAuth } = useUserRole();
   const { data: atenciones = [], isLoading: atencionesLoading, refetch: refetchAtenciones } = useAtenciones();
   const { data: solicitudes = [], isLoading: solicitudesLoading, refetch: refetchSolicitudes } = useSolicitudes();
+  const { data: alertasSpoof = [], isLoading: alertasSpoofLoading, refetch: refetchAlertasSpoof } = useAlertasSpoof();
   const { descartarSolicitud, descartandoId } = useResolverSolicitud();
+  const revisarAlerta = useRevisarAlertaSpoof();
   // Solo seleccionamos el setter (referencia estable). Suscribirse al valor
   // `scrollOffsetNotificaciones` re-renderizaba toda la pantalla en cada frame
   // de scroll (~60 fps). El valor solo se necesita al recuperar foco, así que
   // se lee con getState() sin suscripción.
   const setScrollOffsetNotificaciones = useInventarioStore(s => s.setScrollOffsetNotificaciones);
 
-  const [activeTab, setActiveTab] = useState<'atenciones' | 'solicitudes'>('atenciones');
+  const [activeTab, setActiveTab] = useState<'atenciones' | 'solicitudes' | 'seguridad'>('atenciones');
   const [claimingId, setClaimingId] = useState<number | null>(null);
   const [retryingId, setRetryingId] = useState<number | null>(null);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | null>(null);
 
   const pendingSolicitudesCount = solicitudes.filter(s => s.status === 'pendiente').length;
+  const pendingAlertasCount = alertasSpoof.filter(a => !a.revisado).length;
 
   // Read the current permission state once on mount (no automatic request).
   useEffect(() => {
@@ -185,8 +195,17 @@ export default function Notificaciones() {
     return phone ? phone.replace('@c.us', '') : '';
   }
 
-  const isLoading = activeTab === 'atenciones' ? atencionesLoading : solicitudesLoading;
-  const listData = activeTab === 'atenciones' ? atenciones : solicitudes;
+  const isLoading = activeTab === 'atenciones' ? atencionesLoading
+    : activeTab === 'solicitudes' ? solicitudesLoading
+    : alertasSpoofLoading;
+  const listData = activeTab === 'atenciones' ? atenciones
+    : activeTab === 'solicitudes' ? solicitudes
+    : alertasSpoof;
+
+  function formatFechaAlerta(iso: string): string {
+    const fecha = new Date(iso);
+    return fecha.toLocaleString('es-VE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true });
+  }
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
@@ -286,6 +305,35 @@ export default function Notificaciones() {
               </View>
             )}
           </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.tabBtn,
+              activeTab === 'seguridad' && { backgroundColor: colors.danger },
+              pressed && activeTab !== 'seguridad' && { opacity: 0.7 },
+            ]}
+            onPress={() => setActiveTab('seguridad')}
+          >
+            <Text style={[
+              styles.tabBtnText,
+              { color: activeTab === 'seguridad' ? colors.onPrimary : colors.textMuted },
+            ]}>
+              SEGURIDAD
+            </Text>
+            {pendingAlertasCount > 0 && (
+              <View style={[
+                styles.tabBadge,
+                { backgroundColor: activeTab === 'seguridad' ? colors.onPrimary + '33' : colors.danger + '33' },
+              ]}>
+                <Text style={[
+                  styles.tabBadgeText,
+                  { color: activeTab === 'seguridad' ? colors.onPrimary : colors.danger },
+                ]}>
+                  {pendingAlertasCount}
+                </Text>
+              </View>
+            )}
+          </Pressable>
         </View>
       </View>
 
@@ -355,7 +403,7 @@ export default function Notificaciones() {
             </View>
           )}
         />
-      ) : (
+      ) : activeTab === 'solicitudes' ? (
         /* ── Lista de Solicitudes Bot ── */
         <FlashList
           data={solicitudes}
@@ -454,6 +502,75 @@ export default function Notificaciones() {
               </View>
             );
           }}
+        />
+      ) : (
+        /* ── Lista de Alertas de Seguridad (intentos de estafa) ── */
+        <FlashList
+          data={alertasSpoof}
+          estimatedItemSize={140}
+          keyExtractor={(item) => `spoof-${item.id}`}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 110 }}
+          refreshing={alertasSpoofLoading}
+          onRefresh={refetchAlertasSpoof}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyContainer}>
+              <Feather name="shield" size={48} color={colors.success} style={{ marginBottom: 12, opacity: 0.8 }} />
+              <Text style={[styles.emptyTextTitle, { color: colors.text }]}>Sin intentos de estafa</Text>
+              <Text style={[styles.emptyTextSub, { color: colors.textMuted }]}>
+                No se ha detectado ningún correo falso imitando un pago Zelle.
+              </Text>
+            </View>
+          )}
+          renderItem={({ item }: { item: AlertaZelleSpoof }) => (
+            <View style={[
+              styles.card,
+              { backgroundColor: colors.surface, borderColor: colors.danger + '55' },
+              !item.revisado && { borderLeftWidth: 3, borderLeftColor: colors.danger },
+            ]}>
+              <View style={styles.cardHeader}>
+                <View style={styles.clientInfo}>
+                  <View style={styles.clientNameRow}>
+                    <Feather name="alert-triangle" size={18} color={colors.danger} />
+                    <Text style={[styles.clientName, { color: colors.danger, flex: 1 }]} numberOfLines={2}>
+                      Correo falso detectado
+                    </Text>
+                  </View>
+                  <Text style={[styles.clientPhone, { color: colors.textMuted }]} numberOfLines={1}>
+                    {item.from_addr}
+                  </Text>
+                </View>
+                <Text style={[styles.timeAgo, { color: colors.textMuted }]}>
+                  {formatFechaAlerta(item.detectado_en)}
+                </Text>
+              </View>
+
+              <View style={styles.reasonBox}>
+                <Text style={[styles.motivoText, { color: colors.danger }]}>
+                  {MOTIVO_LABEL[item.motivo] || 'Remitente no verificado'}
+                </Text>
+                <Text style={[styles.reasonText, { color: colors.text }]} numberOfLines={2}>
+                  Asunto: {item.asunto}
+                </Text>
+                <Text style={[styles.reasonText, { color: colors.textMuted, fontSize: scaleFont(11) }]}>
+                  No es un pago real. Ignóralo y no hagas clic en ningún vínculo.
+                </Text>
+              </View>
+
+              {!item.revisado && (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.actionBtn,
+                    { backgroundColor: colors.border },
+                    pressed && { opacity: 0.8 },
+                  ]}
+                  disabled={revisarAlerta.isPending}
+                  onPress={() => revisarAlerta.mutate(item.id)}
+                >
+                  <Text style={[styles.actionBtnText, { color: colors.text }]}>MARCAR COMO VISTO</Text>
+                </Pressable>
+              )}
+            </View>
+          )}
         />
       )}
     </SafeAreaView>

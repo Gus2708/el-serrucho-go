@@ -71,7 +71,26 @@ Notifications.setNotificationHandler({
   }),
 });
 
+async function ensureSecurityAlertChannel(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  try {
+    await Notifications.setNotificationChannelAsync('alerta-seguridad', {
+      name: 'Alertas de seguridad',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 500, 200, 500, 200, 500, 200, 500],
+      lightColor: '#FF3B30',
+      sound: 'default',
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      bypassDnd: true,
+    });
+  } catch (e) {
+    console.warn('[push] no se pudo crear el canal de alerta-seguridad:', e);
+  }
+}
+
 async function subscribeNative(): Promise<void> {
+  await ensureSecurityAlertChannel();
+
   // Request permission (on Android 13+ this shows the system dialog; older = auto-granted).
   const { status: existing } = await Notifications.getPermissionsAsync();
   let finalStatus = existing;
