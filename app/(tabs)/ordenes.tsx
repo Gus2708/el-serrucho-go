@@ -124,7 +124,7 @@ function ComprasTab({ router }: { router: any }) {
       </View>
 
       {subTab === 'armar' && <ComprasView router={router} onEmitted={() => setSubTab('historial')} />}
-      {subTab === 'historial' && <ComprasHistorialView />}
+      {subTab === 'historial' && <ComprasHistorialView onEditRetry={() => setSubTab('armar')} />}
     </View>
   );
 }

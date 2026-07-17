@@ -6,14 +6,46 @@ import { useQueryClient } from '@tanstack/react-query';
 import { scaleFont } from '../theme/responsive';
 import { useTheme } from '../theme/ThemeContext';
 import { supabase } from '../lib/supabase';
-import { useComprasHistory, CompraConItems } from '../hooks/useComprasHistory';
+import { notify } from '../lib/notify';
+import { useComprasHistory, CompraConItems, fetchCompraItemsForEdit } from '../hooks/useComprasHistory';
+import { useCompra } from '../hooks/useCompra';
 
-export default function ComprasHistorialView(): React.JSX.Element {
+interface ComprasHistorialViewProps {
+  onEditRetry?: () => void;   // navega a "Nueva compra" tras precargar el draft
+}
+
+export default function ComprasHistorialView({ onEditRetry }: ComprasHistorialViewProps): React.JSX.Element {
   const { colors } = useTheme();
   const queryClient = useQueryClient();
   const { data: compras = [], isLoading, refetch } = useComprasHistory();
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [loadingEditId, setLoadingEditId] = useState<number | null>(null);
+  const loadForEdit = useCompra(s => s.loadForEdit);
+
+  const handleEditRetry = useCallback(async (compra: CompraConItems) => {
+    setLoadingEditId(compra.id);
+    try {
+      const items = await fetchCompraItemsForEdit(compra.id);
+      if (items.length === 0) {
+        notify('Sin ítems', 'Esta compra no tiene ítems para editar.');
+        return;
+      }
+      loadForEdit({
+        compraId:        compra.id,
+        proveedorCodigo: compra.proveedor_codigo,
+        proveedorNombre: compra.proveedor_nombre,
+        nota:            compra.nota ?? '',
+        numeroDocumento: compra.numero_documento ?? '',
+        items,
+      });
+      onEditRetry?.();
+    } catch (e: any) {
+      notify('Error', e.message ?? 'No se pudieron cargar los ítems de la compra.');
+    } finally {
+      setLoadingEditId(null);
+    }
+  }, [loadForEdit, onEditRetry]);
 
   // Realtime: refresca el historial cuando el backend actualiza el estado de una compra.
   useEffect(() => {
@@ -66,6 +98,8 @@ export default function ComprasHistorialView(): React.JSX.Element {
           compra={compra}
           expanded={expandedId === compra.id}
           onToggleExpand={() => setExpandedId(prev => (prev === compra.id ? null : compra.id))}
+          onEditRetry={() => handleEditRetry(compra)}
+          isLoadingEdit={loadingEditId === compra.id}
         />
       ))}
       <View style={{ height: 150 }} />
@@ -79,9 +113,11 @@ interface CompraHistCardProps {
   compra:         CompraConItems;
   expanded:       boolean;
   onToggleExpand: () => void;
+  onEditRetry:    () => void;
+  isLoadingEdit:  boolean;
 }
 
-function CompraHistCard({ compra, expanded, onToggleExpand }: CompraHistCardProps): React.JSX.Element {
+function CompraHistCard({ compra, expanded, onToggleExpand, onEditRetry, isLoadingEdit }: CompraHistCardProps): React.JSX.Element {
   const { colors } = useTheme();
   const dateStr = new Date(compra.creado_en).toLocaleString('es-VE', {
     day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
@@ -141,6 +177,24 @@ function CompraHistCard({ compra, expanded, onToggleExpand }: CompraHistCardProp
               Antes de volver a emitirla, verifica en Hybrid si la compra ya se registró: re-emitir duplicaría el ingreso de stock.
             </Text>
           </View>
+          <Pressable
+            onPress={onEditRetry}
+            disabled={isLoadingEdit}
+            style={({ pressed }) => [
+              styles.editRetryBtn,
+              { borderColor: colors.primary },
+              (pressed || isLoadingEdit) && { opacity: 0.7 },
+            ]}
+          >
+            {isLoadingEdit ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <>
+                <Feather name="edit-2" size={13} color={colors.primary} />
+                <Text style={[styles.editRetryBtnText, { color: colors.primary }]}>Editar y reintentar</Text>
+              </>
+            )}
+          </Pressable>
         </View>
       ) : null}
     </Pressable>
@@ -252,4 +306,17 @@ const styles = StyleSheet.create({
     paddingTop:    8,
   },
   resultadoWarn: { flex: 1, fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_700Bold', lineHeight: scaleFont(14) },
+  editRetryBtn: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'center',
+    gap:               6,
+    alignSelf:         'flex-start',
+    borderWidth:       1,
+    borderRadius:      999,
+    paddingVertical:   6,
+    paddingHorizontal: 12,
+    marginTop:         2,
+  },
+  editRetryBtnText: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold' },
 });

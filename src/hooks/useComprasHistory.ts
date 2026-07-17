@@ -1,5 +1,6 @@
 import { useQuery, UseQueryResult } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { CompraDraftItem } from './useCompra';
 
 export interface CompraConItems {
   id:                  number;
@@ -89,5 +90,25 @@ async function fetchComprasHistory(): Promise<CompraConItems[]> {
     backend_resultado:   c.backend_resultado,
     backend_aplicado_en: c.backend_aplicado_en,
     creado_por_nombre:   profileMap[c.creado_por] ?? undefined,
+  }));
+}
+
+/** Ítems de una compra puntual, para precargar el draft de "editar y reintentar". */
+export async function fetchCompraItemsForEdit(compraId: number): Promise<CompraDraftItem[]> {
+  const { data, error } = await supabase
+    .from('compras_app_items')
+    .select('codigo_producto, descripcion, cantidad, costo, precio, referencia, es_nuevo')
+    .eq('compra_id', compraId);
+
+  if (error) throw error;
+
+  return (data ?? []).map((it: any) => ({
+    codigo_producto: it.codigo_producto,
+    descripcion:     it.descripcion ?? '',
+    cantidad:        Number(it.cantidad),
+    costo:           Number(it.costo),
+    precio:          Number(it.precio),
+    referencia:      it.referencia,
+    es_nuevo:        Boolean(it.es_nuevo),
   }));
 }

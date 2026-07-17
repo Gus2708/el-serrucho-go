@@ -11,6 +11,15 @@ export interface CompraDraftItem {
   es_nuevo:        boolean;         // true = producto a dar de alta en Hybrid
 }
 
+export interface CompraEditDraft {
+  compraId:        number;
+  proveedorCodigo: string;
+  proveedorNombre: string | null;
+  nota:            string;
+  numeroDocumento: string;
+  items:           CompraDraftItem[];
+}
+
 interface CompraStore {
   proveedorCodigo:  string | null;
   proveedorNombre:  string | null;
@@ -18,6 +27,7 @@ interface CompraStore {
   nota:             string;
   numeroDocumento:  string;   // opcional; vacío = el backend usa el id de la compra
   isLoading:        boolean;
+  editingCompraId:  number | null;   // != null => reintentar una compra existente (update, no insert)
   setProveedor:      (codigo: string, nombre: string) => void;
   addItem:           (item: CompraDraftItem) => void;
   removeItem:        (codigo: string) => void;
@@ -25,6 +35,7 @@ interface CompraStore {
   setNota:           (nota: string) => void;
   setNumeroDocumento: (numero: string) => void;
   clear:             () => void;
+  loadForEdit:       (draft: CompraEditDraft) => void;
   submit:            (userId: string) => Promise<{ compraId: number }>;
 }
 
@@ -35,6 +46,7 @@ export const useCompra = create<CompraStore>()((set, get) => ({
   nota:            '',
   numeroDocumento: '',
   isLoading:       false,
+  editingCompraId: null,
 
   setProveedor: (codigo, nombre) => set({ proveedorCodigo: codigo, proveedorNombre: nombre }),
 
@@ -60,15 +72,77 @@ export const useCompra = create<CompraStore>()((set, get) => ({
 
   setNumeroDocumento: (numero) => set({ numeroDocumento: numero }),
 
-  clear: () => set({ proveedorCodigo: null, proveedorNombre: null, items: [], nota: '', numeroDocumento: '' }),
+  clear: () => set({
+    proveedorCodigo: null, proveedorNombre: null, items: [], nota: '', numeroDocumento: '', editingCompraId: null,
+  }),
+
+  loadForEdit: (draft) => set({
+    editingCompraId: draft.compraId,
+    proveedorCodigo: draft.proveedorCodigo,
+    proveedorNombre: draft.proveedorNombre,
+    nota:            draft.nota,
+    numeroDocumento: draft.numeroDocumento,
+    items:           draft.items,
+  }),
 
   submit: async (userId: string) => {
-    const { proveedorCodigo, proveedorNombre, items, nota, numeroDocumento } = get();
+    const { proveedorCodigo, proveedorNombre, items, nota, numeroDocumento, editingCompraId } = get();
 
     if (!proveedorCodigo) throw new Error('Selecciona un proveedor antes de emitir la compra.');
     if (items.length === 0) throw new Error('Agrega al menos un producto antes de emitir la compra.');
 
+    const itemRows = (compraId: number) => items.map(item => ({
+      compra_id:       compraId,
+      codigo_producto: item.codigo_producto,
+      descripcion:     item.es_nuevo ? item.descripcion.toUpperCase() : item.descripcion,
+      cantidad:        item.cantidad,
+      costo:           item.costo,
+      precio:          item.precio,
+      referencia:      item.referencia,
+      es_nuevo:        item.es_nuevo,
+    }));
+
     set({ isLoading: true });
+
+    // Reintento de una compra que falló: actualiza la MISMA cabecera y
+    // reemplaza sus items, en vez de crear una compra nueva -- evita
+    // duplicar el registro en el historial y reencola la existente con
+    // backend_intentos en 0 (fresh retry, ver listener_compras.MAX_INTENTOS).
+    if (editingCompraId !== null) {
+      try {
+        const { error: updateError } = await supabase
+          .from('compras_app')
+          .update({
+            proveedor_codigo:    proveedorCodigo,
+            proveedor_nombre:    proveedorNombre,
+            nota:                nota || null,
+            numero_documento:    numeroDocumento.trim() || null,
+            backend_status:      'pendiente',
+            backend_resultado:   null,
+            backend_intentos:    0,
+            backend_aplicado_en: null,
+          })
+          .eq('id', editingCompraId);
+        if (updateError) throw updateError;
+
+        const { error: deleteItemsError } = await supabase
+          .from('compras_app_items')
+          .delete()
+          .eq('compra_id', editingCompraId);
+        if (deleteItemsError) throw deleteItemsError;
+
+        const { error: itemsError } = await supabase
+          .from('compras_app_items')
+          .insert(itemRows(editingCompraId));
+        if (itemsError) throw itemsError;
+
+        set({ isLoading: false });
+        return { compraId: editingCompraId };
+      } catch (err) {
+        set({ isLoading: false });
+        throw err;
+      }
+    }
 
     let createdCompraId: number | null = null;
 
@@ -93,18 +167,7 @@ export const useCompra = create<CompraStore>()((set, get) => ({
       // 2. Insert all items
       const { error: itemsError } = await supabase
         .from('compras_app_items')
-        .insert(
-          items.map(item => ({
-            compra_id:       compra.id,
-            codigo_producto: item.codigo_producto,
-            descripcion:     item.es_nuevo ? item.descripcion.toUpperCase() : item.descripcion,
-            cantidad:        item.cantidad,
-            costo:           item.costo,
-            precio:          item.precio,
-            referencia:      item.referencia,
-            es_nuevo:        item.es_nuevo,
-          }))
-        );
+        .insert(itemRows(compra.id));
 
       if (itemsError) throw itemsError;
 

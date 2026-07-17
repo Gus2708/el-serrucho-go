@@ -24,6 +24,11 @@ import { useCompra, CompraDraftItem } from '../hooks/useCompra';
 import { useProductos } from '../hooks/useProductos';
 import { useUserRole, isPrivilegedRole } from '../hooks/useUserRole';
 
+// Ficha de Inventario de HybridLite trunca la descripción a los 60 caracteres
+// (confirmado en compras.log 2026-07-17: "PUERTA MULTILOCK...QUINTE" != "...QUINTERO",
+// 63 chars -> mismatch -> alta cancelada -> compra entera marcada 'error').
+const DESCRIPCION_MAX = 60;
+
 interface ComprasViewProps {
   router:     any;
   onEmitted?: () => void;
@@ -40,6 +45,7 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
     nota,
     numeroDocumento,
     isLoading,
+    editingCompraId,
     setProveedor,
     addItem,
     removeItem,
@@ -87,6 +93,9 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
       if (!(it.cantidad > 0)) return `${it.descripcion}: la cantidad debe ser mayor a 0.`;
       if (!(it.costo > 0))    return `${it.descripcion}: falta el costo.`;
       if (!(it.precio > 0))   return `${it.descripcion}: falta el precio.`;
+      if (it.es_nuevo && it.descripcion.length > DESCRIPCION_MAX) {
+        return `${it.descripcion}: la descripción supera los ${DESCRIPCION_MAX} caracteres.`;
+      }
     }
     return null;
   }
@@ -97,14 +106,18 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
   }
 
   async function performSubmit(): Promise<void> {
+    const wasEditing = editingCompraId !== null;
     try {
       const userId = await getUserId();
       const { compraId } = await submit(userId);
       clear();
-      notify('Compra emitida', `C-${String(compraId).padStart(4, '0')} en cola para registrarse en Hybrid.`);
+      notify(
+        wasEditing ? 'Compra reencolada' : 'Compra emitida',
+        `C-${String(compraId).padStart(4, '0')} en cola para registrarse en Hybrid.`
+      );
       onEmitted?.();   // saltar a Historial para ver el estado del write-back
     } catch (e: any) {
-      notify('Error', e.message ?? 'No se pudo emitir la compra');
+      notify('Error', e.message ?? (wasEditing ? 'No se pudo reintentar la compra' : 'No se pudo emitir la compra'));
     }
   }
 
@@ -119,10 +132,13 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
       notify('Falta información', problema);
       return;
     }
+    const isEditing = editingCompraId !== null;
     confirm({
-      title:       'Emitir compra',
-      message:     `Se registrará una compra a ${proveedorNombre} con ${items.length} ítem${items.length > 1 ? 's' : ''}.`,
-      confirmText: 'Emitir',
+      title:       isEditing ? 'Reintentar compra' : 'Emitir compra',
+      message:     isEditing
+        ? `Se reencolará C-${String(editingCompraId).padStart(4, '0')} a ${proveedorNombre} con ${items.length} ítem${items.length > 1 ? 's' : ''}.`
+        : `Se registrará una compra a ${proveedorNombre} con ${items.length} ítem${items.length > 1 ? 's' : ''}.`,
+      confirmText: isEditing ? 'Reintentar' : 'Emitir',
       onConfirm:   performSubmit,
     });
   }
@@ -132,6 +148,23 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
   return (
     <View style={styles.flex}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+
+        {editingCompraId !== null ? (
+          <View style={[styles.infoBanner, { backgroundColor: colors.warning + '10', borderColor: colors.warning + '30' }]}>
+            <Feather name="rotate-cw" size={15} color={colors.warning} style={styles.infoBannerIcon} />
+            <View style={styles.infoBannerTextContainer}>
+              <Text style={[styles.infoBannerTitle, { color: colors.warning }]}>
+                Editando C-{String(editingCompraId).padStart(4, '0')} para reintentar
+              </Text>
+              <Text style={[styles.infoBannerSub, { color: colors.textMuted }]}>
+                Corrige lo que causó el error y reintenta. No se creará una compra nueva.
+              </Text>
+            </View>
+            <Pressable onPress={clear} hitSlop={8} style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
+              <Feather name="x" size={18} color={colors.textMuted} />
+            </Pressable>
+          </View>
+        ) : null}
 
         {/* Banner educativo */}
         <View style={[styles.infoBanner, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}>
@@ -289,9 +322,9 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
               <ActivityIndicator color={colors.onPrimary} />
             ) : (
               <>
-                <Feather name="send" size={16} color={colors.onPrimary} />
+                <Feather name={editingCompraId !== null ? 'rotate-cw' : 'send'} size={16} color={colors.onPrimary} />
                 <Text style={[styles.submitBtnText, { color: colors.onPrimary }]} numberOfLines={1} adjustsFontSizeToFit>
-                  Emitir compra
+                  {editingCompraId !== null ? 'Reintentar compra' : 'Emitir compra'}
                 </Text>
               </>
             )}
@@ -375,9 +408,25 @@ function CompraItemCard({ item, onRemove, onUpdate }: CompraItemCardProps): Reac
       <View style={styles.itemTop}>
         <View style={styles.itemInfo}>
           <View style={styles.itemNameRow}>
-            <Text style={[styles.itemName, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
-              {item.descripcion}
-            </Text>
+            {item.es_nuevo ? (
+              <View style={{ flex: 1 }}>
+                <TextInput
+                  style={[styles.itemNameInput, { color: colors.text }]}
+                  value={item.descripcion}
+                  onChangeText={v => onUpdate({ descripcion: v })}
+                  maxLength={DESCRIPCION_MAX}
+                />
+                {item.descripcion.length > DESCRIPCION_MAX - 10 ? (
+                  <Text style={[styles.itemDescCounter, { color: item.descripcion.length > DESCRIPCION_MAX ? colors.danger : colors.textDim }]}>
+                    {item.descripcion.length}/{DESCRIPCION_MAX}
+                  </Text>
+                ) : null}
+              </View>
+            ) : (
+              <Text style={[styles.itemName, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
+                {item.descripcion}
+              </Text>
+            )}
             {item.es_nuevo ? (
               <View style={[styles.nuevoBadge, { backgroundColor: colors.primary + '20', borderColor: colors.primary + '40' }]}>
                 <Text style={[styles.nuevoBadgeText, { color: colors.primary }]}>NUEVO</Text>
@@ -656,6 +705,10 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
       notify('Error', 'La descripción es obligatoria');
       return;
     }
+    if (descripcionTrim.length > DESCRIPCION_MAX) {
+      notify('Error', `La descripción no puede superar los ${DESCRIPCION_MAX} caracteres (el campo de Hybrid la trunca y la compra se cancela).`);
+      return;
+    }
     if (isNaN(cantidad) || cantidad <= 0) {
       notify('Error', 'La cantidad debe ser mayor a 0');
       return;
@@ -711,13 +764,19 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
             </View>
 
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textMuted }]}>DESCRIPCIÓN</Text>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textMuted }]}>DESCRIPCIÓN</Text>
+                <Text style={[styles.formLabel, { color: descripcion.length > DESCRIPCION_MAX ? colors.danger : colors.textDim }]}>
+                  {descripcion.length}/{DESCRIPCION_MAX}
+                </Text>
+              </View>
               <TextInput
                 style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
                 placeholder="Descripción del producto"
                 placeholderTextColor={colors.textDim}
                 value={descripcion}
                 onChangeText={setDescripcion}
+                maxLength={DESCRIPCION_MAX}
               />
             </View>
 
@@ -884,6 +943,8 @@ const styles = StyleSheet.create({
   itemInfo:  { flex: 1 },
   itemNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   itemName:  { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', flexShrink: 1 },
+  itemNameInput: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', padding: 0 },
+  itemDescCounter: { fontSize: scaleFont(9), fontFamily: 'JetBrainsMono_400Regular', marginTop: 2 },
   itemCode:  { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', marginTop: 1 },
   itemRef:   { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_400Regular', marginTop: 1 },
   removeBtn: { padding: 4, marginLeft: 8 },
@@ -1047,6 +1108,7 @@ const styles = StyleSheet.create({
   pickerRowSub:   { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', marginTop: 2 },
 
   formField:     { marginBottom: 14 },
+  formLabelRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   formFieldFlex: { flex: 1, marginBottom: 0 },
   formRow:       { flexDirection: 'row', gap: 10, marginBottom: 14 },
   formLabel: {
