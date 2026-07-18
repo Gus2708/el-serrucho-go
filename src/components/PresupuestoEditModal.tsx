@@ -22,6 +22,8 @@ import { useProductos, isPlaceholder } from '../hooks/useProductos';
 import { supabase, Producto } from '../lib/supabase';
 import { notify } from '../lib/notify';
 import { MarginWarningBadge } from './MarginWarningBadge';
+import { PressableScale } from './PressableScale';
+import { pressScale } from '../theme/motion';
 
 import { usePresupuestoConfig } from '../hooks/usePresupuestoConfig';
 import { useTazas } from '../hooks/useTazas';
@@ -313,18 +315,18 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
           <>
             <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
               {/* Add products CTA */}
-              <Pressable
-                style={({ pressed }) => [
+              <PressableScale
+                style={[
                   styles.addBtn,
                   { borderColor: colors.primary, backgroundColor: colors.primaryFaded },
-                  pressed && { opacity: 0.8 },
                 ]}
+                activeScale={pressScale.row}
                 onPress={() => setAddOpen(true)}
                 hitSlop={8}
               >
                 <Feather name="plus" size={16} color={colors.primary} />
                 <Text style={[styles.addBtnText, { color: colors.primary }]}>Agregar productos</Text>
-              </Pressable>
+              </PressableScale>
 
               {items.length > 0 && (
                 <View style={[styles.currencyToggleContainer, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}>
@@ -332,11 +334,10 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                     MONEDA
                   </Text>
                   <View style={[styles.segmentedControl, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    <Pressable
-                      style={({ pressed }) => [
+                    <PressableScale
+                      style={[
                         styles.segmentedBtn,
                         !enBs && { backgroundColor: colors.primary },
-                        pressed && { opacity: 0.85 }
                       ]}
                       onPress={() => {
                         if (enBs) {
@@ -349,12 +350,11 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                       <Text style={[styles.segmentedText, { color: !enBs ? colors.onPrimary : colors.textMuted }]}>
                         USD ($)
                       </Text>
-                    </Pressable>
-                    <Pressable
-                      style={({ pressed }) => [
+                    </PressableScale>
+                    <PressableScale
+                      style={[
                         styles.segmentedBtn,
                         enBs && { backgroundColor: colors.primary },
-                        pressed && { opacity: 0.85 }
                       ]}
                       onPress={() => {
                         if (!enBs) {
@@ -367,7 +367,7 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                       <Text style={[styles.segmentedText, { color: enBs ? colors.onPrimary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
                         Bs. (@ {bcv.toFixed(2)})
                       </Text>
-                    </Pressable>
+                    </PressableScale>
                   </View>
                 </View>
               )}
@@ -398,16 +398,14 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                           </Text>
                           <Text style={[styles.itemCode, { color: colors.textMuted }]}>{item.codigo_producto}</Text>
                         </View>
-                        <Pressable
+                        <PressableScale
                           onPress={() => removeLine(item.codigo_producto)}
                           hitSlop={12}
-                          style={({ pressed }) => [
-                            styles.removeBtn,
-                            pressed && { opacity: 0.5, backgroundColor: colors.border + '33', borderRadius: 4 },
-                          ]}
+                          activeScale={pressScale.icon}
+                          style={styles.removeBtn}
                         >
                           <Feather name="x" size={16} color={colors.textDim} />
-                        </Pressable>
+                        </PressableScale>
                       </View>
 
                       {/* Quantity + Price */}
@@ -415,16 +413,16 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                         <View style={styles.controlGroup}>
                           <Text style={[styles.controlLabel, { color: colors.textMuted }]}>CANTIDAD</Text>
                           <View style={styles.controlRow}>
-                            <Pressable
+                            <PressableScale
                               onPress={() => setQuantity(item.codigo_producto, Math.max(1, item.cantidad - 1))}
-                              style={({ pressed }) => [
+                              activeScale={pressScale.icon}
+                              style={[
                                 styles.ctrlBtn,
                                 { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
-                                pressed && { opacity: 0.7 },
                               ]}
                             >
                               <Feather name="minus" size={14} color={colors.text} />
-                            </Pressable>
+                            </PressableScale>
 
                             <TextInput
                               style={[styles.ctrlInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }] as any}
@@ -438,16 +436,16 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                               selectTextOnFocus
                             />
 
-                            <Pressable
+                            <PressableScale
                               onPress={() => setQuantity(item.codigo_producto, item.cantidad + 1)}
-                              style={({ pressed }) => [
+                              activeScale={pressScale.icon}
+                              style={[
                                 styles.ctrlBtn,
                                 { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
-                                pressed && { opacity: 0.7 },
                               ]}
                             >
                               <Feather name="plus" size={14} color={colors.text} />
-                            </Pressable>
+                            </PressableScale>
                           </View>
                         </View>
 
@@ -476,14 +474,13 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                               />
                             </View>
 
-                            <Pressable
+                            <PressableScale
                               onPress={() => toggleMarkup(item)}
-                              style={({ pressed }) => [
+                              style={[
                                 styles.percentBtn,
                                 isMarkup
                                   ? { backgroundColor: colors.success + '18', borderColor: colors.success + '40' }
                                   : { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' },
-                                pressed && { opacity: 0.7 },
                               ]}
                               hitSlop={4}
                             >
@@ -496,7 +493,7 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                               >
                                 {isMarkup ? '↺' : `+${markup_porcentaje}%`}
                               </Text>
-                            </Pressable>
+                            </PressableScale>
                           </View>
                           {enBs && bcv > 0 && (
                             <Text style={{ fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_400Regular', color: colors.textMuted, marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>
@@ -566,12 +563,9 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                   </Text>
                 )}
               </View>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.saveBtn,
-                  { backgroundColor: colors.primary },
-                  (isPending || pressed) && { opacity: 0.75 },
-                ]}
+              <PressableScale
+                style={[styles.saveBtn, { backgroundColor: colors.primary }]}
+                dimmed={isPending}
                 onPress={handleSave}
                 disabled={isPending}
               >
@@ -583,7 +577,7 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                     <Text style={[styles.saveBtnText, { color: colors.onPrimary }]}>Guardar cambios</Text>
                   </>
                 )}
-              </Pressable>
+              </PressableScale>
             </View>
           </>
         )}

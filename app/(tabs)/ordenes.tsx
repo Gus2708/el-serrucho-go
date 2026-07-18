@@ -24,6 +24,8 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { useTheme } from '../../src/theme/ThemeContext';
+import { pressScale } from '../../src/theme/motion';
+import { PressableScale } from '../../src/components/PressableScale';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
@@ -216,15 +218,15 @@ function BorradorView({ router, isPrivileged }: { router: any; isPrivileged: boo
         )}
 
         {/* Add products CTA */}
-        <Pressable
-          style={({ pressed }) => [styles.addProductBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }, pressed && { opacity: 0.75 }]}
+        <PressableScale
+          style={[styles.addProductBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }]}
           onPress={() => router.push('/(tabs)/inventario')}
         >
           <Feather name="plus" size={18} color={colors.primary} />
           <Text style={[styles.addProductText, { color: colors.primary }]}>
             Agregar productos desde Inventario
           </Text>
-        </Pressable>
+        </PressableScale>
 
         {items.length === 0 ? (
           <View style={styles.empty}>
@@ -254,13 +256,14 @@ function BorradorView({ router, isPrivileged }: { router: any; isPrivileged: boo
                         {item.codigo_producto}
                       </Text>
                     </View>
-                    <Pressable
+                    <PressableScale
                       onPress={() => removeItem(item.codigo_producto)}
                       hitSlop={8}
-                      style={({ pressed }) => [styles.removeBtn, pressed && { opacity: 0.6 }]}
+                      style={styles.removeBtn}
+                      activeScale={pressScale.icon}
                     >
                       <Feather name="x" size={16} color={colors.textDim} />
-                    </Pressable>
+                    </PressableScale>
                   </View>
 
                   <View style={styles.itemBottom}>
@@ -278,12 +281,13 @@ function BorradorView({ router, isPrivileged }: { router: any; isPrivileged: boo
                     <View style={[styles.qtyColumn, { flex: 1 }]}>
                       <Text style={[styles.qtyLabel, { color: colors.textMuted }]}>NUEVA</Text>
                       <View style={styles.qtyValueWrapper}>
-                        <Pressable 
+                        <PressableScale
                           onPress={() => updateItem(item.codigo_producto, { nueva_existencia: Math.max(0, item.nueva_existencia - 1) })}
-                          style={({ pressed }) => [styles.qtyBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, pressed && { opacity: 0.7 }]}
+                          style={[styles.qtyBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+                          activeScale={pressScale.icon}
                         >
                           <Feather name="minus" size={14} color={colors.text} />
-                        </Pressable>
+                        </PressableScale>
                         
                         <TextInput
                           style={[styles.qtyEdit, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
@@ -299,12 +303,13 @@ function BorradorView({ router, isPrivileged }: { router: any; isPrivileged: boo
                           selectTextOnFocus
                         />
 
-                        <Pressable 
+                        <PressableScale
                           onPress={() => updateItem(item.codigo_producto, { nueva_existencia: item.nueva_existencia + 1 })}
-                          style={({ pressed }) => [styles.qtyBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, pressed && { opacity: 0.7 }]}
+                          style={[styles.qtyBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+                          activeScale={pressScale.icon}
                         >
                           <Feather name="plus" size={14} color={colors.text} />
-                        </Pressable>
+                        </PressableScale>
                       </View>
                     </View>
 
@@ -478,14 +483,15 @@ function BorradorView({ router, isPrivileged }: { router: any; isPrivileged: boo
             <Text style={{ fontSize: scaleFont(10), color: colors.textMuted, fontFamily: 'JetBrainsMono_400Regular' }}>
               {isPrivileged ? 'Sincronización POS en cola' : 'Se enviará para aprobación'}
             </Text>
-            <Pressable onPress={handleClear} style={({ pressed }) => [pressed && { opacity: 0.7 }, { marginTop: 4 }]}>
+            <PressableScale onPress={handleClear} style={{ marginTop: 4 }}>
               <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>Limpiar borrador</Text>
-            </Pressable>
+            </PressableScale>
           </View>
-          <Pressable
-            style={({ pressed }) => [styles.submitBtn, { backgroundColor: colors.primary }, (isLoading || pressed) && { opacity: 0.75 }]}
+          <PressableScale
+            style={[styles.submitBtn, { backgroundColor: colors.primary }]}
             onPress={handleSubmit}
             disabled={isLoading}
+            dimmed={isLoading}
           >
             {isLoading
               ? <ActivityIndicator color={colors.onPrimary} />
@@ -496,7 +502,7 @@ function BorradorView({ router, isPrivileged }: { router: any; isPrivileged: boo
                   </Text>
                 </>
             }
-          </Pressable>
+          </PressableScale>
         </View>
       )}
 
@@ -787,26 +793,24 @@ function HistorialView({ queryClient }: { queryClient: any }) {
     <View style={styles.flex}>
       {/* Sub-tabs for Historial */}
       <View style={[styles.subTabContainer, { backgroundColor: '#0A0A0A', borderColor: colors.border }]}>
-        <Pressable 
-          style={({ pressed }) => [
-            styles.subTabBtn, 
+        <PressableScale
+          style={[
+            styles.subTabBtn,
             subTab === 'ajuste' && { backgroundColor: colors.surface, borderColor: '#333' },
-            pressed && { opacity: 0.8 }
-          ]} 
+          ]}
           onPress={() => setSubTab('ajuste')}
         >
           <Text style={[styles.subTabText, { color: subTab === 'ajuste' ? colors.primary : colors.textMuted }]}>Ajustes</Text>
-        </Pressable>
-        <Pressable 
-          style={({ pressed }) => [
-            styles.subTabBtn, 
+        </PressableScale>
+        <PressableScale
+          style={[
+            styles.subTabBtn,
             subTab === 'presupuesto' && { backgroundColor: colors.surface, borderColor: '#333' },
-            pressed && { opacity: 0.8 }
-          ]} 
+          ]}
           onPress={() => setSubTab('presupuesto')}
         >
           <Text style={[styles.subTabText, { color: subTab === 'presupuesto' ? colors.primary : colors.textMuted }]}>Presupuestos</Text>
-        </Pressable>
+        </PressableScale>
       </View>
 
       {listData.length === 0 ? (
@@ -841,13 +845,13 @@ function HistorialView({ queryClient }: { queryClient: any }) {
             const canEdit = isAdmin || currentUserId === o.creado_por;
 
             return (
-              <Pressable
+              <PressableScale
                 key={o.id}
-                style={({ pressed }) => [
+                style={[
                   styles.histCard,
                   { backgroundColor: colors.surface, borderColor: colors.border },
-                  pressed && { opacity: 0.75 }
                 ]}
+                activeScale={pressScale.row}
                 onPress={() => {
                   if (isPresupuesto) {
                     if (canEdit) setEditPresupuestoId(o.id);
@@ -893,14 +897,11 @@ function HistorialView({ queryClient }: { queryClient: any }) {
                 ) : null}
 
                 <View style={styles.histFooter}>
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.pdfBtn, 
-                      { borderColor: colors.primary }, 
-                      (pressed || isGeneratingPdf === o.id) && { opacity: 0.7 }
-                    ]}
+                  <PressableScale
+                    style={[styles.pdfBtn, { borderColor: colors.primary }]}
                     onPress={() => handleViewPDF(o)}
                     disabled={isGeneratingPdf !== null}
+                    dimmed={isGeneratingPdf === o.id}
                   >
                     {isGeneratingPdf === o.id ? (
                       <ActivityIndicator size="small" color={colors.primary} />
@@ -914,7 +915,7 @@ function HistorialView({ queryClient }: { queryClient: any }) {
                         </Text>
                       </>
                     )}
-                  </Pressable>
+                  </PressableScale>
 
                   {/* Right-side actions — admin: all, employee: own items only */}
                   <View style={styles.histActions}>
@@ -953,7 +954,7 @@ function HistorialView({ queryClient }: { queryClient: any }) {
                     )}
                   </View>
                 </View>
-              </Pressable>
+              </PressableScale>
             );
           })}
           <View style={{ height: 150 }} />

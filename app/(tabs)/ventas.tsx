@@ -29,6 +29,8 @@ import { useTheme } from '../../src/theme/ThemeContext';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useVentasInfinite, VentaHoy, VentasPeriod, useVentasSearchSummary } from '../../src/hooks/useVentasHoy';
 import { VentaDetailModal, getPagoMeta } from '../../src/components/VentaDetailModal';
+import { PressableScale } from '../../src/components/PressableScale';
+import { pressScale } from '../../src/theme/motion';
 import { useProfitSummary } from '../../src/hooks/useProfitSummary';
 import { useVentaDetalle } from '../../src/hooks/useVentaDetalle';
 import { VentaDetalleUSD, supabase } from '../../src/lib/supabase';
@@ -262,22 +264,21 @@ export default function Ventas() {
               {PERIODS.map(p => {
                 const active = period === p.key;
                 return (
-                  <Pressable
+                  <PressableScale
                     key={p.key}
-                    style={({ pressed }) => [
+                    style={[
                       isDesktop ? styles.periodBtnDesktop : styles.periodBtn,
                       {
                         backgroundColor: active ? colors.primary  : colors.surface,
                         borderColor:     active ? colors.primary  : colors.border,
                       },
-                      pressed && { opacity: 0.75 },
                     ]}
                     onPress={() => setPeriod(p.key)}
                   >
                     <Text style={[styles.periodText, { color: active ? colors.onPrimary : colors.textMuted }]} numberOfLines={1}>
                       {p.label}
                     </Text>
-                  </Pressable>
+                  </PressableScale>
                 );
               })}
             </View>
@@ -424,9 +425,10 @@ function VentaCard({ venta, onPress }: { venta: VentaHoy; onPress: () => void })
   const pago = getPagoMeta(venta.metodo_pago, colors);
 
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
-      style={({ pressed }) => [styles.card, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.75 }]}
+      style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
+      activeScale={pressScale.row}
     >
       <View style={styles.cardTop}>
         <View style={styles.docInfo}>
@@ -464,7 +466,7 @@ function VentaCard({ venta, onPress }: { venta: VentaHoy; onPress: () => void })
         )}
         <Feather name="chevron-right" size={14} color={colors.textMuted} />
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }
 

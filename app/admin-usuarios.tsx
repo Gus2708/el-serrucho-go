@@ -19,6 +19,8 @@ import { notify } from '../src/lib/notify';
 import { UserRole } from '../src/lib/supabase';
 import { useUserRole } from '../src/hooks/useUserRole';
 import { useUsuarios, useUpdateUsuario } from '../src/hooks/useUsuarios';
+import { PressableScale } from '../src/components/PressableScale';
+import { pressScale } from '../src/theme/motion';
 
 const ROLES: { value: UserRole; label: string }[] = [
   { value: 'empleado',      label: 'Empleado' },
@@ -74,12 +76,12 @@ export default function AdminUsuarios(): React.JSX.Element {
           <Feather name="lock" size={32} color={colors.textDim} />
           <Text style={[styles.emptyTitle, { color: colors.textMuted }]}>Acceso restringido</Text>
           <Text style={[styles.emptySub, { color: colors.textDim }]}>Solo un administrador puede gestionar usuarios.</Text>
-          <Pressable
-            style={({ pressed }) => [styles.backLink, { borderColor: colors.border }, pressed && { opacity: 0.7 }]}
+          <PressableScale
+            style={[styles.backLink, { borderColor: colors.border }]}
             onPress={() => router.back()}
           >
             <Text style={[styles.backLinkText, { color: colors.primary }]}>Volver</Text>
-          </Pressable>
+          </PressableScale>
         </View>
       </SafeAreaView>
     );
@@ -89,12 +91,13 @@ export default function AdminUsuarios(): React.JSX.Element {
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]}>
       <StatusBar style="light" />
       <View style={styles.header}>
-        <Pressable
-          style={({ pressed }) => [styles.backBtn, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.7 }]}
+        <PressableScale
+          style={[styles.backBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
           onPress={() => router.back()}
+          activeScale={pressScale.icon}
         >
           <Feather name="chevron-left" size={22} color={colors.text} />
-        </Pressable>
+        </PressableScale>
         <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>USUARIOS</Text>
         <View style={{ width: 38 }} />
       </View>
@@ -170,15 +173,15 @@ export default function AdminUsuarios(): React.JSX.Element {
                 </View>
 
                 {/* Toggle de activación */}
-                <Pressable
+                <PressableScale
                   disabled={esYo || saving}
-                  style={({ pressed }) => [
+                  style={[
                     styles.activeRow,
                     { borderColor: colors.border },
-                    pressed && { opacity: 0.7 },
-                    esYo && { opacity: 0.5 },
                   ]}
+                  dimmed={esYo}
                   onPress={() => handleToggleActive(u.id, !activo)}
+                  activeScale={pressScale.row}
                 >
                   <Feather
                     name={activo ? 'check-circle' : 'slash'}
@@ -193,7 +196,7 @@ export default function AdminUsuarios(): React.JSX.Element {
                       {activo ? 'Desactivar' : 'Activar'}
                     </Text>
                   ) : null}
-                </Pressable>
+                </PressableScale>
               </View>
             );
           })}

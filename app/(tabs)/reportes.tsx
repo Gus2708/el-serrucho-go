@@ -6,7 +6,6 @@ import {
   Text,
   ScrollView,
   StyleSheet,
-  Pressable,
   ActivityIndicator,
   RefreshControl,
   useWindowDimensions,
@@ -24,6 +23,7 @@ import { useUserRole } from '../../src/hooks/useUserRole';
 import { GananciaChart } from '../../src/components/GananciaChart';
 import { TopProductsDonut } from '../../src/components/TopProductsDonut';
 import { CurrencyText } from '../../src/components/CurrencyText';
+import { PressableScale } from '../../src/components/PressableScale';
 
 type Period = 7 | 30 | 90;
 type ChartMode = 'ganancia' | 'ingreso' | 'items';
@@ -159,27 +159,26 @@ export default function Reportes() {
             {PERIODS.map(p => {
               const active = period === p.value;
               return (
-                <Pressable
+                <PressableScale
                   key={p.value}
-                  style={({ pressed }) => [
+                  style={[
                     styles.selectorBtn,
                     {
                       backgroundColor: active ? colors.primary  : colors.surfaceAlt,
                       borderColor:     active ? colors.primary  : colors.border,
                     },
                     isNarrow && { flex: 1, paddingVertical: 8 },
-                    pressed && { opacity: 0.75 },
                   ]}
                   onPress={() => setPeriod(p.value)}
                 >
                   <Text style={[
-                    styles.selectorText, 
+                    styles.selectorText,
                     { color: active ? colors.onPrimary : colors.textMuted },
                     isNarrow && { fontSize: scaleFont(10) }
                   ]}>
                     {p.label}
                   </Text>
-                </Pressable>
+                </PressableScale>
               );
             })}
           </View>
@@ -194,27 +193,26 @@ export default function Reportes() {
               if (!isAdmin && m !== 'items') return null;
 
               return (
-                <Pressable
+                <PressableScale
                   key={m}
-                  style={({ pressed }) => [
+                  style={[
                     styles.selectorBtn,
                     {
                       backgroundColor: active ? colors.surfaceAlt : 'transparent',
                       borderColor:     active ? colors.border      : 'transparent',
                     },
                     isNarrow && (isAdmin ? { flex: 1, paddingVertical: 8 } : { paddingVertical: 8, paddingHorizontal: 16 }),
-                    pressed && { opacity: 0.75 },
                   ]}
                   onPress={() => setChartMode(m)}
                 >
                   <Text style={[
-                    styles.selectorText, 
+                    styles.selectorText,
                     { color: active ? colors.text : colors.textMuted },
                     isNarrow && { fontSize: scaleFont(10) }
                   ]}>
                     {m === 'ganancia' ? 'Ganancia' : m === 'ingreso' ? 'Ingresos' : 'Unidades'}
                   </Text>
-                </Pressable>
+                </PressableScale>
               );
             })}
           </View>

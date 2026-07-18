@@ -3,6 +3,8 @@ import * as React from 'react';
 import { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Modal, TextInput, Animated, PanResponder, Dimensions, KeyboardAvoidingView, Platform, Easing } from 'react-native';
 import { notify } from '../../src/lib/notify';
+import { PressableScale } from '../../src/components/PressableScale';
+import { pressScale } from '../../src/theme/motion';
 
 const screenHeight = Dimensions.get('window').height;
 
@@ -158,17 +160,18 @@ export default function ProductoDetail() {
 
       {/* Nav bar */}
       <View style={[styles.nav, { borderColor: colors.border }]}>
-        <Pressable 
+        <PressableScale
           onPress={() => {
             // Navegamos explícitamente al inventario para asegurar el destino.
             // La pantalla de Inventario se encargará de restaurar el scroll manualmente
             // usando la posición guardada en el Store (Zustand).
             router.navigate('/inventario');
-          }} 
-          style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7, transform: [{ scale: 0.94 }] }]}
+          }}
+          style={styles.backBtn}
+          activeScale={pressScale.icon}
         >
           <Feather name="arrow-left" size={22} color={colors.text} />
-        </Pressable>
+        </PressableScale>
         <Text style={[styles.navTitle, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
           Detalle de producto
         </Text>
@@ -266,12 +269,8 @@ export default function ProductoDetail() {
           </Text>
 
           {/* Adjust Existence CTA */}
-          <Pressable
-            style={({ pressed }) => [
-              styles.addBtn,
-              { backgroundColor: colors.primaryFaded, borderColor: colors.primary },
-              pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }
-            ]}
+          <PressableScale
+            style={[styles.addBtn, { backgroundColor: colors.primaryFaded, borderColor: colors.primary }]}
             onPress={() => {
               setNewQty('');
               setAdjustmentNote('');
@@ -283,15 +282,11 @@ export default function ProductoDetail() {
             <Text style={[styles.addBtnText, { color: colors.primary }]}>
               Ajustar existencia
             </Text>
-          </Pressable>
+          </PressableScale>
 
           {/* Adjust Price CTA */}
-          <Pressable
-            style={({ pressed }) => [
-              styles.addBtn,
-              { backgroundColor: colors.primaryFaded, borderColor: colors.primary, marginTop: 8 },
-              pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }
-            ]}
+          <PressableScale
+            style={[styles.addBtn, { backgroundColor: colors.primaryFaded, borderColor: colors.primary, marginTop: 8 }]}
             onPress={() => {
               setNewPrice('');
               setAdjustmentNote('');
@@ -303,7 +298,7 @@ export default function ProductoDetail() {
             <Text style={[styles.addBtnText, { color: colors.primary }]}>
               Ajustar precio
             </Text>
-          </Pressable>
+          </PressableScale>
 
           {/* Historial de movimientos */}
           <HistorialMovimientos 
@@ -389,32 +384,30 @@ export default function ProductoDetail() {
 
               {/* Mode Selector */}
               <View style={[styles.modeSelector, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
-                <Pressable 
+                <PressableScale
                   onPress={() => {
                     setAdjMode('fixed');
                     setNewQty('');
                   }}
-                  style={({ pressed }) => [
-                    styles.modeBtn, 
+                  style={[
+                    styles.modeBtn,
                     adjMode === 'fixed' && { backgroundColor: colors.primaryFaded, borderColor: colors.primary },
-                    pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] }
                   ]}
                 >
                   <Text style={[styles.modeBtnText, { color: adjMode === 'fixed' ? colors.primary : colors.textMuted }]}>Nueva Total</Text>
-                </Pressable>
-                <Pressable 
+                </PressableScale>
+                <PressableScale
                   onPress={() => {
                     setAdjMode('relative');
                     setNewQty('');
                   }}
-                  style={({ pressed }) => [
-                    styles.modeBtn, 
+                  style={[
+                    styles.modeBtn,
                     adjMode === 'relative' && { backgroundColor: colors.primaryFaded, borderColor: colors.primary },
-                    pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] }
                   ]}
                 >
                   <Text style={[styles.modeBtnText, { color: adjMode === 'relative' ? colors.primary : colors.textMuted }]}>Sumar/Restar</Text>
-                </Pressable>
+                </PressableScale>
               </View>
 
               {errorMsg && (
@@ -431,16 +424,13 @@ export default function ProductoDetail() {
 
               <View style={styles.inputContainer}>
                 {adjMode === 'relative' && (
-                  <Pressable 
+                  <PressableScale
                     onPress={() => setAdjOp(adjOp === '+' ? '-' : '+')}
-                    style={({ pressed }) => [
-                      styles.opBtn,
-                      { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
-                      pressed && { opacity: 0.7, transform: [{ scale: 0.95 }] }
-                    ]}
+                    style={[styles.opBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+                    activeScale={pressScale.icon}
                   >
                     <Text style={[styles.opText, { color: adjOp === '+' ? colors.success : colors.danger }]}>{adjOp}</Text>
-                  </Pressable>
+                  </PressableScale>
                 )}
                 
                 <View style={[styles.qtyWrap, { flex: 1, backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
@@ -484,8 +474,8 @@ export default function ProductoDetail() {
 
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
                 {/* Agregar al Borrador */}
-                <Pressable
-                  style={({ pressed }) => [
+                <PressableScale
+                  style={[
                     {
                       flex: 1,
                       alignItems: 'center',
@@ -496,7 +486,6 @@ export default function ProductoDetail() {
                       borderColor: colors.primary,
                       backgroundColor: colors.surfaceAlt,
                     },
-                    pressed && { opacity: 0.7, transform: [{ scale: 0.97 }] }
                   ]}
                   onPress={() => {
                     const inputVal = parseFloat(newQty);
@@ -533,11 +522,11 @@ export default function ProductoDetail() {
                   <Text style={{ fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', color: colors.primary }}>
                     Al Borrador
                   </Text>
-                </Pressable>
+                </PressableScale>
 
                 {/* Aplicar Ahora (Quick Submit) */}
-                <Pressable
-                  style={({ pressed }) => [
+                <PressableScale
+                  style={[
                     {
                       flex: 1,
                       alignItems: 'center',
@@ -546,8 +535,8 @@ export default function ProductoDetail() {
                       borderRadius: 14,
                       backgroundColor: colors.primary,
                     },
-                    (isSaving || pressed) && { opacity: 0.75, transform: [{ scale: isSaving ? 1.0 : 0.97 }] }
                   ]}
+                  dimmed={isSaving}
                   disabled={isSaving}
                   onPress={async () => {
                     if (isSaving) return;
@@ -658,7 +647,7 @@ export default function ProductoDetail() {
                       Aplicar y Encolar
                     </Text>
                   )}
-                </Pressable>
+                </PressableScale>
               </View>
               </ScrollView>
             </Animated.View>
@@ -708,8 +697,8 @@ export default function ProductoDetail() {
                 <Text style={{ fontSize: scaleFont(20), fontFamily: 'JetBrainsMono_700Bold', color: colors.text }}>
                   Ajustar precio y costo
                 </Text>
-                <Pressable
-                  style={({ pressed }) => [
+                <PressableScale
+                  style={[
                     {
                       padding: 8,
                       borderRadius: 10,
@@ -717,8 +706,8 @@ export default function ProductoDetail() {
                       borderWidth: 0.5,
                       borderColor: colors.border
                     },
-                    pressed && { opacity: 0.7, transform: [{ scale: 0.94 }] }
                   ]}
+                  activeScale={pressScale.icon}
                   onPress={() => {
                     setNewPrice('');
                     setNewCost('');
@@ -728,7 +717,7 @@ export default function ProductoDetail() {
                   }}
                 >
                   <Feather name="refresh-cw" size={14} color={colors.primary} />
-                </Pressable>
+                </PressableScale>
               </View>
 
               <Text style={{ fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium', color: colors.textMuted, marginBottom: 8 }} numberOfLines={1}>
@@ -827,8 +816,8 @@ export default function ProductoDetail() {
 
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
                 {/* Agregar al Borrador */}
-                <Pressable
-                  style={({ pressed }) => [
+                <PressableScale
+                  style={[
                     {
                       flex: 1,
                       alignItems: 'center',
@@ -839,7 +828,6 @@ export default function ProductoDetail() {
                       borderColor: colors.primary,
                       backgroundColor: colors.surfaceAlt,
                     },
-                    pressed && { opacity: 0.7, transform: [{ scale: 0.97 }] }
                   ]}
                   onPress={() => {
                     const finalPrice = newPrice === '' ? producto.precio_venta : parseFloat(newPrice);
@@ -876,11 +864,11 @@ export default function ProductoDetail() {
                   <Text style={{ fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', color: colors.primary }}>
                     Al Borrador
                   </Text>
-                </Pressable>
+                </PressableScale>
 
                 {/* Aplicar Ahora (Quick Submit) */}
-                <Pressable
-                  style={({ pressed }) => [
+                <PressableScale
+                  style={[
                     {
                       flex: 1,
                       alignItems: 'center',
@@ -889,8 +877,8 @@ export default function ProductoDetail() {
                       borderRadius: 14,
                       backgroundColor: colors.primary,
                     },
-                    (isSavingPrice || pressed) && { opacity: 0.75, transform: [{ scale: isSavingPrice ? 1.0 : 0.97 }] }
                   ]}
+                  dimmed={isSavingPrice}
                   disabled={isSavingPrice}
                   onPress={async () => {
                     if (isSavingPrice) return;
@@ -1002,7 +990,7 @@ export default function ProductoDetail() {
                       Aplicar y Encolar
                     </Text>
                   )}
-                </Pressable>
+                </PressableScale>
               </View>
               </ScrollView>
             </Animated.View>
@@ -1244,19 +1232,19 @@ function HistorialMovimientos({
 
             if (isVenta) {
               return (
-                <Pressable
+                <PressableScale
                   key={mov.id}
                   onPress={() => {
                     if (mov.ventaId) onSelectVenta(mov.ventaId);
                   }}
-                  style={({ pressed }) => [
+                  style={[
                     styles.movRow,
-                    pressed && { opacity: 0.6, backgroundColor: colors.border + '18' },
                     index < movimientos.length - 1 && { borderBottomWidth: 0.5, borderColor: colors.border }
                   ]}
+                  activeScale={pressScale.row}
                 >
                   {rowContent}
-                </Pressable>
+                </PressableScale>
               );
             }
 

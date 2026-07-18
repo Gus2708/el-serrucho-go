@@ -33,6 +33,15 @@ import { ChartSkeleton } from '../../src/components/ChartSkeleton';
 import { getLocalDateStr, getDateDaysAgo } from '../../src/lib/supabase';
 import { TasaCard } from '../../src/components/TasaCard';
 import { useAtencionesCount } from '../../src/hooks/useAtenciones';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useReducedMotion,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
+import { PressableScale } from '../../src/components/PressableScale';
+import { timing, staggerDelay, pressScale } from '../../src/theme/motion';
 
 const logo = require('../../src/assets/img/EL SERRUCHO go.png');
 
@@ -345,26 +354,23 @@ export default function Index() {
           </View>
           
           <View style={styles.headerActions}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.iconBtn,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-                pressed && { opacity: 0.7, transform: [{ scale: 0.94 }] },
-              ]}
+            <PressableScale
+              style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              activeScale={pressScale.icon}
               onPress={() => router.push('/pagos' as any)}
             >
               <Feather name="dollar-sign" size={18} color={colors.primary} />
-            </Pressable>
+            </PressableScale>
             <View style={styles.iconBtnContainer}>
-              <Pressable
-                style={({ pressed }) => [
+              <PressableScale
+                style={[
                   styles.iconBtn,
                   {
                     backgroundColor: colors.surface,
                     borderColor: pendingCount > 0 ? colors.primary + '50' : colors.border,
                   },
-                  pressed && { opacity: 0.7, transform: [{ scale: 0.94 }] },
                 ]}
+                activeScale={pressScale.icon}
                 onPress={() => router.push('/(tabs)/notificaciones' as any)}
               >
                 <Feather
@@ -372,7 +378,7 @@ export default function Index() {
                   size={18}
                   color={pendingCount > 0 ? colors.primary : colors.textMuted}
                 />
-              </Pressable>
+              </PressableScale>
               {pendingCount > 0 && (
                 <View style={[styles.badgeIndicator, { backgroundColor: colors.danger }]}>
                   <Text style={styles.badgeIndicatorText}>{pendingCount}</Text>
@@ -380,12 +386,13 @@ export default function Index() {
               )}
             </View>
 
-            <Pressable
-              style={({ pressed }) => [styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.7, transform: [{ scale: 0.94 }] }]}
+            <PressableScale
+              style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              activeScale={pressScale.icon}
               onPress={() => router.push('/perfil')}
             >
               <Feather name="user" size={18} color={colors.textMuted} />
-            </Pressable>
+            </PressableScale>
           </View>
         </View>
 
@@ -419,15 +426,14 @@ export default function Index() {
           {PERIODS.map(p => {
             const active = period === p.key;
             return (
-              <Pressable
+              <PressableScale
                 key={p.key}
-                style={({ pressed }) => [
+                style={[
                   isDesktop ? styles.periodBtnDesktop : styles.periodBtn,
                   {
                     backgroundColor: active ? colors.primary    : colors.surface,
                     borderColor:     active ? colors.primary    : colors.border,
                   },
-                  pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
                 ]}
                 onPress={() => setPeriod(p.key)}
               >
@@ -437,7 +443,7 @@ export default function Index() {
                 >
                   {p.label}
                 </Text>
-              </Pressable>
+              </PressableScale>
             );
           })}
         </View>
@@ -502,6 +508,7 @@ export default function Index() {
             label={getPeriodLabel('Ventas')}
             loading={loadingSum}
             desktop={isDesktop}
+            index={0}
           />
           <KpiCard
             icon="file-text"
@@ -509,6 +516,7 @@ export default function Index() {
             label="Ticket promedio"
             loading={loadingSum}
             desktop={isDesktop}
+            index={1}
           />
           <KpiCard
             icon="package"
@@ -516,6 +524,7 @@ export default function Index() {
             label={getPeriodLabel('Unidades')}
             loading={loadingSum}
             desktop={isDesktop}
+            index={2}
           />
           {isAdmin ? (
             <KpiCard
@@ -524,6 +533,7 @@ export default function Index() {
               label={getPeriodLabel('Ingreso')}
               loading={loadingSum}
               desktop={isDesktop}
+              index={3}
             />
           ) : (
             <KpiCard
@@ -532,6 +542,7 @@ export default function Index() {
               label="Artículos / ticket"
               loading={loadingSum}
               desktop={isDesktop}
+              index={3}
             />
           )}
         </View>
@@ -618,19 +629,35 @@ function TopToday({ isAdmin }: { isAdmin: boolean }) {
 
 // ── KPI card ──────────────────────────────────────────────────────────────────
 
-function KpiCard({ icon, value, label, loading, desktop }: {
+function KpiCard({ icon, value, label, loading, desktop, index = 0 }: {
   icon:     React.ComponentProps<typeof Feather>['name'];
   value:    string;
   label:    string;
   loading?: boolean;
   desktop?: boolean;
-}) {
+  index?:   number;
+}): React.ReactElement {
   const { colors } = useTheme();
+  const reduced = useReducedMotion();
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withDelay(staggerDelay(index), withTiming(1, timing.enter));
+  }, [index, progress]);
+
+  const enterStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: reduced ? [] : [{ translateY: (1 - progress.value) * 10 }],
+  }));
+
   return (
-    <View style={[
-      desktop ? styles.kpiCardDesktop : styles.kpiCard,
-      { backgroundColor: colors.surface, borderColor: colors.border },
-    ]}>
+    <Animated.View
+      style={[
+        desktop ? styles.kpiCardDesktop : styles.kpiCard,
+        { backgroundColor: colors.surface, borderColor: colors.border },
+        enterStyle,
+      ]}
+    >
       <Feather name={icon} size={17} color={colors.primary} style={styles.kpiIcon} />
       {loading ? (
         <ActivityIndicator size="small" color={colors.primary} style={{ alignSelf: 'flex-start', marginVertical: 4 }} />
@@ -640,7 +667,7 @@ function KpiCard({ icon, value, label, loading, desktop }: {
         </Text>
       )}
       <Text style={[styles.kpiLabel, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
-    </View>
+    </Animated.View>
   );
 }
 

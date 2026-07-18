@@ -1,12 +1,14 @@
 import { scaleFont } from '../theme/responsive';
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useTheme } from '../theme/ThemeContext';
 import { useUserRole } from '../hooks/useUserRole';
 import { useAtencionesCount } from '../hooks/useAtenciones';
+import { PressableScale } from './PressableScale';
+import { pressScale } from '../theme/motion';
 
 const logo = require('../assets/img/EL SERRUCHO go.png');
 
@@ -50,13 +52,13 @@ export function Sidebar() {
         {visibleTabs.map(tab => {
           const active = isTabActive(tab.name, pathname);
           return (
-            <Pressable
+            <PressableScale
               key={tab.name}
-              style={({ pressed }) => [
+              style={[
                 styles.item,
-                active  && { backgroundColor: colors.primaryFaded, borderColor: colors.primary + '30' },
-                pressed && !active && { backgroundColor: colors.surfaceAlt },
+                active && { backgroundColor: colors.primaryFaded, borderColor: colors.primary + '30' },
               ]}
+              activeScale={pressScale.row}
               onPress={() => router.navigate(tab.route as any)}
               accessibilityLabel={tab.label}
               accessibilityRole="button"
@@ -76,21 +78,22 @@ export function Sidebar() {
                 </View>
               )}
               {active && <View style={[styles.activeDot, { backgroundColor: colors.primary }]} />}
-            </Pressable>
+            </PressableScale>
           );
         })}
       </View>
 
       {/* Bottom */}
       <View style={[styles.bottom, { borderTopColor: colors.border }]}>
-        <Pressable
-          style={({ pressed }) => [styles.item, pressed && { backgroundColor: colors.surfaceAlt }]}
+        <PressableScale
+          style={styles.item}
+          activeScale={pressScale.row}
           onPress={() => router.navigate('/perfil')}
           accessibilityLabel="Perfil"
         >
           <Feather name="user" size={18} color={colors.textMuted} />
           <Text style={[styles.label, { color: colors.textMuted }]}>Perfil</Text>
-        </Pressable>
+        </PressableScale>
       </View>
     </View>
   );

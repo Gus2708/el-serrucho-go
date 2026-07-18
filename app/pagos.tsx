@@ -5,7 +5,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Pressable,
   FlatList,
   ActivityIndicator,
   RefreshControl,
@@ -17,6 +16,8 @@ import { useTheme } from '../src/theme/ThemeContext';
 import { useUserRole } from '../src/hooks/useUserRole';
 import { usePagosZelle, useConciliarPago } from '../src/hooks/usePagosZelle';
 import { PagoZelle } from '../src/lib/supabase';
+import { PressableScale } from '../src/components/PressableScale';
+import { pressScale } from '../src/theme/motion';
 
 type Filtro = 'todos' | 'recibido' | 'en_revision';
 
@@ -96,17 +97,18 @@ function PagoRow({ pago, onToggleConciliado, editable }: PagoRowProps): React.Re
       </View>
 
       {editable ? (
-        <Pressable
+        <PressableScale
           onPress={() => onToggleConciliado(pago)}
           hitSlop={10}
-          style={({ pressed }) => [styles.checkBtn, pressed && { opacity: 0.6, transform: [{ scale: 0.9 }] }]}
+          style={[styles.checkBtn]}
+          activeScale={pressScale.icon}
         >
           <Feather
             name={pago.conciliado ? 'check-circle' : 'circle'}
             size={24}
             color={pago.conciliado ? colors.success : colors.textDim}
           />
-        </Pressable>
+        </PressableScale>
       ) : (
         <View style={styles.checkBtn}>
           <Feather
@@ -162,17 +164,17 @@ export default function Pagos(): React.ReactElement {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={['top']}>
       {/* ── Header ── */}
       <View style={styles.header}>
-        <Pressable
+        <PressableScale
           onPress={() => router.back()}
           hitSlop={10}
-          style={({ pressed }) => [
+          style={[
             styles.backBtn,
             { backgroundColor: colors.surface, borderColor: colors.border },
-            pressed && { opacity: 0.7, transform: [{ scale: 0.94 }] },
           ]}
+          activeScale={pressScale.icon}
         >
           <Feather name="arrow-left" size={18} color={colors.textMuted} />
-        </Pressable>
+        </PressableScale>
         <Text style={[styles.title, { color: colors.text }]}>Pagos Zelle</Text>
         <View style={styles.backBtn} />
       </View>
@@ -206,16 +208,15 @@ export default function Pagos(): React.ReactElement {
             {FILTROS.map(f => {
               const active = filtro === f.key;
               return (
-                <Pressable
+                <PressableScale
                   key={f.key}
                   onPress={() => setFiltro(f.key)}
-                  style={({ pressed }) => [
+                  style={[
                     styles.filterBtn,
                     {
                       backgroundColor: active ? colors.primary : colors.surface,
                       borderColor:     active ? colors.primary : colors.border,
                     },
-                    pressed && { opacity: 0.8 },
                   ]}
                 >
                   <Text
@@ -226,7 +227,7 @@ export default function Pagos(): React.ReactElement {
                   >
                     {f.label}
                   </Text>
-                </Pressable>
+                </PressableScale>
               );
             })}
           </View>

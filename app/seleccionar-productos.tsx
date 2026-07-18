@@ -14,6 +14,8 @@ import { BarcodeScannerModal } from '../src/components/BarcodeScannerModal';
 import { useUserRole } from '../src/hooks/useUserRole';
 import { useResolverSolicitud } from '../src/hooks/useResolverSolicitud';
 import { confirm, notify } from '../src/lib/notify';
+import { PressableScale } from '../src/components/PressableScale';
+import { pressScale } from '../src/theme/motion';
 
 export default function SeleccionarProductos() {
   const { colors, formatUSD } = useTheme();
@@ -262,9 +264,9 @@ export default function SeleccionarProductos() {
             <Feather name="x-circle" size={20} color={colors.textDim} />
           </Pressable>
         )}
-        <Pressable onPress={() => setScannerVisible(true)} hitSlop={8} style={({ pressed }) => pressed && { opacity: 0.6 }}>
+        <PressableScale onPress={() => setScannerVisible(true)} hitSlop={8} activeScale={pressScale.icon}>
           <Feather name="camera" size={20} color={colors.primary} />
-        </Pressable>
+        </PressableScale>
       </View>
 
       {/* List */}
@@ -320,14 +322,14 @@ export default function SeleccionarProductos() {
           <Text style={[styles.noDispHint, { color: colors.textMuted }]} numberOfLines={2}>
             ¿No encontraste el producto? Avísale al cliente.
           </Text>
-          <Pressable
-            style={({ pressed }) => [
+          <PressableScale
+            style={[
               styles.submitBtn,
               { backgroundColor: colors.danger + '15', borderWidth: 0.5, borderColor: colors.danger + '40' },
-              (isMarcandoNoDisponible || pressed) && { opacity: 0.75 },
             ]}
             onPress={handleNoDisponible}
             disabled={isMarcandoNoDisponible}
+            dimmed={isMarcandoNoDisponible}
           >
             {isMarcandoNoDisponible ? (
               <ActivityIndicator color={colors.danger} size="small" />
@@ -339,7 +341,7 @@ export default function SeleccionarProductos() {
                 </Text>
               </>
             )}
-          </Pressable>
+          </PressableScale>
         </View>
       )}
 
@@ -364,18 +366,18 @@ export default function SeleccionarProductos() {
                 {formatUSD(totalAmount)}
               </Text>
             </View>
-            <Pressable onPress={() => usePresupuestoStore.getState().reset()} style={({ pressed }) => pressed && { opacity: 0.7 }}>
+            <PressableScale onPress={() => usePresupuestoStore.getState().reset()}>
               <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>Limpiar</Text>
-            </Pressable>
+            </PressableScale>
           </View>
-          <Pressable
-            style={({ pressed }) => [
-              styles.submitBtn, 
-              { backgroundColor: colors.primary }, 
-              (isResolving || pressed) && { opacity: 0.75 }
+          <PressableScale
+            style={[
+              styles.submitBtn,
+              { backgroundColor: colors.primary },
             ]}
             onPress={handleSendToClient}
             disabled={isResolving}
+            dimmed={isResolving}
           >
             {isResolving ? (
               <ActivityIndicator color={colors.onPrimary} size="small" />
@@ -387,7 +389,7 @@ export default function SeleccionarProductos() {
                 </Text>
               </>
             )}
-          </Pressable>
+          </PressableScale>
         </View>
       )}
     </SafeAreaView>

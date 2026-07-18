@@ -4,7 +4,6 @@ import {
   View,
   Text,
   TextInput,
-  Pressable,
   StyleSheet,
   KeyboardAvoidingView,
   ScrollView,
@@ -18,6 +17,7 @@ import { StatusBar } from 'expo-status-bar';
 import { supabase } from '../../src/lib/supabase';
 import { notify } from '../../src/lib/notify';
 import { useTheme } from '../../src/theme/ThemeContext';
+import { PressableScale } from '../../src/components/PressableScale';
 
 export default function Login() {
   const { colors } = useTheme();
@@ -85,13 +85,9 @@ export default function Login() {
         </View>
 
         {/* Submit */}
-        <Pressable
-          style={({ pressed }) => [
-            styles.btn,
-            { backgroundColor: colors.primary },
-            (loading || !email || !password) && { opacity: 0.5 },
-            pressed && { opacity: 0.75 },
-          ]}
+        <PressableScale
+          style={[styles.btn, { backgroundColor: colors.primary }]}
+          dimmed={loading || !email || !password}
           onPress={handleLogin}
           disabled={loading || !email.trim() || !password}
         >
@@ -99,7 +95,7 @@ export default function Login() {
             ? <ActivityIndicator color={colors.onPrimary} />
             : <Text style={[styles.btnText, { color: colors.onPrimary }]}>Iniciar sesión</Text>
           }
-        </Pressable>
+        </PressableScale>
       </View>
       </ScrollView>
     </KeyboardAvoidingView>

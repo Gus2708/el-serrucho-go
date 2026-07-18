@@ -19,6 +19,7 @@ import * as Font from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { ActivityIndicator, Platform, View, useWindowDimensions, Text, Pressable } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { PressableScale } from '../src/components/PressableScale';
 // SplashScreen is a no-op on web
 if (Platform.OS !== 'web') {
   SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -228,19 +229,19 @@ function UpdateToast() {
           Instala la última actualización para aplicar las mejoras.
         </Text>
       </View>
-      <Pressable
+      <PressableScale
         onPress={handleUpdate}
-        style={({ pressed }) => [{
+        style={{
           backgroundColor: colors?.primary || '#F5B200',
           paddingVertical: 8,
           paddingHorizontal: 14,
           borderRadius: 8,
-        }, pressed && { opacity: 0.8 }]}
+        }}
       >
         <Text style={{ color: '#0C0C0C', fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold' }}>
           ACTUALIZAR
         </Text>
-      </Pressable>
+      </PressableScale>
     </View>
   );
 }

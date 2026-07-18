@@ -1,7 +1,7 @@
 import { scaleFont } from '../src/theme/responsive';
 import * as React from 'react';
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -13,6 +13,8 @@ import { useTheme } from '../src/theme/ThemeContext';
 import { useSolicitudes } from '../src/hooks/useSolicitudes';
 import { useResolverSolicitud } from '../src/hooks/useResolverSolicitud';
 import { notify, confirm } from '../src/lib/notify';
+import { PressableScale } from '../src/components/PressableScale';
+import { pressScale } from '../src/theme/motion';
 
 // Sub-componente para refrescar el tiempo transcurrido en vivo
 function TimeAgoText({ creadoEn }: { creadoEn: string }) {
@@ -101,16 +103,16 @@ export default function Solicitudes() {
 
       {/* Header */}
       <View style={styles.header}>
-        <Pressable
-          style={({ pressed }) => [
+        <PressableScale
+          style={[
             styles.backBtn,
             { backgroundColor: colors.surface, borderColor: colors.border },
-            pressed && { opacity: 0.7 }
           ]}
+          activeScale={pressScale.icon}
           onPress={() => router.replace('/(tabs)/notificaciones' as any)}
         >
           <Feather name="chevron-left" size={22} color={colors.text} />
-        </Pressable>
+        </PressableScale>
         <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
           SOLICITUDES BOT
         </Text>
@@ -155,12 +157,13 @@ export default function Solicitudes() {
                   </View>
                   <TimeAgoText creadoEn={item.creado_en} />
                   {isPendiente && (
-                    <Pressable
-                      style={({ pressed }) => [
+                    <PressableScale
+                      style={[
                         styles.discardBtn,
                         { borderColor: colors.border },
-                        (descartandoId === item.id || pressed) && { opacity: 0.5 },
                       ]}
+                      activeScale={pressScale.icon}
+                      dimmed={descartandoId === item.id}
                       onPress={() => handleDiscard(item.id)}
                       disabled={descartandoId === item.id}
                       hitSlop={8}
@@ -169,7 +172,7 @@ export default function Solicitudes() {
                         ? <ActivityIndicator size={14} color={colors.textMuted} />
                         : <Feather name="x" size={14} color={colors.textMuted} />
                       }
-                    </Pressable>
+                    </PressableScale>
                   )}
                 </View>
 
@@ -185,11 +188,10 @@ export default function Solicitudes() {
                 </View>
 
                 {isPendiente ? (
-                  <Pressable
-                    style={({ pressed }) => [
+                  <PressableScale
+                    style={[
                       styles.actionBtn,
                       { backgroundColor: colors.primary },
-                      pressed && { opacity: 0.8 },
                     ]}
                     onPress={() => {
                       router.push({
@@ -201,15 +203,14 @@ export default function Solicitudes() {
                     <Text style={[styles.actionBtnText, { color: colors.onPrimary }]}>
                       ELEGIR PRODUCTO(S)
                     </Text>
-                  </Pressable>
+                  </PressableScale>
                 ) : (
-                  <Pressable
-                    style={({ pressed }) => [
+                  <PressableScale
+                    style={[
                       styles.actionBtn,
                       { backgroundColor: colors.border },
-                      (retryingId === item.id) && { opacity: 0.7 },
-                      pressed && { opacity: 0.8 },
                     ]}
+                    dimmed={retryingId === item.id}
                     disabled={retryingId === item.id}
                     onPress={() => handleRetry(item.id)}
                   >
@@ -220,7 +221,7 @@ export default function Solicitudes() {
                         REINTENTAR ENVÍO
                       </Text>
                     )}
-                  </Pressable>
+                  </PressableScale>
                 )}
               </View>
             );

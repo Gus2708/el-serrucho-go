@@ -1,8 +1,9 @@
 import { scaleFont } from '../theme/responsive';
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Platform, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
+import { PressableScale } from './PressableScale';
 
 export interface DraftRestoreBannerProps {
   itemCount: number;
@@ -84,27 +85,25 @@ export function DraftRestoreBanner({ itemCount, nota, onRestore, onDiscard }: Dr
       </View>
 
       <View style={styles.actions}>
-        <Pressable
+        <PressableScale
           onPress={() => dismiss(onRestore)}
-          style={({ pressed }) => [
+          style={[
             styles.btnContinue,
             { backgroundColor: colors.primary },
-            pressed && { opacity: 0.8 },
           ]}
         >
           <Text style={[styles.btnContinueText, { color: colors.onPrimary }]}>
             Continuar
           </Text>
-        </Pressable>
-        <Pressable
+        </PressableScale>
+        <PressableScale
           onPress={() => dismiss(onDiscard)}
-          style={({ pressed }) => [pressed && { opacity: 0.5 }]}
           hitSlop={8}
         >
           <Text style={[styles.btnDiscard, { color: colors.textDim }]}>
             Descartar
           </Text>
-        </Pressable>
+        </PressableScale>
       </View>
     </Animated.View>
   );

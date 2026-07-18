@@ -26,6 +26,8 @@ import { useAlertasSpoof, useRevisarAlertaSpoof } from '../../src/hooks/useAlert
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { notify, confirm } from '../../src/lib/notify';
 import { requestNotificationPermission } from '../../src/utils/notifications';
+import { PressableScale } from '../../src/components/PressableScale';
+import { pressScale } from '../../src/theme/motion';
 
 const MOTIVO_LABEL: Record<AlertaZelleSpoof['motivo'], string> = {
   dominio_no_autorizado: 'Dirección de remitente falsa',
@@ -248,11 +250,10 @@ export default function Notificaciones() {
         </Text>
         {/* Tab switcher */}
         <View style={[styles.tabSwitcher, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Pressable
-            style={({ pressed }) => [
+          <PressableScale
+            style={[
               styles.tabBtn,
               activeTab === 'atenciones' && { backgroundColor: colors.primary },
-              pressed && activeTab !== 'atenciones' && { opacity: 0.7 },
             ]}
             onPress={() => setActiveTab('atenciones')}
           >
@@ -275,13 +276,12 @@ export default function Notificaciones() {
                 </Text>
               </View>
             )}
-          </Pressable>
+          </PressableScale>
 
-          <Pressable
-            style={({ pressed }) => [
+          <PressableScale
+            style={[
               styles.tabBtn,
               activeTab === 'solicitudes' && { backgroundColor: colors.primary },
-              pressed && activeTab !== 'solicitudes' && { opacity: 0.7 },
             ]}
             onPress={() => setActiveTab('solicitudes')}
           >
@@ -304,13 +304,12 @@ export default function Notificaciones() {
                 </Text>
               </View>
             )}
-          </Pressable>
+          </PressableScale>
 
-          <Pressable
-            style={({ pressed }) => [
+          <PressableScale
+            style={[
               styles.tabBtn,
               activeTab === 'seguridad' && { backgroundColor: colors.danger },
-              pressed && activeTab !== 'seguridad' && { opacity: 0.7 },
             ]}
             onPress={() => setActiveTab('seguridad')}
           >
@@ -333,7 +332,7 @@ export default function Notificaciones() {
                 </Text>
               </View>
             )}
-          </Pressable>
+          </PressableScale>
         </View>
       </View>
 
@@ -385,13 +384,12 @@ export default function Notificaciones() {
                 </Text>
               </View>
 
-              <Pressable
-                style={({ pressed }) => [
+              <PressableScale
+                style={[
                   styles.actionBtn,
                   { backgroundColor: colors.primary },
-                  claimingId === item.id && { opacity: 0.7 },
-                  pressed && { opacity: 0.8 },
                 ]}
+                dimmed={claimingId === item.id}
                 disabled={claimingId !== null}
                 onPress={() => handleClaim(item.id, item.nombre || formatPhone(item.telefono))}
               >
@@ -399,7 +397,7 @@ export default function Notificaciones() {
                   ? <ActivityIndicator color={colors.onPrimary} size="small" />
                   : <Text style={[styles.actionBtnText, { color: colors.onPrimary }]}>ATENDER CLIENTE</Text>
                 }
-              </Pressable>
+              </PressableScale>
             </View>
           )}
         />
@@ -437,12 +435,13 @@ export default function Notificaciones() {
                   </View>
                   <TimeAgoText creadoEn={item.creado_en} />
                   {isPendiente && (
-                    <Pressable
-                      style={({ pressed }) => [
+                    <PressableScale
+                      style={[
                         styles.discardBtn,
                         { borderColor: colors.border },
-                        (descartandoId === item.id || pressed) && { opacity: 0.5 },
                       ]}
+                      activeScale={pressScale.icon}
+                      dimmed={descartandoId === item.id}
                       onPress={() => handleDiscard(item.id)}
                       disabled={descartandoId === item.id}
                       hitSlop={8}
@@ -451,7 +450,7 @@ export default function Notificaciones() {
                         ? <ActivityIndicator size={14} color={colors.textMuted} />
                         : <Feather name="x" size={14} color={colors.textMuted} />
                       }
-                    </Pressable>
+                    </PressableScale>
                   )}
                 </View>
 
@@ -467,11 +466,10 @@ export default function Notificaciones() {
                 </View>
 
                 {isPendiente ? (
-                  <Pressable
-                    style={({ pressed }) => [
+                  <PressableScale
+                    style={[
                       styles.actionBtn,
                       { backgroundColor: colors.primary },
-                      pressed && { opacity: 0.8 },
                     ]}
                     onPress={() => router.push({
                       pathname: '/seleccionar-productos',
@@ -481,15 +479,14 @@ export default function Notificaciones() {
                     <Text style={[styles.actionBtnText, { color: colors.onPrimary }]}>
                       ELEGIR PRODUCTO(S)
                     </Text>
-                  </Pressable>
+                  </PressableScale>
                 ) : (
-                  <Pressable
-                    style={({ pressed }) => [
+                  <PressableScale
+                    style={[
                       styles.actionBtn,
                       { backgroundColor: colors.border },
-                      retryingId === item.id && { opacity: 0.7 },
-                      pressed && { opacity: 0.8 },
                     ]}
+                    dimmed={retryingId === item.id}
                     disabled={retryingId === item.id}
                     onPress={() => handleRetry(item.id)}
                   >
@@ -497,7 +494,7 @@ export default function Notificaciones() {
                       ? <ActivityIndicator color={colors.text} size="small" />
                       : <Text style={[styles.actionBtnText, { color: colors.text }]}>REINTENTAR ENVÍO</Text>
                     }
-                  </Pressable>
+                  </PressableScale>
                 )}
               </View>
             );
@@ -557,17 +554,16 @@ export default function Notificaciones() {
               </View>
 
               {!item.revisado && (
-                <Pressable
-                  style={({ pressed }) => [
+                <PressableScale
+                  style={[
                     styles.actionBtn,
                     { backgroundColor: colors.border },
-                    pressed && { opacity: 0.8 },
                   ]}
                   disabled={revisarAlerta.isPending}
                   onPress={() => revisarAlerta.mutate(item.id)}
                 >
                   <Text style={[styles.actionBtnText, { color: colors.text }]}>MARCAR COMO VISTO</Text>
-                </Pressable>
+                </PressableScale>
               )}
             </View>
           )}

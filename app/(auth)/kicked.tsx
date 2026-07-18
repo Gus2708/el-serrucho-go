@@ -4,7 +4,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Pressable,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,6 +12,7 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { Image } from 'expo-image';
+import { PressableScale } from '../../src/components/PressableScale';
 
 const logo = require('../../src/assets/img/EL SERRUCHO go.png');
 
@@ -73,19 +73,15 @@ export default function KickedScreen() {
         </View>
 
         {/* Login Button */}
-        <Pressable
+        <PressableScale
           onPress={handleLoginAgain}
-          style={({ pressed }) => [
-            styles.actionBtn,
-            { backgroundColor: colors.primary || '#F5B200' },
-            pressed && { opacity: 0.85 }
-          ]}
+          style={[styles.actionBtn, { backgroundColor: colors.primary || '#F5B200' }]}
         >
           <Feather name="arrow-left" size={16} color="#0C0C0C" style={styles.btnIcon} />
           <Text style={styles.actionBtnText}>
             VOLVER AL INICIO DE SESIÓN
           </Text>
-        </Pressable>
+        </PressableScale>
 
         <Text style={[styles.footerNotice, { color: colors.textMuted || '#888888' }]}>
           Para proteger la integridad de tus datos, solo se permite un dispositivo activo por cuenta.

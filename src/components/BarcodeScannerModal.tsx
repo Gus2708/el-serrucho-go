@@ -15,7 +15,6 @@ import {
   StyleSheet,
   Text,
   View,
-  Pressable,
   Animated,
   ActivityIndicator,
   Platform,
@@ -24,6 +23,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { WebBarcodeScanner } from './WebBarcodeScanner';
+import { PressableScale } from './PressableScale';
 
 interface Props {
   visible: boolean;
@@ -94,26 +94,18 @@ function NativeBarcodeScannerModal({ visible, onClose, onScan }: Props) {
               Para poder escanear códigos de barras y códigos QR en El Serrucho GO, necesitamos acceso a tu cámara.
             </Text>
             <View style={styles.buttonRow}>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.btnSecondary,
-                  { borderColor: colors.border, backgroundColor: colors.surfaceAlt },
-                  pressed && { opacity: 0.8 },
-                ]}
+              <PressableScale
+                style={[styles.btnSecondary, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
                 onPress={onClose}
               >
                 <Text style={[styles.btnSecondaryText, { color: colors.text }]}>Cancelar</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.btnPrimary,
-                  { backgroundColor: colors.primary },
-                  pressed && { opacity: 0.8 },
-                ]}
+              </PressableScale>
+              <PressableScale
+                style={[styles.btnPrimary, { backgroundColor: colors.primary }]}
                 onPress={requestPermission}
               >
                 <Text style={[styles.btnPrimaryText, { color: colors.onPrimary }]}>Otorgar Permiso</Text>
-              </Pressable>
+              </PressableScale>
             </View>
           </View>
         </View>
@@ -182,17 +174,13 @@ function NativeBarcodeScannerModal({ visible, onClose, onScan }: Props) {
               <Text style={[styles.instructionText, { color: '#fff' }]}>
                 Apunta la cámara al código de barras o QR
               </Text>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.btnClose,
-                  { backgroundColor: colors.surface + 'DD', borderColor: colors.border },
-                  pressed && { opacity: 0.8 },
-                ]}
+              <PressableScale
+                style={[styles.btnClose, { backgroundColor: colors.surface + 'DD', borderColor: colors.border }]}
                 onPress={onClose}
               >
                 <Feather name="x" size={20} color="#fff" style={{ marginRight: 8 }} />
                 <Text style={styles.btnCloseText}>Cerrar Escáner</Text>
-              </Pressable>
+              </PressableScale>
             </View>
           </View>
         </View>

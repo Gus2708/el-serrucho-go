@@ -5,7 +5,6 @@ import {
   Text,
   ScrollView,
   StyleSheet,
-  Pressable,
   ActivityIndicator,
   Modal,
   TextInput,
@@ -20,6 +19,8 @@ import { supabase } from '../lib/supabase';
 import { useAprobaciones, useAprobarOrden, useRechazarOrden } from '../hooks/useAprobaciones';
 import { OrdenConItems } from '../hooks/useOrdenesHistory';
 import { OrdenCambioDetailModal } from './OrdenCambioDetailModal';
+import { PressableScale } from './PressableScale';
+import { pressScale } from '../theme/motion';
 
 export default function AprobacionesView(): React.JSX.Element {
   const { colors } = useTheme();
@@ -114,13 +115,13 @@ export default function AprobacionesView(): React.JSX.Element {
             const busy = aprobar.isPending || rechazar.isPending;
 
             return (
-              <Pressable
+              <PressableScale
                 key={orden.id}
-                style={({ pressed }) => [
+                style={[
                   styles.card,
                   { backgroundColor: colors.surface, borderColor: colors.border },
-                  pressed && { opacity: 0.75 },
                 ]}
+                activeScale={pressScale.row}
                 onPress={() => setSelectedOrden(orden)}
               >
                 <View style={styles.cardTop}>
@@ -145,33 +146,33 @@ export default function AprobacionesView(): React.JSX.Element {
                 ) : null}
 
                 <View style={styles.actions}>
-                  <Pressable
+                  <PressableScale
                     disabled={busy}
-                    style={({ pressed }) => [
+                    style={[
                       styles.actionBtn,
                       { borderColor: colors.danger + '55', backgroundColor: colors.danger + '10' },
-                      (pressed || busy) && { opacity: 0.6 },
                     ]}
+                    dimmed={busy}
                     onPress={() => openRechazo(orden.id)}
                   >
                     <Feather name="x" size={14} color={colors.danger} />
                     <Text style={[styles.actionText, { color: colors.danger }]}>Rechazar</Text>
-                  </Pressable>
+                  </PressableScale>
 
-                  <Pressable
+                  <PressableScale
                     disabled={busy}
-                    style={({ pressed }) => [
+                    style={[
                       styles.actionBtn,
                       { borderColor: colors.success + '55', backgroundColor: colors.success + '10' },
-                      (pressed || busy) && { opacity: 0.6 },
                     ]}
+                    dimmed={busy}
                     onPress={() => handleAprobar(orden)}
                   >
                     <Feather name="check" size={14} color={colors.success} />
                     <Text style={[styles.actionText, { color: colors.success }]}>Aprobar</Text>
-                  </Pressable>
+                  </PressableScale>
                 </View>
-              </Pressable>
+              </PressableScale>
             );
           })}
           <View style={{ height: 150 }} />
@@ -198,18 +199,18 @@ export default function AprobacionesView(): React.JSX.Element {
               numberOfLines={3}
             />
             <View style={styles.modalActions}>
-              <Pressable
-                style={({ pressed }) => [styles.modalBtn, { borderColor: colors.border }, pressed && { opacity: 0.7 }]}
+              <PressableScale
+                style={[styles.modalBtn, { borderColor: colors.border }]}
                 onPress={() => setRechazoOrdenId(null)}
               >
                 <Text style={[styles.modalBtnText, { color: colors.textMuted }]}>Cancelar</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [styles.modalBtn, { borderColor: colors.danger + '55', backgroundColor: colors.danger + '15' }, pressed && { opacity: 0.7 }]}
+              </PressableScale>
+              <PressableScale
+                style={[styles.modalBtn, { borderColor: colors.danger + '55', backgroundColor: colors.danger + '15' }]}
                 onPress={confirmarRechazo}
               >
                 <Text style={[styles.modalBtnText, { color: colors.danger }]}>Rechazar</Text>
-              </Pressable>
+              </PressableScale>
             </View>
           </View>
         </View>

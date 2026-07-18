@@ -1,9 +1,11 @@
 import { scaleFont } from '../theme/responsive';
 import React, { memo, useCallback } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { CurrencyText } from './CurrencyText';
+import { PressableScale } from './PressableScale';
+import { pressScale } from '../theme/motion';
 import { isPlaceholder } from '../hooks/useProductos';
 import type { Producto } from '../lib/supabase';
 
@@ -12,7 +14,7 @@ interface Props {
   onPress:  (codigo: string) => void;   // dispatcher pattern: pass scalar id, not closure
 }
 
-function ProductRowImpl({ producto, onPress }: Props) {
+function ProductRowImpl({ producto, onPress }: Props): React.ReactElement {
   const { colors } = useTheme();
   const { stockColor, stockLabel } = getStockInfo(producto, colors);
   const margin     = getMarginPct(producto);
@@ -21,17 +23,8 @@ function ProductRowImpl({ producto, onPress }: Props) {
   // Stable: handler depends only on the codigo + dispatcher
   const handlePress = useCallback(() => onPress(producto.codigo_interno), [onPress, producto.codigo_interno]);
 
-  return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.row,
-        { backgroundColor: colors.surface, borderColor: colors.border },
-        pressed && !placeholder && { opacity: 0.75 },
-        placeholder && styles.rowPlaceholder,
-      ]}
-      onPress={placeholder ? undefined : handlePress}
-      pointerEvents={placeholder ? 'none' : 'auto'}
-    >
+  const content = (
+    <>
       <View style={[styles.bar, { backgroundColor: stockColor }]} />
 
       <View style={styles.body}>
@@ -65,7 +58,29 @@ function ProductRowImpl({ producto, onPress }: Props) {
       </View>
 
       <Feather name="chevron-right" size={16} color={colors.textMuted} style={styles.chevron} />
-    </Pressable>
+    </>
+  );
+
+  // Placeholders (".", "..") are inert — render a dimmed, non-interactive row.
+  if (placeholder) {
+    return (
+      <View
+        style={[styles.row, styles.rowPlaceholder, { backgroundColor: colors.surface, borderColor: colors.border }]}
+        pointerEvents="none"
+      >
+        {content}
+      </View>
+    );
+  }
+
+  return (
+    <PressableScale
+      style={[styles.row, { backgroundColor: colors.surface, borderColor: colors.border }]}
+      activeScale={pressScale.row}
+      onPress={handlePress}
+    >
+      {content}
+    </PressableScale>
   );
 }
 

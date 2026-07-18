@@ -24,6 +24,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
+import { PressableScale } from './PressableScale';
 
 interface Props {
   visible: boolean;
@@ -283,13 +284,13 @@ export function WebBarcodeScanner({ visible, onClose, onScan }: Props) {
             {/* Franja oscura inferior con texto y botón */}
             <View style={styles.overlayRow}>
               <Text style={styles.instrText}>Apunta la cámara al código de barras o QR</Text>
-              <Pressable
-                style={({ pressed }) => [styles.btnClose, { borderColor: colors.border }, pressed && { opacity: 0.8 }]}
+              <PressableScale
+                style={[styles.btnClose, { borderColor: colors.border }]}
                 onPress={() => { cleanup(); onClose(); }}
               >
                 <Feather name="x" size={20} color="#fff" style={{ marginRight: 8 }} />
                 <Text style={styles.btnCloseText}>Cerrar Escáner</Text>
-              </Pressable>
+              </PressableScale>
             </View>
           </View>
         )}

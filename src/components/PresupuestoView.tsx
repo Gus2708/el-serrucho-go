@@ -1,6 +1,6 @@
 import { scaleFont } from '../theme/responsive';
 import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Pressable, TextInput, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeContext';
@@ -10,6 +10,8 @@ import { supabase } from '../lib/supabase';
 import { notify, confirm } from '../lib/notify';
 import { printHtml } from '../utils/pdfGenerator';
 import { MarginWarningBadge } from './MarginWarningBadge';
+import { PressableScale } from './PressableScale';
+import { pressScale } from '../theme/motion';
 import { usePresupuestoConfig } from '../hooks/usePresupuestoConfig';
 import { useTazas } from '../hooks/useTazas';
 
@@ -101,12 +103,12 @@ export default function PresupuestoView({ router }: { router: any }) {
 
         {/* Top Actions */}
         <View style={styles.actionsContainer}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.actionBtn, 
-              { borderColor: colors.primary, backgroundColor: colors.primaryFaded }, 
-              pressed && { backgroundColor: colors.primary + '20', opacity: 0.85 }
+          <PressableScale
+            style={[
+              styles.actionBtn,
+              { borderColor: colors.primary, backgroundColor: colors.primaryFaded },
             ]}
+            activeScale={pressScale.row}
             onPress={() => router.push('/seleccionar-cliente')}
             hitSlop={8}
           >
@@ -114,14 +116,14 @@ export default function PresupuestoView({ router }: { router: any }) {
             <Text style={[styles.actionBtnText, { color: colors.primary }]} numberOfLines={1}>
               {cliente ? cliente.nombre : 'Asignar Cliente'}
             </Text>
-          </Pressable>
+          </PressableScale>
 
-          <Pressable
-            style={({ pressed }) => [
-              styles.actionBtn, 
-              { borderColor: colors.primary, backgroundColor: colors.primaryFaded }, 
-              pressed && { backgroundColor: colors.primary + '20', opacity: 0.85 }
+          <PressableScale
+            style={[
+              styles.actionBtn,
+              { borderColor: colors.primary, backgroundColor: colors.primaryFaded },
             ]}
+            activeScale={pressScale.row}
             onPress={() => router.push('/seleccionar-productos')}
             hitSlop={8}
           >
@@ -129,7 +131,7 @@ export default function PresupuestoView({ router }: { router: any }) {
             <Text style={[styles.actionBtnText, { color: colors.primary }]} numberOfLines={1}>
               Agregar Productos
             </Text>
-          </Pressable>
+          </PressableScale>
         </View>
 
         {items.length > 0 && (
@@ -138,11 +140,10 @@ export default function PresupuestoView({ router }: { router: any }) {
               MONEDA
             </Text>
             <View style={[styles.segmentedControl, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Pressable
-                style={({ pressed }) => [
+              <PressableScale
+                style={[
                   styles.segmentedBtn,
                   !enBs && { backgroundColor: colors.primary },
-                  pressed && { opacity: 0.85 }
                 ]}
                 onPress={() => {
                   if (enBs) setEnBs(false, null, null);
@@ -151,12 +152,11 @@ export default function PresupuestoView({ router }: { router: any }) {
                 <Text style={[styles.segmentedText, { color: !enBs ? colors.onPrimary : colors.textMuted }]}>
                   USD ($)
                 </Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
+              </PressableScale>
+              <PressableScale
+                style={[
                   styles.segmentedBtn,
                   enBs && { backgroundColor: colors.primary },
-                  pressed && { opacity: 0.85 }
                 ]}
                 onPress={() => {
                   if (!enBs) setEnBs(true, bcv, markup_porcentaje);
@@ -165,7 +165,7 @@ export default function PresupuestoView({ router }: { router: any }) {
                 <Text style={[styles.segmentedText, { color: enBs ? colors.onPrimary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
                   Bs. (@ {bcv.toFixed(2)})
                 </Text>
-              </Pressable>
+              </PressableScale>
             </View>
           </View>
         )}
@@ -198,7 +198,7 @@ export default function PresupuestoView({ router }: { router: any }) {
                         {item.producto.codigo_interno}
                       </Text>
                     </View>
-                    <Pressable
+                    <PressableScale
                       onPress={() => {
                         removeItem(item.producto.codigo_interno);
                         setPriceWarnings(prev => {
@@ -208,10 +208,11 @@ export default function PresupuestoView({ router }: { router: any }) {
                         });
                       }}
                       hitSlop={12}
-                      style={({ pressed }) => [styles.removeBtn, pressed && { opacity: 0.5, backgroundColor: colors.border + '33', borderRadius: 4 }]}
+                      activeScale={pressScale.icon}
+                      style={styles.removeBtn}
                     >
                       <Feather name="x" size={16} color={colors.textDim} />
-                    </Pressable>
+                    </PressableScale>
                   </View>
 
                   {/* Row 1: Quantity + Price */}
@@ -220,16 +221,16 @@ export default function PresupuestoView({ router }: { router: any }) {
                     <View style={styles.controlGroup}>
                       <Text style={[styles.controlLabel, { color: colors.textMuted }]}>CANTIDAD</Text>
                       <View style={styles.controlRow}>
-                        <Pressable 
+                        <PressableScale
                           onPress={() => updateItemQuantity(item.producto.codigo_interno, Math.max(1, item.cantidad - 1))}
-                          style={({ pressed }) => [
-                            styles.ctrlBtn, 
-                            { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, 
-                            pressed && { opacity: 0.7 }
+                          activeScale={pressScale.icon}
+                          style={[
+                            styles.ctrlBtn,
+                            { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
                           ]}
                         >
                           <Feather name="minus" size={14} color={colors.text} />
-                        </Pressable>
+                        </PressableScale>
                         
                         <TextInput
                           style={[styles.ctrlInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }] as any}
@@ -245,16 +246,16 @@ export default function PresupuestoView({ router }: { router: any }) {
                           selectTextOnFocus
                         />
 
-                        <Pressable 
+                        <PressableScale
                           onPress={() => updateItemQuantity(item.producto.codigo_interno, item.cantidad + 1)}
-                          style={({ pressed }) => [
-                            styles.ctrlBtn, 
-                            { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, 
-                            pressed && { opacity: 0.7 }
+                          activeScale={pressScale.icon}
+                          style={[
+                            styles.ctrlBtn,
+                            { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
                           ]}
                         >
                           <Feather name="plus" size={14} color={colors.text} />
-                        </Pressable>
+                        </PressableScale>
                       </View>
                     </View>
 
@@ -292,7 +293,7 @@ export default function PresupuestoView({ router }: { router: any }) {
                           const originalPrice = item.producto.precio_venta;
                           const isMarkupApplied = item.precio_unitario !== originalPrice;
                           return (
-                            <Pressable 
+                            <PressableScale
                               onPress={() => {
                                 if (isMarkupApplied) {
                                   // Reset to original price
@@ -307,23 +308,22 @@ export default function PresupuestoView({ router }: { router: any }) {
                                   setPriceInputs(prev => ({ ...prev, [item.producto.codigo_interno]: String(newPrice) }));
                                 }
                               }}
-                              style={({ pressed }) => [
+                              style={[
                                 styles.percentBtn,
                                 isMarkupApplied
                                   ? { backgroundColor: colors.success + '18', borderColor: colors.success + '40' }
                                   : { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' },
-                                pressed && { opacity: 0.7 }
                               ]}
                               hitSlop={4}
                             >
                               <Text style={[
-                                styles.percentBtnText, 
+                                styles.percentBtnText,
                                 { color: isMarkupApplied ? colors.success : colors.primary },
                                 isMarkupApplied && { fontSize: scaleFont(16) }
                               ]}>
                                 {isMarkupApplied ? '↺' : `+${markup_porcentaje}%`}
                               </Text>
-                            </Pressable>
+                            </PressableScale>
                           );
                         })()}
                       </View>
@@ -399,12 +399,13 @@ export default function PresupuestoView({ router }: { router: any }) {
                 Bs. {(total * bcv).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </Text>
             )}
-            <Pressable onPress={() => { reset(); setPriceInputs({}); }} style={({ pressed }) => [pressed && { opacity: 0.7 }, { marginTop: 4 }]} hitSlop={6}>
+            <PressableScale onPress={() => { reset(); setPriceInputs({}); }} style={{ marginTop: 4 }} hitSlop={6}>
               <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>Limpiar presupuesto</Text>
-            </Pressable>
+            </PressableScale>
           </View>
-          <Pressable
-            style={({ pressed }) => [styles.submitBtn, { backgroundColor: colors.primary }, (isLoading || pressed) && { opacity: 0.75 }]}
+          <PressableScale
+            style={[styles.submitBtn, { backgroundColor: colors.primary }]}
+            dimmed={isLoading}
             onPress={handleSubmit}
             disabled={isLoading}
           >
@@ -415,7 +416,7 @@ export default function PresupuestoView({ router }: { router: any }) {
                   <Text style={[styles.submitBtnText, { color: colors.onPrimary }]} numberOfLines={1} adjustsFontSizeToFit>Emitir y PDF</Text>
                 </>
             }
-          </Pressable>
+          </PressableScale>
         </View>
       )}
     </View>

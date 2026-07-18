@@ -23,6 +23,8 @@ import { useProveedores, Proveedor } from '../hooks/useProveedores';
 import { useCompra, CompraDraftItem } from '../hooks/useCompra';
 import { useProductos } from '../hooks/useProductos';
 import { useUserRole, isPrivilegedRole } from '../hooks/useUserRole';
+import { PressableScale } from './PressableScale';
+import { pressScale } from '../theme/motion';
 
 // Ficha de Inventario de HybridLite trunca la descripción a los 60 caracteres
 // (confirmado en compras.log 2026-07-17: "PUERTA MULTILOCK...QUINTE" != "...QUINTERO",
@@ -160,9 +162,9 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
                 Corrige lo que causó el error y reintenta. No se creará una compra nueva.
               </Text>
             </View>
-            <Pressable onPress={clear} hitSlop={8} style={({ pressed }) => [pressed && { opacity: 0.7 }]}>
+            <PressableScale onPress={clear} hitSlop={8} activeScale={pressScale.icon}>
               <Feather name="x" size={18} color={colors.textMuted} />
-            </Pressable>
+            </PressableScale>
           </View>
         ) : null}
 
@@ -180,12 +182,12 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
         </View>
 
         {/* Selector de proveedor */}
-        <Pressable
-          style={({ pressed }) => [
+        <PressableScale
+          style={[
             styles.proveedorBtn,
             { borderColor: colors.border, backgroundColor: colors.surface },
-            pressed && { opacity: 0.75 },
           ]}
+          activeScale={pressScale.row}
           onPress={() => setProveedorModalVisible(true)}
         >
           <Feather name="user" size={16} color={proveedorCodigo ? colors.primary : colors.textDim} />
@@ -199,33 +201,31 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
             </Text>
           </View>
           <Feather name="chevron-right" size={18} color={colors.textDim} />
-        </Pressable>
+        </PressableScale>
 
         {/* Agregar producto CTAs */}
         <View style={styles.addProductRow}>
-          <Pressable
-            style={({ pressed }) => [
+          <PressableScale
+            style={[
               styles.addProductBtn,
               { borderColor: colors.primary, backgroundColor: colors.primaryFaded },
-              pressed && { opacity: 0.75 },
             ]}
             onPress={() => setProductoModalVisible(true)}
           >
             <Feather name="search" size={16} color={colors.primary} />
             <Text style={[styles.addProductText, { color: colors.primary }]}>Buscar existente</Text>
-          </Pressable>
+          </PressableScale>
 
-          <Pressable
-            style={({ pressed }) => [
+          <PressableScale
+            style={[
               styles.addProductBtn,
               { borderColor: colors.primary, backgroundColor: colors.primaryFaded },
-              pressed && { opacity: 0.75 },
             ]}
             onPress={() => setProductoNuevoModalVisible(true)}
           >
             <Feather name="plus" size={16} color={colors.primary} />
             <Text style={[styles.addProductText, { color: colors.primary }]}>Producto nuevo</Text>
-          </Pressable>
+          </PressableScale>
         </View>
 
         {items.length === 0 ? (
@@ -303,18 +303,18 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
             <Text style={[styles.submitCount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
               {items.length} ítem{items.length > 1 ? 's' : ''} · {formatUSD(total)}
             </Text>
-            <Pressable onPress={() => confirm({ title: 'Limpiar compra', message: 'Se perderán los ítems agregados.', confirmText: 'Limpiar', destructive: true, onConfirm: clear })} style={({ pressed }) => [pressed && { opacity: 0.7 }, { marginTop: 4 }]}>
+            <PressableScale onPress={() => confirm({ title: 'Limpiar compra', message: 'Se perderán los ítems agregados.', confirmText: 'Limpiar', destructive: true, onConfirm: clear })} style={{ marginTop: 4 }}>
               <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
                 Limpiar compra
               </Text>
-            </Pressable>
+            </PressableScale>
           </View>
-          <Pressable
-            style={({ pressed }) => [
+          <PressableScale
+            style={[
               styles.submitBtn,
               { backgroundColor: colors.primary },
-              (!canSubmit || pressed) && { opacity: 0.75 },
             ]}
+            dimmed={!canSubmit}
             onPress={handleSubmit}
             disabled={!canSubmit}
           >
@@ -328,7 +328,7 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
                 </Text>
               </>
             )}
-          </Pressable>
+          </PressableScale>
         </View>
       )}
 
@@ -440,9 +440,9 @@ function CompraItemCard({ item, onRemove, onUpdate }: CompraItemCardProps): Reac
             </Text>
           ) : null}
         </View>
-        <Pressable onPress={onRemove} hitSlop={8} style={({ pressed }) => [styles.removeBtn, pressed && { opacity: 0.6 }]}>
+        <PressableScale onPress={onRemove} hitSlop={8} style={styles.removeBtn} activeScale={pressScale.icon}>
           <Feather name="x" size={16} color={colors.textDim} />
-        </Pressable>
+        </PressableScale>
       </View>
 
       <View style={styles.itemBottom}>
@@ -830,17 +830,16 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
               </View>
             </View>
 
-            <Pressable
-              style={({ pressed }) => [
+            <PressableScale
+              style={[
                 styles.formSubmitBtn,
                 { backgroundColor: colors.primary },
-                pressed && { opacity: 0.75 },
               ]}
               onPress={handleAdd}
             >
               <Feather name="plus" size={16} color={colors.onPrimary} />
               <Text style={[styles.formSubmitText, { color: colors.onPrimary }]}>Agregar a la compra</Text>
-            </Pressable>
+            </PressableScale>
 
             <View style={{ height: 24 }} />
           </ScrollView>

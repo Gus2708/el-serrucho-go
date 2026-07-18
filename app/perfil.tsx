@@ -5,7 +5,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Pressable,
   TextInput,
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -21,6 +20,8 @@ import { useTheme } from '../src/theme/ThemeContext';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUserRole } from '../src/hooks/useUserRole';
 import { usePWAInstallStore } from '../src/hooks/usePWAInstall';
+import { PressableScale } from '../src/components/PressableScale';
+import { pressScale } from '../src/theme/motion';
 
 function PWAProfileControl() {
   const { colors } = useTheme();
@@ -55,9 +56,9 @@ function PWAProfileControl() {
 
   if (isInstallable) {
     return (
-      <Pressable
+      <PressableScale
         onPress={() => install()}
-        style={({ pressed }) => [{
+        style={[{
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'center',
@@ -69,13 +70,13 @@ function PWAProfileControl() {
           backgroundColor: '#1E1E1E',
           marginTop: 10,
           paddingHorizontal: 16,
-        }, pressed && { opacity: 0.8 }]}
+        }]}
       >
         <Feather name="download" size={18} color={colors.primary || '#F5B200'} />
         <Text style={{ fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', color: colors.primary || '#F5B200', letterSpacing: 0.5 }}>
           INSTALAR APLICACIÓN
         </Text>
-      </Pressable>
+      </PressableScale>
     );
   }
 
@@ -204,12 +205,13 @@ export default function Perfil() {
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]}>
       <View style={styles.header}>
-        <Pressable
-          style={({ pressed }) => [styles.backBtn, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.7 }]}
+        <PressableScale
+          style={[styles.backBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
           onPress={() => router.back()}
+          activeScale={pressScale.icon}
         >
           <Feather name="chevron-left" size={22} color={colors.text} />
-        </Pressable>
+        </PressableScale>
         <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>MI PERFIL</Text>
         <View style={{ width: 38 }} />
       </View>
@@ -241,10 +243,11 @@ export default function Perfil() {
                   </Text>
                 )}
                 
-                <Pressable
+                <PressableScale
                   onPress={() => isEditing ? handleSave() : setIsEditing(true)}
                   disabled={saving}
-                  style={({ pressed }) => [styles.editBtn, { backgroundColor: isEditing ? colors.primary : colors.bg }, pressed && { opacity: 0.7 }]}
+                  style={[styles.editBtn, { backgroundColor: isEditing ? colors.primary : colors.bg }]}
+                  activeScale={pressScale.icon}
                 >
                   {saving ? (
                     <ActivityIndicator size="small" color={isEditing ? colors.onPrimary : colors.primary} />
@@ -255,7 +258,7 @@ export default function Perfil() {
                       color={isEditing ? colors.onPrimary : colors.primary}
                     />
                   )}
-                </Pressable>
+                </PressableScale>
               </View>
 
               <View style={[styles.badge, { backgroundColor: colors.primary + '15' }]}>
@@ -284,24 +287,26 @@ export default function Perfil() {
 
         {/* Gestión de usuarios — solo admin */}
         {profile?.role === 'admin' && (
-          <Pressable
-            style={({ pressed }) => [styles.adminRow, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.75 }]}
+          <PressableScale
+            style={[styles.adminRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={() => router.push('/admin-usuarios')}
+            activeScale={pressScale.row}
           >
             <Feather name="users" size={18} color={colors.primary} />
             <Text style={[styles.adminRowText, { color: colors.text }]}>Gestionar usuarios</Text>
             <Feather name="chevron-right" size={18} color={colors.textDim} />
-          </Pressable>
+          </PressableScale>
         )}
 
         {/* Salida */}
-        <Pressable
-          style={({ pressed }) => [styles.logoutRow, { backgroundColor: colors.danger + '10', borderColor: colors.danger + '20' }, pressed && { opacity: 0.75 }]}
+        <PressableScale
+          style={[styles.logoutRow, { backgroundColor: colors.danger + '10', borderColor: colors.danger + '20' }]}
           onPress={handleLogout}
+          activeScale={pressScale.row}
         >
           <Feather name="log-out" size={18} color={colors.danger} />
           <Text style={[styles.logoutText, { color: colors.danger }]}>CERRAR SESIÓN</Text>
-        </Pressable>
+        </PressableScale>
 
         <View style={{ height: 40 }} />
       </ScrollView>

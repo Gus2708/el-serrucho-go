@@ -24,6 +24,8 @@ import { confirm, notify } from '../lib/notify';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { buildPdfHtml, printHtml } from '../utils/pdfGenerator';
+import { PressableScale } from './PressableScale';
+import { pressScale } from '../theme/motion';
 import Svg, {
   Path, Defs, LinearGradient as SvgGradient, Stop, Filter,
   FeGaussianBlur, FeOffset, FeComponentTransfer, FeFuncA, FeMerge, FeMergeNode, Line
@@ -368,13 +370,13 @@ function BackendStatusChip({ item, esDueno, isExpanded, onToggleExpand, ordenId 
       ) : null}
 
       {esDueno ? (
-        <Pressable
+        <PressableScale
           onPress={handleReencolar}
           disabled={reencolar.isPending}
-          style={({ pressed }) => [
+          dimmed={reencolar.isPending}
+          style={[
             styles.backendRetryBtn,
             { borderColor: colors.primary + '40', backgroundColor: colors.primary + '10', marginTop: 4 },
-            (pressed || reencolar.isPending) && { opacity: 0.7 },
           ]}
         >
           {reencolar.isPending ? (
@@ -385,7 +387,7 @@ function BackendStatusChip({ item, esDueno, isExpanded, onToggleExpand, ordenId 
               <Text style={[styles.backendRetryText, { color: colors.primary }]}>Reintentar Sincronización</Text>
             </>
           )}
-        </Pressable>
+        </PressableScale>
       ) : null}
     </View>
   );
@@ -559,12 +561,12 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
           onPress={closeModal}
         />
         <View style={styles.modalCloseContainer}>
-          <Pressable 
-            onPress={handleDownloadPdf} 
-            style={({ pressed }) => [
+          <PressableScale
+            onPress={handleDownloadPdf}
+            activeScale={pressScale.icon}
+            style={[
               styles.modalCloseBtn,
-              { 
-                opacity: pressed ? 0.7 : 1, 
+              {
                 marginRight: 10,
                 backgroundColor: colors.primary + '20',
                 borderColor: colors.primary + '40'
@@ -572,16 +574,14 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
             ]}
           >
             <Feather name="download" size={20} color={colors.primary} />
-          </Pressable>
-          <Pressable 
-            onPress={closeModal} 
-            style={({ pressed }) => [
-              styles.modalCloseBtn,
-              { opacity: pressed ? 0.7 : 1 }
-            ]}
+          </PressableScale>
+          <PressableScale
+            onPress={closeModal}
+            activeScale={pressScale.icon}
+            style={styles.modalCloseBtn}
           >
             <Feather name="x" size={24} color="#FFF" />
-          </Pressable>
+          </PressableScale>
         </View>
         <Animated.View 
           style={[
@@ -687,25 +687,25 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
                         </View>
                         {puedeAprobar && (
                           <View style={styles.approvalActions}>
-                            <Pressable
+                            <PressableScale
                               disabled={resolviendo}
+                              dimmed={resolviendo}
                               onPress={handleRechazar}
-                              style={({ pressed }) => [
+                              style={[
                                 styles.approvalBtn,
                                 { borderColor: colors.danger + '55', backgroundColor: colors.danger + '12' },
-                                (pressed || resolviendo) && { opacity: 0.6 },
                               ]}
                             >
                               <Feather name="x" size={14} color={colors.danger} />
                               <Text style={[styles.approvalBtnText, { color: colors.danger }]}>Rechazar</Text>
-                            </Pressable>
-                            <Pressable
+                            </PressableScale>
+                            <PressableScale
                               disabled={resolviendo}
+                              dimmed={resolviendo}
                               onPress={handleAprobar}
-                              style={({ pressed }) => [
+                              style={[
                                 styles.approvalBtn,
                                 { borderColor: colors.success + '55', backgroundColor: colors.success + '12' },
-                                (pressed || resolviendo) && { opacity: 0.6 },
                               ]}
                             >
                               {resolviendo ? (
@@ -716,7 +716,7 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
                                   <Text style={[styles.approvalBtnText, { color: colors.success }]}>Aprobar</Text>
                                 </>
                               )}
-                            </Pressable>
+                            </PressableScale>
                           </View>
                         )}
                       </View>

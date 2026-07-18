@@ -5,7 +5,6 @@ import {
   Text,
   TextInput,
   StyleSheet,
-  Pressable,
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
@@ -20,6 +19,8 @@ import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 import { ProductRow } from '../../src/components/ProductRow';
 import { BarcodeScannerModal } from '../../src/components/BarcodeScannerModal';
+import { PressableScale } from '../../src/components/PressableScale';
+import { pressScale } from '../../src/theme/motion';
 import type { Producto } from '../../src/lib/supabase';
 
 const FILTERS: { key: StockFilter; label: string }[] = [
@@ -110,13 +111,13 @@ export default function Inventario() {
             clearButtonMode="while-editing"
           />
           {search.length > 0 && (
-            <Pressable onPress={() => setSearch('')} hitSlop={8} style={({ pressed }) => [{ marginRight: 6 }, pressed && { opacity: 0.6 }]}>
+            <PressableScale onPress={() => setSearch('')} hitSlop={8} style={{ marginRight: 6 }} activeScale={pressScale.icon}>
               <Feather name="x" size={16} color={colors.textMuted} />
-            </Pressable>
+            </PressableScale>
           )}
-          <Pressable onPress={() => setScannerVisible(true)} hitSlop={8} style={({ pressed }) => pressed && { opacity: 0.6 }}>
+          <PressableScale onPress={() => setScannerVisible(true)} hitSlop={8} activeScale={pressScale.icon}>
             <Feather name="camera" size={18} color={colors.primary} />
-          </Pressable>
+          </PressableScale>
         </View>
 
         {/* Filter chips */}
@@ -129,15 +130,14 @@ export default function Inventario() {
             {FILTERS.map(f => {
               const active = filter === f.key;
               return (
-                <Pressable
+                <PressableScale
                   key={f.key}
-                  style={({ pressed }) => [
+                  style={[
                     styles.chip,
                     {
                       backgroundColor: active ? colors.primary : colors.surfaceAlt,
                       borderColor:     active ? colors.primary : colors.border,
                     },
-                    pressed && { opacity: 0.75 },
                   ]}
                   onPress={() => setFilter(f.key)}
                 >
@@ -147,7 +147,7 @@ export default function Inventario() {
                   ]} numberOfLines={1} adjustsFontSizeToFit>
                     {f.label}
                   </Text>
-                </Pressable>
+                </PressableScale>
               );
             })}
           </ScrollView>

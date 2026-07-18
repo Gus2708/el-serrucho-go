@@ -5,7 +5,6 @@ import {
   Text,
   StyleSheet,
   TextInput,
-  Pressable,
   ScrollView,
   ActivityIndicator,
   Platform,
@@ -17,6 +16,8 @@ import { useProductos, isPlaceholder } from '../hooks/useProductos';
 import { useFallas } from '../hooks/useFallas';
 import { useUserRole } from '../hooks/useUserRole';
 import { notify, confirm } from '../lib/notify';
+import { PressableScale } from './PressableScale';
+import { pressScale } from '../theme/motion';
 
 export default function FallasView() {
   const { colors } = useTheme();
@@ -111,16 +112,16 @@ export default function FallasView() {
             onSubmitEditing={handleAddCustom}
           />
           {search.length > 0 && (
-            <Pressable
-              style={({ pressed }) => [
+            <PressableScale
+              style={[
                 styles.addBtn,
                 { backgroundColor: colors.primary },
-                pressed && { opacity: 0.7 }
               ]}
+              activeScale={pressScale.icon}
               onPress={handleAddCustom}
             >
               <Feather name="plus" size={16} color={colors.onPrimary} />
-            </Pressable>
+            </PressableScale>
           )}
         </View>
 
@@ -129,13 +130,13 @@ export default function FallasView() {
           <View style={[styles.dropdown, { backgroundColor: colors.surface, borderColor: colors.border, shadowColor: colors.text }]}>
             <ScrollView style={{ maxHeight: 312 }} keyboardShouldPersistTaps="handled">
               {searchResults.map((prod) => (
-                <Pressable
+                <PressableScale
                   key={prod.codigo_interno}
-                  style={({ pressed }) => [
+                  style={[
                     styles.dropdownItem,
                     { borderBottomColor: colors.border },
-                    pressed && { backgroundColor: colors.bg }
                   ]}
+                  activeScale={pressScale.row}
                   onPress={() => handleAddProduct(prod)}
                 >
                   <Feather name="box" size={14} color={colors.textDim} />
@@ -147,7 +148,7 @@ export default function FallasView() {
                       {prod.codigo_interno}
                     </Text>
                   </View>
-                </Pressable>
+                </PressableScale>
               ))}
             </ScrollView>
           </View>
@@ -168,17 +169,18 @@ export default function FallasView() {
               { borderBottomColor: colors.border }
             ]}
           >
-            <Pressable 
+            <PressableScale
               hitSlop={12}
-              style={({ pressed }) => [styles.checkBtn, pressed && { opacity: 0.7, transform: [{ scale: 0.95 }] }]}
+              style={[styles.checkBtn]}
+              activeScale={pressScale.icon}
               onPress={() => togglePedido({ id: falla.id, currentStatus: falla.pedido })}
             >
-              <Feather 
-                name={falla.pedido ? "check-square" : "square"} 
-                size={22} 
-                color={falla.pedido ? colors.primary : colors.textDim} 
+              <Feather
+                name={falla.pedido ? "check-square" : "square"}
+                size={22}
+                color={falla.pedido ? colors.primary : colors.textDim}
               />
-            </Pressable>
+            </PressableScale>
             
               <View style={styles.rowTextContainer}>
               <Text 
@@ -195,13 +197,14 @@ export default function FallasView() {
               </Text>
             </View>
 
-            <Pressable
+            <PressableScale
               hitSlop={12}
-              style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.5, backgroundColor: colors.danger + '22', borderRadius: 6 }]}
+              style={[styles.deleteBtn]}
+              activeScale={pressScale.icon}
               onPress={() => handleDelete(falla.id)}
             >
               <Feather name="trash-2" size={16} color={colors.danger} />
-            </Pressable>
+            </PressableScale>
           </View>
         ))}
 

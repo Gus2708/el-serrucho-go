@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { scaleFont } from '../theme/responsive';
@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import { notify } from '../lib/notify';
 import { useComprasHistory, CompraConItems, fetchCompraItemsForEdit } from '../hooks/useComprasHistory';
 import { useCompra } from '../hooks/useCompra';
+import { PressableScale } from './PressableScale';
 
 interface ComprasHistorialViewProps {
   onEditRetry?: () => void;   // navega a "Nueva compra" tras precargar el draft
@@ -172,23 +173,23 @@ function CompraHistCard({ compra, expanded, onToggleExpand, onEditRetry, isLoadi
       {/* Acciones para compras en error: siempre visibles en la card */}
       {showResultado ? (
         <View style={styles.actionRow}>
-          <Pressable
+          <PressableScale
             onPress={onToggleExpand}
             hitSlop={6}
-            style={({ pressed }) => [styles.expandHintRow, pressed && { opacity: 0.7 }]}
+            style={styles.expandHintRow}
           >
             <Text style={[styles.expandHint, { color: colors.danger }]}>
               {expanded ? 'Ocultar detalle' : 'Ver detalle del error'}
             </Text>
             <Feather name={expanded ? 'chevron-up' : 'chevron-down'} size={12} color={colors.danger} />
-          </Pressable>
-          <Pressable
+          </PressableScale>
+          <PressableScale
             onPress={onEditRetry}
             disabled={isLoadingEdit}
-            style={({ pressed }) => [
+            dimmed={isLoadingEdit}
+            style={[
               styles.editRetryBtn,
               { backgroundColor: colors.primary },
-              (pressed || isLoadingEdit) && { opacity: 0.7 },
             ]}
           >
             {isLoadingEdit ? (
@@ -199,7 +200,7 @@ function CompraHistCard({ compra, expanded, onToggleExpand, onEditRetry, isLoadi
                 <Text style={[styles.editRetryBtnText, { color: colors.onPrimary }]}>Editar y reintentar</Text>
               </>
             )}
-          </Pressable>
+          </PressableScale>
         </View>
       ) : null}
     </View>

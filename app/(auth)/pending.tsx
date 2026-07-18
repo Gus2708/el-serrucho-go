@@ -1,12 +1,13 @@
 import { scaleFont } from '../../src/theme/responsive';
 import React from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../src/lib/supabase';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { useUserRole } from '../../src/hooks/useUserRole';
 import { StatusBar } from 'expo-status-bar';
+import { PressableScale } from '../../src/components/PressableScale';
 
 const logo = require('../../src/assets/img/EL SERRUCHO go.png');
 
@@ -51,28 +52,21 @@ export default function PendingActivation() {
           {isLoading ? (
             <ActivityIndicator size="small" color={colors.primary} style={styles.spacer} />
           ) : (
-            <Pressable 
-              style={({ pressed }) => [
-                styles.refreshBtn, 
-                { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
-                pressed && { opacity: 0.7 }
-              ]}
+            <PressableScale
+              style={[styles.refreshBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
               onPress={() => refetch()}
             >
               <Text style={[styles.refreshText, { color: colors.text }]}>Verificar estado</Text>
-            </Pressable>
+            </PressableScale>
           )}
         </View>
 
-        <Pressable 
-          style={({ pressed }) => [
-            styles.logoutBtn, 
-            pressed && { opacity: 0.7 }
-          ]}
+        <PressableScale
+          style={styles.logoutBtn}
           onPress={handleLogout}
         >
           <Text style={[styles.logoutText, { color: colors.danger }]}>Cerrar sesión</Text>
-        </Pressable>
+        </PressableScale>
       </View>
     </View>
   );

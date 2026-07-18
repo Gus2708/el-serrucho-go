@@ -1,9 +1,11 @@
 import { scaleFont } from '../theme/responsive';
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Pressable, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, StyleSheet, Animated, ActivityIndicator, Platform } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 import { useSyncStatus } from '../hooks/useSyncStatus';
 import { notify, confirm } from '../lib/notify';
+import { PressableScale } from './PressableScale';
+import { pressScale } from '../theme/motion';
 import { Feather } from '@expo/vector-icons';
 
 export function SyncBadge() {
@@ -64,25 +66,25 @@ export function SyncBadge() {
         <Text style={[styles.tagText, { color: tagColor }]}>{tag}</Text>
       </View>
 
-      <Pressable
-        style={({ pressed }) => [
+      <PressableScale
+        style={[
           styles.syncButton,
           { backgroundColor: (isClosed || isRecess) ? colors.border : isStuck ? colors.danger + '15' : colors.primary + '15' },
-          pressed && !isClosed && !isRecess && { opacity: 0.7 },
         ]}
+        activeScale={pressScale.icon}
         onPress={handleSync}
         disabled={(isSyncing && !isStuck) || isRecess}
       >
         {isSyncing && !isStuck ? (
           <ActivityIndicator size="small" color={colors.primary} />
         ) : (
-          <Feather 
-            name={isClosed ? 'moon' : isRecess ? 'coffee' : isStuck ? 'alert-triangle' : 'refresh-cw'} 
-            size={14} 
-            color={isClosed ? colors.textMuted : isRecess ? colors.warning : isStuck ? colors.danger : colors.primary} 
+          <Feather
+            name={isClosed ? 'moon' : isRecess ? 'coffee' : isStuck ? 'alert-triangle' : 'refresh-cw'}
+            size={14}
+            color={isClosed ? colors.textMuted : isRecess ? colors.warning : isStuck ? colors.danger : colors.primary}
           />
         )}
-      </Pressable>
+      </PressableScale>
     </View>
   );
 }
