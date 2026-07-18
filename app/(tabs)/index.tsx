@@ -554,7 +554,7 @@ export default function Index() {
               <Text style={[styles.sectionLabel, { color: colors.textMuted }, isDesktop && { paddingHorizontal: 0 }]}>Tendencia de Ganancia</Text>
               <GananciaChart data={daily7} mode="ganancia" />
             </View>
-            <View style={[{ gap: 8 }, isDesktop && { flex: 1 }]}>
+            <View style={[{ gap: 8, marginTop: 16 }, isDesktop && { flex: 1, marginTop: 0 }]}>
               <Text style={[styles.sectionLabel, { color: colors.textMuted }, isDesktop && { paddingHorizontal: 0 }]}>Tendencia de Ingreso</Text>
               <GananciaChart data={daily7} mode="ingreso" />
             </View>

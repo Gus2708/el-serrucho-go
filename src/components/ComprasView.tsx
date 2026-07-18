@@ -853,14 +853,12 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  scroll: { paddingTop: 12, gap: 8 },
+  scroll: { paddingTop: 12, paddingBottom: 24, gap: 12 },
 
   infoBanner: {
     flexDirection:    'row',
     alignItems:       'flex-start',
     marginHorizontal: 16,
-    marginTop:        12,
-    marginBottom:     8,
     padding:          12,
     borderRadius:     12,
     borderWidth:      0.5,
@@ -904,6 +902,7 @@ const styles = StyleSheet.create({
     flexDirection:    'row',
     gap:              8,
     marginHorizontal: 16,
+    marginTop:        4,
   },
   addProductBtn: {
     flex:              1,
