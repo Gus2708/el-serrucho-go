@@ -16,7 +16,7 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../src/theme/ThemeContext';
 import { notify } from '../src/lib/notify';
-import { UserRole } from '../src/lib/supabase';
+import { UserRole, Profile, NotifPrefs } from '../src/lib/supabase';
 import { useUserRole } from '../src/hooks/useUserRole';
 import { useUsuarios, useUpdateUsuario } from '../src/hooks/useUsuarios';
 import { PressableScale } from '../src/components/PressableScale';
@@ -27,6 +27,53 @@ const ROLES: { value: UserRole; label: string }[] = [
   { value: 'superempleado', label: 'Super' },
   { value: 'admin',         label: 'Admin' },
 ];
+
+// Notification categories togglable per user. Opt-out semantics live in the
+// send-push edge function (absent/true = enabled, false = disabled). "zelle"
+// groups pagos + alertas de estafa; "bots" groups atenciones + solicitudes.
+const NOTIF_CATS: { key: keyof NotifPrefs; label: string; icon: keyof typeof Feather.glyphMap }[] = [
+  { key: 'bots',  label: 'Bots (atenciones · solicitudes)', icon: 'message-circle' },
+  { key: 'zelle', label: 'Zelle (pagos · estafa)',          icon: 'dollar-sign' },
+];
+
+type NotifToggleRowProps = {
+  icon:     keyof typeof Feather.glyphMap;
+  label:    string;
+  enabled:  boolean;
+  disabled: boolean;
+  onToggle: () => void;
+};
+
+function NotifToggleRow({ icon, label, enabled, disabled, onToggle }: NotifToggleRowProps): React.JSX.Element {
+  const { colors } = useTheme();
+  return (
+    <View style={styles.notifRow}>
+      <Feather name={icon} size={14} color={colors.textMuted} />
+      <Text style={[styles.notifLabel, { color: colors.text }]} numberOfLines={1}>{label}</Text>
+      <Pressable
+        disabled={disabled}
+        onPress={onToggle}
+        hitSlop={8}
+        style={({ pressed }) => [
+          styles.toggleTrack,
+          { backgroundColor: enabled ? colors.primary : colors.border },
+          pressed && { opacity: 0.7 },
+          disabled && { opacity: 0.4 },
+        ]}
+      >
+        <View
+          style={[
+            styles.toggleKnob,
+            {
+              backgroundColor: enabled ? colors.onPrimary : colors.textMuted,
+              alignSelf:       enabled ? 'flex-end' : 'flex-start',
+            },
+          ]}
+        />
+      </Pressable>
+    </View>
+  );
+}
 
 export default function AdminUsuarios(): React.JSX.Element {
   const { colors } = useTheme();
@@ -61,6 +108,19 @@ export default function AdminUsuarios(): React.JSX.Element {
     setSavingId(id);
     updateUsuario.mutate(
       { id, is_active },
+      {
+        onError: (e: Error) => notify('Error', e.message),
+        onSettled: () => setSavingId(null),
+      },
+    );
+  }
+
+  function handleToggleNotif(u: Profile, key: keyof NotifPrefs): void {
+    const enabled = u.notif_prefs?.[key] !== false;
+    const nextPrefs: NotifPrefs = { ...u.notif_prefs, [key]: !enabled };
+    setSavingId(u.id);
+    updateUsuario.mutate(
+      { id: u.id, notif_prefs: nextPrefs },
       {
         onError: (e: Error) => notify('Error', e.message),
         onSettled: () => setSavingId(null),
@@ -197,6 +257,21 @@ export default function AdminUsuarios(): React.JSX.Element {
                     </Text>
                   ) : null}
                 </PressableScale>
+
+                {/* Preferencias de notificaciones por categoría */}
+                <View style={[styles.notifSection, { borderColor: colors.border }]}>
+                  <Text style={[styles.notifSectionTitle, { color: colors.textDim }]}>NOTIFICACIONES</Text>
+                  {NOTIF_CATS.map(cat => (
+                    <NotifToggleRow
+                      key={cat.key}
+                      icon={cat.icon}
+                      label={cat.label}
+                      enabled={u.notif_prefs?.[cat.key] !== false}
+                      disabled={saving}
+                      onToggle={() => handleToggleNotif(u, cat.key)}
+                    />
+                  ))}
+                </View>
               </View>
             );
           })}
@@ -274,4 +349,11 @@ const styles = StyleSheet.create({
   },
   activeText: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold' },
   activeAction: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', marginLeft: 'auto' },
+
+  notifSection: { borderTopWidth: 0.5, paddingTop: 10, gap: 8 },
+  notifSectionTitle: { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1 },
+  notifRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  notifLabel: { flex: 1, fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_500Medium' },
+  toggleTrack: { width: 42, height: 24, borderRadius: 999, padding: 3, justifyContent: 'center' },
+  toggleKnob: { width: 18, height: 18, borderRadius: 999 },
 });

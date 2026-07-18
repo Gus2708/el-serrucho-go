@@ -99,20 +99,43 @@ Deno.serve(async (req) => {
     const { data: allSubs } = await supabase.from('push_subscriptions').select('id, subscription, empleado_id');
     let subs = allSubs || [];
 
-    if (table === 'pagos_zelle') {
-      // Los montos de Zelle solo van a admin/superempleado activos.
-      const { data: privs } = await supabase
-        .from('profiles')
-        .select('id')
-        .in('role', ['admin', 'superempleado'])
-        .eq('is_active', true);
-      const allowed = new Set((privs || []).map((p) => p.id));
-      subs = subs.filter((s) => s.empleado_id && allowed.has(s.empleado_id));
-    } else if (table === 'alertas_zelle_spoof') {
-      // Intento de estafa: alerta a TODOS los empleados activos, no solo privilegiados.
+    if (table === 'pagos_zelle' || table === 'alertas_zelle_spoof') {
+      // Zelle (pagos + estafa) → a TODOS los empleados activos. Coincide con la
+      // política de lectura (migración 031: is_active_employee abrió Zelle a
+      // cualquier empleado). El privilegio de admin (lista completa vs. últimos 5
+      // y conciliar) vive en app/pagos.tsx, NO en el push. El opt-out por usuario
+      // se aplica más abajo.
       const { data: actives } = await supabase.from('profiles').select('id').eq('is_active', true);
       const allowed = new Set((actives || []).map((p) => p.id));
       subs = subs.filter((s) => s.empleado_id && allowed.has(s.empleado_id));
+    }
+
+    // Opt-out por usuario: cada empleado puede silenciar una categoría entera desde
+    // el gestor de usuarios. Categorías: "zelle" (pagos + alertas de estafa) y "bots"
+    // (atenciones + solicitudes). Semántica opt-out: solo un `false` explícito en
+    // profiles.notif_prefs la desactiva; ausente = sigue recibiendo. Se aplica
+    // DESPUÉS del filtro de empleados activos: solo puede reducir, nunca ampliar.
+    let category: 'bots' | 'zelle' | null = null;
+    if (table === 'pagos_zelle' || table === 'alertas_zelle_spoof') {
+      category = 'zelle';
+    } else if (rec) {
+      category = 'bots';
+    }
+
+    if (category) {
+      const empleadoIds = [...new Set(subs.map((s) => s.empleado_id).filter(Boolean))];
+      if (empleadoIds.length > 0) {
+        const { data: prefsRows } = await supabase
+          .from('profiles')
+          .select('id, notif_prefs')
+          .in('id', empleadoIds);
+        const silenced = new Set(
+          (prefsRows || [])
+            .filter((p) => p.notif_prefs?.[category!] === false)
+            .map((p) => p.id),
+        );
+        subs = subs.filter((s) => !s.empleado_id || !silenced.has(s.empleado_id));
+      }
     }
 
     const notifPayload = JSON.stringify({ title, body, url: url || '/', urgent });

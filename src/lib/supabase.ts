@@ -140,12 +140,21 @@ export type PresupuestoDetalle = {
 
 export type UserRole = 'admin' | 'superempleado' | 'empleado';
 
+// Per-user notification opt-out. Opt-out semantics: an absent key means the
+// category is enabled; only an explicit `false` disables it. Read by the
+// send-push edge function and managed by admins in the user manager.
+export type NotifPrefs = {
+  bots?:  boolean;
+  zelle?: boolean;
+};
+
 export type Profile = {
   id:           string;
   role:         UserRole;
   email:        string | null;
   display_name: string | null;
   is_active?:   boolean;
+  notif_prefs?: NotifPrefs;
   updated_at:   string;
 };
 
