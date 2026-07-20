@@ -24,6 +24,8 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { uploadPdfAndGetUrl } from '../../src/lib/pdfStorage';
 import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
+import { useTazas } from '../../src/hooks/useTazas';
+import { usePresupuestoConfig } from '../../src/hooks/usePresupuestoConfig';
 
 export default function ProductoDetail() {
   const { colors, tokens, formatUSD } = useTheme();
@@ -42,6 +44,12 @@ export default function ProductoDetail() {
   const pendingDelta = movimientos?.find(m => m.backend_status === 'pendiente' || m.backend_status === 'aplicando')?.cantidad ?? 0;
 
   const [selectedVentaId, setSelectedVentaId] = useState<number | null>(null);
+
+  // BCV + markup for Bs pricing
+  const { data: tasa } = useTazas();
+  const { data: presupConfig } = usePresupuestoConfig();
+  const bcv = tasa?.bcv_usd ?? 0;
+  const markupPct = presupConfig?.markup_porcentaje ?? 30;
 
   const { data: selectedVenta, isLoading: isLoadingVenta } = useQuery({
     queryKey: ['venta-hoy-single', selectedVentaId],
@@ -223,20 +231,38 @@ export default function ProductoDetail() {
           </View>
 
           {/* Pricing + margin */}
-          <View style={styles.row2}>
-            <StatCard
-              label="Precio venta"
-              value={formatUSD(producto.precio_venta)}
-              valueColor={colors.primary}
-              bg={colors.surface}
-              border={colors.border}
-            />
-            <StatCard
-              label="Costo"
-              value={formatUSD(producto.costo)}
-              bg={colors.surface}
-              border={colors.border}
-            />
+          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.sectionLabel, { color: colors.textMuted, marginBottom: 8 }]}>Precios</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              {/* Precio Venta column */}
+              <View style={{ gap: 4 }}>
+                <Text style={[styles.label, { color: colors.textMuted }]}>Precio venta</Text>
+                <Text style={{ fontSize: scaleFont(22), fontFamily: 'JetBrainsMono_700Bold', color: colors.primary }}>
+                  {formatUSD(producto.precio_venta)}
+                </Text>
+                {bcv > 0 && (() => {
+                  const precioMarkup = parseFloat((producto.precio_venta * (1 + markupPct / 100)).toFixed(2));
+                  const precioBs = precioMarkup * bcv;
+                  return (
+                    <View style={{ gap: 2, marginTop: 2 }}>
+                      <Text style={{ fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium', color: colors.textMuted }}>
+                        +{markupPct}%  {formatUSD(precioMarkup)}
+                      </Text>
+                      <Text style={{ fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular', color: colors.textDim }}>
+                        Bs {precioBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </Text>
+                    </View>
+                  );
+                })()}
+              </View>
+              {/* Costo column */}
+              <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                <Text style={[styles.label, { color: colors.textMuted }]}>Costo</Text>
+                <Text style={{ fontSize: scaleFont(18), fontFamily: 'JetBrainsMono_700Bold', color: colors.text }}>
+                  {formatUSD(producto.costo)}
+                </Text>
+              </View>
+            </View>
           </View>
 
           <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>

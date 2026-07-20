@@ -11,10 +11,12 @@ import type { Producto } from '../lib/supabase';
 
 interface Props {
   producto: Producto;
-  onPress:  (codigo: string) => void;   // dispatcher pattern: pass scalar id, not closure
+  onPress:  (codigo: string) => void;
+  bcv?:     number;           // BCV rate for Bs conversion
+  markupPct?: number;         // markup % for Bs pricing (default 30)
 }
 
-function ProductRowImpl({ producto, onPress }: Props): React.ReactElement {
+function ProductRowImpl({ producto, onPress, bcv = 0, markupPct = 30 }: Props): React.ReactElement {
   const { colors } = useTheme();
   const { stockColor, stockLabel } = getStockInfo(producto, colors);
   const margin     = getMarginPct(producto);
@@ -22,6 +24,10 @@ function ProductRowImpl({ producto, onPress }: Props): React.ReactElement {
 
   // Stable: handler depends only on the codigo + dispatcher
   const handlePress = useCallback(() => onPress(producto.codigo_interno), [onPress, producto.codigo_interno]);
+
+  // Derived Bs pricing
+  const precioMarkup = parseFloat((producto.precio_venta * (1 + markupPct / 100)).toFixed(2));
+  const precioBs = bcv > 0 ? precioMarkup * bcv : 0;
 
   const content = (
     <>
@@ -32,7 +38,19 @@ function ProductRowImpl({ producto, onPress }: Props): React.ReactElement {
           <Text style={[styles.name, { color: colors.text }]} numberOfLines={2}>
             {producto.descripcion}
           </Text>
-          <CurrencyText amount={producto.precio_venta} style={styles.price} primary />
+          <View style={styles.priceStack}>
+            <CurrencyText amount={producto.precio_venta} style={styles.price} primary />
+            {bcv > 0 && (
+              <>
+                <Text style={[styles.priceMarkup, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
+                  +{markupPct}% ${precioMarkup.toFixed(2)}
+                </Text>
+                <Text style={[styles.priceBs, { color: colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>
+                  Bs {precioBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </Text>
+              </>
+            )}
+          </View>
         </View>
 
         <View style={styles.bottom}>
@@ -92,7 +110,9 @@ export const ProductRow = memo(ProductRowImpl, (prev, next) =>
   prev.producto.costo           === next.producto.costo &&
   prev.producto.descripcion     === next.producto.descripcion &&
   prev.producto.referencia      === next.producto.referencia &&
-  prev.onPress                  === next.onPress
+  prev.onPress                  === next.onPress &&
+  prev.bcv                      === next.bcv &&
+  prev.markupPct                === next.markupPct
 );
 
 function getStockInfo(
@@ -129,7 +149,10 @@ const styles = StyleSheet.create({
   body:   { flex: 1, paddingVertical: 12, paddingHorizontal: 12, gap: 4 },
   top:    { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
   name:   { flex: 1, fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_400Regular', lineHeight: scaleFont(19) },
+  priceStack: { alignItems: 'flex-end', gap: 1, flexShrink: 0 },
   price:  { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
+  priceMarkup: { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_500Medium' },
+  priceBs:     { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_400Regular' },
   bottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 2 },
   meta:   { fontSize: scaleFont(11), flex: 1, fontFamily: 'JetBrainsMono_400Regular' },
   badges: { flexDirection: 'row', gap: 4 },

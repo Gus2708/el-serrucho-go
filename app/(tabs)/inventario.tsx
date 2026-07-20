@@ -17,6 +17,8 @@ import { useTheme } from '../../src/theme/ThemeContext';
 import { useProductos, StockFilter } from '../../src/hooks/useProductos';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
+import { useTazas } from '../../src/hooks/useTazas';
+import { usePresupuestoConfig } from '../../src/hooks/usePresupuestoConfig';
 import { ProductRow } from '../../src/components/ProductRow';
 import { BarcodeScannerModal } from '../../src/components/BarcodeScannerModal';
 import { PressableScale } from '../../src/components/PressableScale';
@@ -37,6 +39,11 @@ export default function Inventario() {
   const { isDesktop } = useDeviceSize();
   const [scannerVisible, setScannerVisible] = useState(false);
   const { search, filter, scrollOffset, setSearch, setFilter, setScrollOffset } = useInventarioStore();
+
+  const { data: tasa } = useTazas();
+  const { data: presupConfig } = usePresupuestoConfig();
+  const bcv = tasa?.bcv_usd ?? 0;
+  const markupPct = presupConfig?.markup_porcentaje ?? 30;
 
   const { productos, isLoading, isFetchingMore, hasMore, fetchMore, error } = useProductos(search, filter);
 
@@ -70,9 +77,9 @@ export default function Inventario() {
   // Stable renderItem — extracted out of JSX so reference doesn't change per render
   const renderItem = useCallback(
     ({ item }: { item: Producto }) => (
-      <ProductRow producto={item} onPress={handlePress} />
+      <ProductRow producto={item} onPress={handlePress} bcv={bcv} markupPct={markupPct} />
     ),
-    [handlePress]
+    [handlePress, bcv, markupPct]
   );
 
   const keyExtractor = useCallback((p: Producto) => p.codigo_interno, []);
