@@ -19,6 +19,7 @@ import { notify, confirm } from '../src/lib/notify';
 import { useTheme } from '../src/theme/ThemeContext';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUserRole } from '../src/hooks/useUserRole';
+import { usePresupuestoConfig } from '../src/hooks/usePresupuestoConfig';
 import { usePWAInstallStore } from '../src/hooks/usePWAInstall';
 import { PressableScale } from '../src/components/PressableScale';
 import { pressScale } from '../src/theme/motion';
@@ -99,6 +100,12 @@ export default function Perfil() {
   } | null>(null);
   
   const [newName, setNewName] = useState('');
+
+  // ── Markup % (admin only) ──
+  const { data: presupuestoConfig } = usePresupuestoConfig();
+  const [isEditingMarkup, setIsEditingMarkup] = useState(false);
+  const [markupInput, setMarkupInput] = useState('');
+  const [savingMarkup, setSavingMarkup] = useState(false);
 
   useEffect(() => {
     fetchProfile();
@@ -285,17 +292,109 @@ export default function Perfil() {
 
         <PWAProfileControl />
 
-        {/* Gestión de usuarios — solo admin */}
+        {/* Configuración admin */}
         {profile?.role === 'admin' && (
-          <PressableScale
-            style={[styles.adminRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={() => router.push('/admin-usuarios')}
-            activeScale={pressScale.row}
-          >
-            <Feather name="users" size={18} color={colors.primary} />
-            <Text style={[styles.adminRowText, { color: colors.text }]}>Gestionar usuarios</Text>
-            <Feather name="chevron-right" size={18} color={colors.textDim} />
-          </PressableScale>
+          <View style={{ gap: 10 }}>
+            {/* Gestión de usuarios */}
+            <PressableScale
+              style={[styles.adminRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => router.push('/admin-usuarios')}
+              activeScale={pressScale.row}
+            >
+              <Feather name="users" size={18} color={colors.primary} />
+              <Text style={[styles.adminRowText, { color: colors.text }]}>Gestionar usuarios</Text>
+              <Feather name="chevron-right" size={18} color={colors.textDim} />
+            </PressableScale>
+
+            {/* Markup % Bs */}
+            <View style={[styles.adminRow, { backgroundColor: colors.surface, borderColor: colors.border, paddingVertical: 0 }]}>
+              <Feather name="percent" size={18} color={colors.primary} />
+              <Text style={[styles.adminRowText, { color: colors.text }]}>Recargo Bs</Text>
+
+              {isEditingMarkup ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <TextInput
+                    style={{
+                      fontSize: scaleFont(16),
+                      fontFamily: 'JetBrainsMono_700Bold',
+                      color: colors.text,
+                      borderBottomWidth: 1,
+                      borderBottomColor: colors.primary,
+                      minWidth: 50,
+                      textAlign: 'center',
+                      paddingVertical: 2,
+                    }}
+                    value={markupInput}
+                    onChangeText={setMarkupInput}
+                    keyboardType="numeric"
+                    autoFocus
+                    selectTextOnFocus
+                  />
+                  <Text style={{ fontSize: scaleFont(14), color: colors.textDim, fontFamily: 'JetBrainsMono_700Bold' }}>%</Text>
+
+                  {savingMarkup ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <>
+                      <PressableScale
+                        activeScale={pressScale.icon}
+                        style={[styles.editBtn, { backgroundColor: colors.primary }]}
+                        onPress={async () => {
+                          const val = parseFloat(markupInput);
+                          if (isNaN(val) || val < 0 || val > 999) {
+                            notify('Error', 'Ingrese un porcentaje válido (0-999)');
+                            return;
+                          }
+                          setSavingMarkup(true);
+                          try {
+                            const { error } = await supabase
+                              .from('presupuesto_config')
+                              .update({ markup_porcentaje: val })
+                              .eq('id', 1);
+                            if (error) throw error;
+                            queryClient.invalidateQueries({ queryKey: ['presupuesto-config'] });
+                            setIsEditingMarkup(false);
+                            notify('Listo', `Recargo actualizado a ${val}%`);
+                          } catch (err: any) {
+                            notify('Error', err.message);
+                          } finally {
+                            setSavingMarkup(false);
+                          }
+                        }}
+                      >
+                        <Feather name="check" size={14} color={colors.onPrimary} />
+                      </PressableScale>
+                      <PressableScale
+                        activeScale={pressScale.icon}
+                        style={[styles.editBtn, { backgroundColor: colors.bg }]}
+                        onPress={() => setIsEditingMarkup(false)}
+                      >
+                        <Feather name="x" size={14} color={colors.textDim} />
+                      </PressableScale>
+                    </>
+                  )}
+                </View>
+              ) : (
+                <PressableScale
+                  activeScale={pressScale.icon}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                  onPress={() => {
+                    setMarkupInput(String(presupuestoConfig?.markup_porcentaje ?? 30));
+                    setIsEditingMarkup(true);
+                  }}
+                >
+                  <Text style={{
+                    fontSize: scaleFont(18),
+                    fontFamily: 'JetBrainsMono_700Bold',
+                    color: colors.primary,
+                  }}>
+                    {presupuestoConfig?.markup_porcentaje ?? 30}%
+                  </Text>
+                  <Feather name="edit-2" size={14} color={colors.textDim} />
+                </PressableScale>
+              )}
+            </View>
+          </View>
         )}
 
         {/* Salida */}
