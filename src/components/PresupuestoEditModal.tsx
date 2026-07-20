@@ -229,14 +229,34 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
     });
   }
 
-  const getDisplayUsdPrice = (precio: number, originalPrecio: number) => {
-    if (!enBs) return precio;
-    const isMarkupApplied = precio !== originalPrecio;
-    if (isMarkupApplied) return precio;
-    return Number((precio * (1 + (porcentajeRecargo || 30) / 100)).toFixed(2));
-  };
+  /** Al cambiar a Bs: aplica markup a todos los items de golpe.
+   *  Al volver a USD: revierte cada item a su precio_venta original. */
+  function handleToggleBs(toBs: boolean): void {
+    if (toBs) {
+      items.forEach(item => {
+        const isAlreadyMarked = item.precio_unitario !== item.precioVentaOriginal;
+        if (!isAlreadyMarked) {
+          const newPrice = parseFloat((item.precioVentaOriginal * (1 + markup_porcentaje / 100)).toFixed(2));
+          setPrice(item.codigo_producto, newPrice);
+          setPriceInputs(prev => ({ ...prev, [item.codigo_producto]: String(newPrice) }));
+        }
+      });
+      setEnBs(true);
+      setTasaCambio(bcv);
+      setPorcentajeRecargo(markup_porcentaje);
+    } else {
+      items.forEach(item => {
+        setPrice(item.codigo_producto, item.precioVentaOriginal);
+        setPriceInputs(prev => ({ ...prev, [item.codigo_producto]: String(item.precioVentaOriginal) }));
+      });
+      setEnBs(false);
+      setTasaCambio(null);
+      setPorcentajeRecargo(null);
+    }
+    setPriceWarnings({});
+  }
 
-  const total = items.reduce((acc, it) => acc + it.cantidad * getDisplayUsdPrice(it.precio_unitario, it.precioVentaOriginal), 0);
+  const total = items.reduce((acc, it) => acc + it.cantidad * it.precio_unitario, 0);
   const clienteNombre = getClienteNombre(data?.header);
 
   async function handleSave(): Promise<void> {
@@ -246,13 +266,8 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
       return;
     }
     try {
-      const getFinalPrice = (it: EditItem) => {
-        if (!enBs) return it.precio_unitario;
-        const isMarkupApplied = it.precio_unitario !== it.precioVentaOriginal;
-        if (isMarkupApplied) return it.precio_unitario;
-        const surcharge = 1 + (porcentajeRecargo || 30) / 100;
-        return Number((it.precio_unitario * surcharge).toFixed(2));
-      };
+      // Markup is now applied directly to precio_unitario when Bs mode is toggled.
+      const getFinalPrice = (it: EditItem) => it.precio_unitario;
 
       await mutateAsync({
         presupuestoId,
@@ -340,11 +355,7 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                         !enBs && { backgroundColor: colors.primary },
                       ]}
                       onPress={() => {
-                        if (enBs) {
-                          setEnBs(false);
-                          setTasaCambio(null);
-                          setPorcentajeRecargo(null);
-                        }
+                        if (enBs) handleToggleBs(false);
                       }}
                     >
                       <Text style={[styles.segmentedText, { color: !enBs ? colors.onPrimary : colors.textMuted }]}>
@@ -357,11 +368,7 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                         enBs && { backgroundColor: colors.primary },
                       ]}
                       onPress={() => {
-                        if (!enBs) {
-                          setEnBs(true);
-                          setTasaCambio(bcv);
-                          setPorcentajeRecargo(markup_porcentaje);
-                        }
+                        if (!enBs) handleToggleBs(true);
                       }}
                     >
                       <Text style={[styles.segmentedText, { color: enBs ? colors.onPrimary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
@@ -382,7 +389,7 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                 </View>
               ) : (
                 items.map((item) => {
-                  const displaySubtotalUsd = item.cantidad * getDisplayUsdPrice(item.precio_unitario, item.precioVentaOriginal);
+                  const displaySubtotalUsd = item.cantidad * item.precio_unitario;
                   const displaySubtotalBs = displaySubtotalUsd * bcv;
                   const isMarkup = item.precio_unitario !== item.precioVentaOriginal;
                   return (
@@ -497,7 +504,7 @@ export function PresupuestoEditModal({ presupuestoId, onClose }: PresupuestoEdit
                           </View>
                           {enBs && bcv > 0 && (
                             <Text style={{ fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_400Regular', color: colors.textMuted, marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>
-                              Final: ${getDisplayUsdPrice(item.precio_unitario, item.precioVentaOriginal).toFixed(2)} — Bs. ${(getDisplayUsdPrice(item.precio_unitario, item.precioVentaOriginal) * bcv).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              Bs. {(item.precio_unitario * bcv).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </Text>
                           )}
                         </View>

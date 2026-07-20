@@ -140,13 +140,9 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
         .single();
       const creadoPor = profileData?.display_name || undefined;
 
-      const getFinalPrice = (item: PresupuestoItem) => {
-        if (!enBs) return item.precio_unitario;
-        const isMarkupApplied = item.precio_unitario !== item.producto.precio_venta;
-        if (isMarkupApplied) return item.precio_unitario;
-        const surcharge = 1 + (porcentajeRecargo || 0) / 100;
-        return Number((item.precio_unitario * surcharge).toFixed(2));
-      };
+      // Markup is now applied directly to precio_unitario when Bs mode is toggled,
+      // so getFinalPrice simply returns the stored price.
+      const getFinalPrice = (item: PresupuestoItem) => item.precio_unitario;
 
       const total_usd = items.reduce((acc, item) => acc + (item.cantidad * getFinalPrice(item)), 0);
 

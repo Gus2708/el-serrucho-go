@@ -51,14 +51,32 @@ export default function PresupuestoView({ router }: { router: any }) {
     return data.user?.id ?? '';
   }
 
-  const getDisplayUsdPrice = (precio: number, originalPrecio: number) => {
-    if (!enBs) return precio;
-    const isMarkupApplied = precio !== originalPrecio;
-    if (isMarkupApplied) return precio;
-    return Number((precio * (1 + markup_porcentaje / 100)).toFixed(2));
-  };
+  const total = items.reduce((acc, item) => acc + item.cantidad * item.precio_unitario, 0);
 
-  const total = items.reduce((acc, item) => acc + item.cantidad * getDisplayUsdPrice(item.precio_unitario, item.producto.precio_venta), 0);
+  /** Al cambiar a Bs: aplica markup a todos los items de golpe.
+   *  Al volver a USD: revierte cada item a su precio_venta original. */
+  function handleToggleBs(toBs: boolean) {
+    if (toBs) {
+      // Apply markup to every item whose price still equals the original
+      items.forEach(item => {
+        const isAlreadyMarked = item.precio_unitario !== item.producto.precio_venta;
+        if (!isAlreadyMarked) {
+          const newPrice = parseFloat((item.producto.precio_venta * (1 + markup_porcentaje / 100)).toFixed(2));
+          updateItemPrice(item.producto.codigo_interno, newPrice);
+          setPriceInputs(prev => ({ ...prev, [item.producto.codigo_interno]: String(newPrice) }));
+        }
+      });
+      setEnBs(true, bcv, markup_porcentaje);
+    } else {
+      // Revert every item to its original precio_venta
+      items.forEach(item => {
+        updateItemPrice(item.producto.codigo_interno, item.producto.precio_venta);
+        setPriceInputs(prev => ({ ...prev, [item.producto.codigo_interno]: String(item.producto.precio_venta) }));
+      });
+      setEnBs(false, null, null);
+    }
+    setPriceWarnings({});
+  }
 
   async function performSubmit() {
     setIsLoading(true);
@@ -146,7 +164,7 @@ export default function PresupuestoView({ router }: { router: any }) {
                   !enBs && { backgroundColor: colors.primary },
                 ]}
                 onPress={() => {
-                  if (enBs) setEnBs(false, null, null);
+                  if (enBs) handleToggleBs(false);
                 }}
               >
                 <Text style={[styles.segmentedText, { color: !enBs ? colors.onPrimary : colors.textMuted }]}>
@@ -159,7 +177,7 @@ export default function PresupuestoView({ router }: { router: any }) {
                   enBs && { backgroundColor: colors.primary },
                 ]}
                 onPress={() => {
-                  if (!enBs) setEnBs(true, bcv, markup_porcentaje);
+                  if (!enBs) handleToggleBs(true);
                 }}
               >
                 <Text style={[styles.segmentedText, { color: enBs ? colors.onPrimary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
@@ -181,7 +199,7 @@ export default function PresupuestoView({ router }: { router: any }) {
         ) : (
           <>
             {items.map(item => {
-              const displaySubtotalUsd = item.cantidad * getDisplayUsdPrice(item.precio_unitario, item.producto.precio_venta);
+              const displaySubtotalUsd = item.cantidad * item.precio_unitario;
               const displaySubtotalBs = displaySubtotalUsd * bcv;
               return (
                 <View
@@ -329,7 +347,7 @@ export default function PresupuestoView({ router }: { router: any }) {
                       </View>
                       {enBs && bcv > 0 && (
                         <Text style={{ fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_400Regular', color: colors.textMuted, marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>
-                          Final: ${getDisplayUsdPrice(item.precio_unitario, item.producto.precio_venta).toFixed(2)} — Bs. ${(getDisplayUsdPrice(item.precio_unitario, item.producto.precio_venta) * bcv).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          Bs. {(item.precio_unitario * bcv).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </Text>
                       )}
                     </View>
