@@ -232,37 +232,56 @@ export default function ProductoDetail() {
 
           {/* Pricing + margin */}
           <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.sectionLabel, { color: colors.textMuted, marginBottom: 8 }]}>Precios</Text>
+            <Text style={[styles.sectionLabel, { color: colors.textMuted, marginBottom: 12 }]}>PRECIOS Y COSTO</Text>
+            
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               {/* Precio Venta column */}
               <View style={{ gap: 4 }}>
-                <Text style={[styles.label, { color: colors.textMuted }]}>Precio venta</Text>
-                <Text style={{ fontSize: scaleFont(22), fontFamily: 'JetBrainsMono_700Bold', color: colors.primary }}>
+                <Text style={[styles.label, { color: colors.textMuted }]}>Precio Base (USD)</Text>
+                <Text style={{ fontSize: scaleFont(24), fontFamily: 'JetBrainsMono_700Bold', color: colors.primary }}>
                   {formatUSD(producto.precio_venta)}
                 </Text>
-                {bcv > 0 && (() => {
-                  const precioMarkup = parseFloat((producto.precio_venta * (1 + markupPct / 100)).toFixed(2));
-                  const precioBs = precioMarkup * bcv;
-                  return (
-                    <View style={{ gap: 2, marginTop: 2 }}>
-                      <Text style={{ fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium', color: colors.textMuted }}>
-                        +{markupPct}%  {formatUSD(precioMarkup)}
-                      </Text>
-                      <Text style={{ fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular', color: colors.textDim }}>
-                        Bs {precioBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </Text>
-                    </View>
-                  );
-                })()}
               </View>
+
               {/* Costo column */}
               <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                <Text style={[styles.label, { color: colors.textMuted }]}>Costo</Text>
+                <Text style={[styles.label, { color: colors.textMuted }]}>Costo Directo</Text>
                 <Text style={{ fontSize: scaleFont(18), fontFamily: 'JetBrainsMono_700Bold', color: colors.text }}>
                   {formatUSD(producto.costo)}
                 </Text>
               </View>
             </View>
+
+            {bcv > 0 && (() => {
+              const precioMarkup = parseFloat((producto.precio_venta * (1 + markupPct / 100)).toFixed(2));
+              const precioBs = precioMarkup * bcv;
+              return (
+                <View style={{ 
+                  marginTop: 14, 
+                  paddingTop: 12, 
+                  borderTopWidth: 0.5, 
+                  borderTopColor: colors.border,
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <View style={{ backgroundColor: colors.primary + '18', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                      <Text style={{ fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold', color: colors.primary }}>
+                        +{markupPct}%
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', color: colors.text }}>
+                      {formatUSD(precioMarkup)}
+                    </Text>
+                  </View>
+
+                  <Text style={{ fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', color: colors.text, fontVariant: ['tabular-nums'] }}>
+                    Bs {precioBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                </View>
+              );
+            })()}
           </View>
 
           <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>

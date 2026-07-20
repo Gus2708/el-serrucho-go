@@ -34,44 +34,48 @@ function ProductRowImpl({ producto, onPress, bcv = 0, markupPct = 30 }: Props): 
       <View style={[styles.bar, { backgroundColor: stockColor }]} />
 
       <View style={styles.body}>
-        <View style={styles.top}>
+        {/* Row 1: Title (left) & Base USD Price (right) */}
+        <View style={styles.rowTop}>
           <Text style={[styles.name, { color: colors.text }]} numberOfLines={2}>
             {producto.descripcion}
           </Text>
-          <View style={styles.priceStack}>
-            <CurrencyText amount={producto.precio_venta} style={styles.price} primary />
-            {bcv > 0 && (
-              <>
-                <Text style={[styles.priceMarkup, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
-                  +{markupPct}% ${precioMarkup.toFixed(2)}
-                </Text>
-                <Text style={[styles.priceBs, { color: colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>
-                  Bs {precioBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </Text>
-              </>
-            )}
-          </View>
+          <CurrencyText amount={producto.precio_venta} style={styles.priceMain} primary />
         </View>
 
-        <View style={styles.bottom}>
-          <Text style={[styles.meta, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
+        {/* Row 2: Code/Meta (left) & Recargo +30% USD (right) */}
+        <View style={styles.rowMid}>
+          <Text style={[styles.meta, { color: colors.textMuted }]} numberOfLines={1}>
             {producto.codigo_interno}
             {producto.unidad ? `  ·  ${producto.unidad}` : ''}
             {producto.referencia ? `  ·  Ref: ${producto.referencia}` : ''}
           </Text>
+          {bcv > 0 && (
+            <Text style={[styles.priceRecargo, { color: colors.textMuted }]} numberOfLines={1}>
+              +{markupPct}% ${precioMarkup.toFixed(2)}
+            </Text>
+          )}
+        </View>
 
+        {/* Row 3: Stock Badges (left) & Bs BCV Price (right) */}
+        <View style={styles.rowBottom}>
           <View style={styles.badges}>
-            <View style={[styles.badge, { backgroundColor: stockColor + '22', borderColor: stockColor + '55' }]}>
-              <Text style={[styles.badgeText, { color: stockColor }]} numberOfLines={1} adjustsFontSizeToFit>{stockLabel}</Text>
+            <View style={[styles.badge, { backgroundColor: stockColor + '1E', borderColor: stockColor + '40' }]}>
+              <Text style={[styles.badgeText, { color: stockColor }]} numberOfLines={1}>{stockLabel}</Text>
             </View>
             {margin < 0 && (
-              <View style={[styles.badge, { backgroundColor: colors.danger + '22', borderColor: colors.danger + '55' }]}>
-                <Text style={[styles.badgeText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
+              <View style={[styles.badge, { backgroundColor: colors.danger + '1E', borderColor: colors.danger + '40' }]}>
+                <Text style={[styles.badgeText, { color: colors.danger }]} numberOfLines={1}>
                   Margen {margin.toFixed(0)}%
                 </Text>
               </View>
             )}
           </View>
+
+          {bcv > 0 && (
+            <Text style={[styles.priceBs, { color: colors.text }]} numberOfLines={1}>
+              Bs {precioBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Text>
+          )}
         </View>
       </View>
 
@@ -136,27 +140,30 @@ const styles = StyleSheet.create({
   row: {
     flexDirection:  'row',
     alignItems:     'center',
-    borderRadius:   12,
+    borderRadius:   14,
     borderWidth:    0.5,
     marginHorizontal: 16,
-    marginBottom:   8,
+    marginBottom:   10,
     overflow:       'hidden',
   },
   rowPlaceholder: {
     opacity: 0.35,
   },
-  bar:    { width: 3, alignSelf: 'stretch' },
-  body:   { flex: 1, paddingVertical: 12, paddingHorizontal: 12, gap: 4 },
-  top:    { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
-  name:   { flex: 1, fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_400Regular', lineHeight: scaleFont(19) },
-  priceStack: { alignItems: 'flex-end', gap: 1, flexShrink: 0 },
-  price:  { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
-  priceMarkup: { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_500Medium' },
-  priceBs:     { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_400Regular' },
-  bottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 2 },
-  meta:   { fontSize: scaleFont(11), flex: 1, fontFamily: 'JetBrainsMono_400Regular' },
-  badges: { flexDirection: 'row', gap: 4 },
-  badge:  { borderRadius: 999, borderWidth: 0.5, paddingVertical: 2, paddingHorizontal: 7 },
-  badgeText: { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_500Medium' },
-  chevron:   { marginRight: 12 },
+  bar:        { width: 3.5, alignSelf: 'stretch' },
+  body:       { flex: 1, paddingVertical: 12, paddingHorizontal: 14, gap: 6 },
+  rowTop:     { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
+  name:       { flex: 1, fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', lineHeight: scaleFont(19) },
+  priceMain:  { fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_700Bold' },
+  
+  rowMid:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  meta:       { flex: 1, fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular' },
+  priceRecargo: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_500Medium' },
+  
+  rowBottom:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 2 },
+  badges:     { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  badge:      { borderRadius: 6, borderWidth: 0.5, paddingVertical: 2.5, paddingHorizontal: 8 },
+  badgeText:  { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_700Bold' },
+  priceBs:    { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold', fontVariant: ['tabular-nums'] },
+  
+  chevron:    { marginRight: 12, opacity: 0.6 },
 });
