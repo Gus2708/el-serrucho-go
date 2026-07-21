@@ -25,6 +25,7 @@ import { useProductos } from '../hooks/useProductos';
 import { useUserRole, isPrivilegedRole } from '../hooks/useUserRole';
 import { PressableScale } from './PressableScale';
 import { pressScale } from '../theme/motion';
+import { BarcodeScannerModal } from './BarcodeScannerModal';
 
 // Ficha de Inventario de HybridLite trunca la descripción a los 60 caracteres
 // (confirmado en compras.log 2026-07-17: "PUERTA MULTILOCK...QUINTE" != "...QUINTERO",
@@ -674,6 +675,7 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
   const [cantidadInput, setCantidadInput] = useState<string>('1');
   const [costoInput, setCostoInput] = useState<string>('');
   const [precioInput, setPrecioInput] = useState<string>('');
+  const [scannerTarget, setScannerTarget] = useState<'codigo' | 'referencia' | null>(null);
   const decimalKeyboard = Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad';
 
   function resetForm(): void {
@@ -752,7 +754,12 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
 
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textMuted }]}>CÓDIGO</Text>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textMuted }]}>CÓDIGO</Text>
+                <PressableScale onPress={() => setScannerTarget('codigo')} hitSlop={8} activeScale={pressScale.icon}>
+                  <Feather name="camera" size={16} color={colors.primary} />
+                </PressableScale>
+              </View>
               <TextInput
                 style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
                 placeholder="Código del producto"
@@ -781,7 +788,12 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
             </View>
 
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textMuted }]}>REFERENCIA (OPCIONAL)</Text>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textMuted }]}>REFERENCIA (OPCIONAL)</Text>
+                <PressableScale onPress={() => setScannerTarget('referencia')} hitSlop={8} activeScale={pressScale.icon}>
+                  <Feather name="camera" size={16} color={colors.primary} />
+                </PressableScale>
+              </View>
               <TextInput
                 style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
                 placeholder="Referencia del proveedor"
@@ -845,6 +857,15 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
           </ScrollView>
         </View>
       </View>
+      <BarcodeScannerModal
+        visible={scannerTarget !== null}
+        onClose={() => setScannerTarget(null)}
+        onScan={(data) => {
+          if (scannerTarget === 'codigo') setCodigo(data);
+          else if (scannerTarget === 'referencia') setReferencia(data);
+          setScannerTarget(null);
+        }}
+      />
     </Modal>
   );
 }
