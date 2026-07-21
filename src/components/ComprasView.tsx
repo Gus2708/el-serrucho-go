@@ -754,20 +754,20 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
 
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={styles.formField}>
-              <View style={styles.formLabelRow}>
-                <Text style={[styles.formLabel, { color: colors.textMuted }]}>CÓDIGO</Text>
+              <Text style={[styles.formLabel, { color: colors.textMuted }]}>CÓDIGO</Text>
+              <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                <TextInput
+                  style={[styles.inputWithIcon, { color: colors.text }]}
+                  placeholder="Código del producto"
+                  placeholderTextColor={colors.textDim}
+                  value={codigo}
+                  onChangeText={setCodigo}
+                  autoCapitalize="characters"
+                />
                 <PressableScale onPress={() => setScannerTarget('codigo')} hitSlop={8} activeScale={pressScale.icon}>
-                  <Feather name="camera" size={16} color={colors.primary} />
+                  <Feather name="camera" size={18} color={colors.primary} />
                 </PressableScale>
               </View>
-              <TextInput
-                style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
-                placeholder="Código del producto"
-                placeholderTextColor={colors.textDim}
-                value={codigo}
-                onChangeText={setCodigo}
-                autoCapitalize="characters"
-              />
             </View>
 
             <View style={styles.formField}>
@@ -788,19 +788,19 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
             </View>
 
             <View style={styles.formField}>
-              <View style={styles.formLabelRow}>
-                <Text style={[styles.formLabel, { color: colors.textMuted }]}>REFERENCIA (OPCIONAL)</Text>
+              <Text style={[styles.formLabel, { color: colors.textMuted }]}>REFERENCIA (OPCIONAL)</Text>
+              <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                <TextInput
+                  style={[styles.inputWithIcon, { color: colors.text }]}
+                  placeholder="Referencia del proveedor"
+                  placeholderTextColor={colors.textDim}
+                  value={referencia}
+                  onChangeText={setReferencia}
+                />
                 <PressableScale onPress={() => setScannerTarget('referencia')} hitSlop={8} activeScale={pressScale.icon}>
-                  <Feather name="camera" size={16} color={colors.primary} />
+                  <Feather name="camera" size={18} color={colors.primary} />
                 </PressableScale>
               </View>
-              <TextInput
-                style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
-                placeholder="Referencia del proveedor"
-                placeholderTextColor={colors.textDim}
-                value={referencia}
-                onChangeText={setReferencia}
-              />
             </View>
 
             <View style={styles.formRow}>
@@ -1143,6 +1143,20 @@ const styles = StyleSheet.create({
     borderWidth:       0.5,
     borderRadius:      10,
     paddingHorizontal: 12,
+    paddingVertical:   10,
+  },
+  inputWrap: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    borderWidth:       0.5,
+    borderRadius:      10,
+    paddingHorizontal: 12,
+    gap:               8,
+  },
+  inputWithIcon: {
+    flex:              1,
+    fontSize:          scaleFont(14),
+    fontFamily:        'JetBrainsMono_400Regular',
     paddingVertical:   10,
   },
   formSubmitBtn: {
