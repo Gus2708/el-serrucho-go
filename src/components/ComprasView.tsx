@@ -21,7 +21,7 @@ import { notify, confirm } from '../lib/notify';
 import { supabase, Producto } from '../lib/supabase';
 import { useProveedores, Proveedor } from '../hooks/useProveedores';
 import { useCompra, CompraDraftItem } from '../hooks/useCompra';
-import { useProductos } from '../hooks/useProductos';
+import { useProductos, normalizeSearchTerm } from '../hooks/useProductos';
 import { useUserRole, isPrivilegedRole } from '../hooks/useUserRole';
 import { PressableScale } from './PressableScale';
 import { pressScale } from '../theme/motion';
@@ -645,7 +645,7 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
               placeholder="Buscar por código o descripción…"
               placeholderTextColor={colors.textDim}
               value={search}
-              onChangeText={v => setSearch(v.toUpperCase())}
+              onChangeText={v => setSearch(normalizeSearchTerm(v))}
               autoCapitalize="characters"
               autoFocus
             />

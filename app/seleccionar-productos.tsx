@@ -6,7 +6,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../src/theme/ThemeContext';
-import { useProductos, isPlaceholder } from '../src/hooks/useProductos';
+import { useProductos, isPlaceholder, normalizeSearchTerm } from '../src/hooks/useProductos';
 import { Producto } from '../src/lib/supabase';
 import { usePresupuestoStore } from '../src/hooks/usePresupuestoStore';
 import { usePedido } from '../src/hooks/usePedido';
@@ -410,8 +410,8 @@ export default function SeleccionarProductos() {
           placeholder="Buscar producto por nombre o código..."
           placeholderTextColor={colors.textDim}
           value={search}
-          onChangeText={setSearch}
-          autoCapitalize="none"
+          onChangeText={v => setSearch(normalizeSearchTerm(v))}
+          autoCapitalize="characters"
           autoCorrect={false}
           clearButtonMode="always"
         />

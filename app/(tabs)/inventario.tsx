@@ -14,7 +14,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../../src/theme/ThemeContext';
-import { useProductos, StockFilter } from '../../src/hooks/useProductos';
+import { useProductos, StockFilter, normalizeSearchTerm } from '../../src/hooks/useProductos';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 import { useTazas } from '../../src/hooks/useTazas';
@@ -111,7 +111,7 @@ export default function Inventario() {
             placeholder="Buscar por nombre o código…"
             placeholderTextColor={colors.textDim}
             value={search}
-            onChangeText={setSearch}
+            onChangeText={v => setSearch(normalizeSearchTerm(v))}
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="search"

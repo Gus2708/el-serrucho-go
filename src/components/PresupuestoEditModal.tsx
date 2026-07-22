@@ -18,7 +18,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { useDeviceSize } from '../hooks/useDeviceSize';
 import { usePresupuestoWithDetails } from '../hooks/usePresupuestosHistory';
 import { useActualizarPresupuesto } from '../hooks/useActualizarPresupuesto';
-import { useProductos, isPlaceholder } from '../hooks/useProductos';
+import { useProductos, isPlaceholder, normalizeSearchTerm } from '../hooks/useProductos';
 import { supabase, Producto } from '../lib/supabase';
 import { notify } from '../lib/notify';
 import { MarginWarningBadge } from './MarginWarningBadge';
@@ -689,8 +689,8 @@ function AddProductsPicker({
             placeholder="Buscar producto por nombre o código..."
             placeholderTextColor={colors.textDim}
             value={search}
-            onChangeText={setSearch}
-            autoCapitalize="none"
+            onChangeText={v => setSearch(normalizeSearchTerm(v))}
+            autoCapitalize="characters"
             autoCorrect={false}
           />
           {search.length > 0 && (

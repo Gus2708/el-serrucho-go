@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
-import { useProductos, isPlaceholder } from '../hooks/useProductos';
+import { useProductos, isPlaceholder, normalizeSearchTerm } from '../hooks/useProductos';
 import { useFallas } from '../hooks/useFallas';
 import { useUserRole, canMakePedidos } from '../hooks/useUserRole';
 import { notify, confirm } from '../lib/notify';
@@ -107,7 +107,8 @@ export default function FallasView() {
             placeholder="Buscar producto o escribir falla..."
             placeholderTextColor={colors.textDim}
             value={search}
-            onChangeText={setSearch}
+            onChangeText={v => setSearch(normalizeSearchTerm(v))}
+            autoCapitalize="characters"
             onFocus={() => setIsFocused(true)}
             onBlur={() => setTimeout(() => setIsFocused(false), 200)}
             onSubmitEditing={handleAddCustom}

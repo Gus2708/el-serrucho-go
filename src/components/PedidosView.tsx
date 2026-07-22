@@ -21,7 +21,7 @@ import { useDeviceSize } from '../hooks/useDeviceSize';
 import { notify, confirm } from '../lib/notify';
 import { supabase, Producto } from '../lib/supabase';
 import { usePedido, PedidoDraftItem } from '../hooks/usePedido';
-import { useProductos } from '../hooks/useProductos';
+import { useProductos, normalizeSearchTerm } from '../hooks/useProductos';
 import { useTazas } from '../hooks/useTazas';
 import { usePresupuestoConfig } from '../hooks/usePresupuestoConfig';
 import { useUserRole, canMakePedidos } from '../hooks/useUserRole';
@@ -655,7 +655,8 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
               placeholder="Buscar por código o descripción…"
               placeholderTextColor={colors.textDim}
               value={search}
-              onChangeText={setSearch}
+              onChangeText={v => setSearch(normalizeSearchTerm(v))}
+              autoCapitalize="characters"
               autoFocus
             />
           </View>

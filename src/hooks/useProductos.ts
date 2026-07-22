@@ -41,6 +41,15 @@ export function useProductos(search: string = '', filter: StockFilter = 'todos')
   };
 }
 
+/** Normaliza texto de búsqueda eliminando acentos/diacríticos (ej: Ü -> U, á -> A) y convirtiendo a mayúsculas */
+export function normalizeSearchTerm(str: string): string {
+  if (!str) return '';
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
+}
+
 /** Products with names like ".", "..", "...", "A", "B" are POS placeholders — treat as non-data */
 export function isPlaceholder(p: Producto): boolean {
   if (p.es_placeholder !== undefined) return p.es_placeholder;
@@ -65,7 +74,7 @@ async function fetchProductos(
     .order('descripcion')
     .range(offset, offset + PAGE_SIZE - 1);
 
-  const trimmed = search.trim();
+  const trimmed = normalizeSearchTerm(search).trim();
   if (trimmed) {
     if (trimmed.includes('*')) {
       // Wildcard mode: busca en cualquier posición
