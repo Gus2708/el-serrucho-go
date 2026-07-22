@@ -66,7 +66,11 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
   },
 
   updateItem: (codigo, updates) => {
-    set({ items: get().items.map(i => i.codigo_producto === codigo ? { ...i, ...updates } : i) });
+    set({
+      items: get().items
+        .map(i => i.codigo_producto === codigo ? { ...i, ...updates } : i)
+        .filter(i => i.cantidad > 0),
+    });
   },
 
   setNota: (nota) => set({ nota }),

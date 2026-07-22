@@ -9,6 +9,9 @@ import { useTheme } from '../src/theme/ThemeContext';
 import { useProductos, isPlaceholder } from '../src/hooks/useProductos';
 import { Producto } from '../src/lib/supabase';
 import { usePresupuestoStore } from '../src/hooks/usePresupuestoStore';
+import { usePedido } from '../src/hooks/usePedido';
+import { usePresupuestoConfig } from '../src/hooks/usePresupuestoConfig';
+import { useTazas } from '../src/hooks/useTazas';
 import { useDeviceSize } from '../src/hooks/useDeviceSize';
 import { BarcodeScannerModal } from '../src/components/BarcodeScannerModal';
 import { useUserRole } from '../src/hooks/useUserRole';
@@ -23,15 +26,39 @@ export default function SeleccionarProductos() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [scannerVisible, setScannerVisible] = useState(false);
-  
-  const { items, addItem, updateItemQuantity, removeItem } = usePresupuestoStore();
-  const { solicitudId } = useLocalSearchParams<{ solicitudId?: string }>();
+
+  const { target = 'presupuesto', solicitudId } = useLocalSearchParams<{ target?: 'presupuesto' | 'pedido'; solicitudId?: string }>();
+  const isPresupuesto = target === 'presupuesto';
+
+  const presupuestoStore = usePresupuestoStore();
+  const pedidoStore      = usePedido();
+
+  const { data: config } = usePresupuestoConfig();
+  const { data: tasa }   = useTazas();
+  const markupPct        = config?.markup_porcentaje ?? 30;
+  const bcv              = tasa?.bcv_usd ?? 0;
+
+  const [localEnBs, setLocalEnBs] = useState(false);
+  const enBs = isPresupuesto ? presupuestoStore.enBs : localEnBs;
+
   const { data: userAuth } = useUserRole();
   const { resolverSolicitud, isResolving, marcarNoDisponible, isMarcandoNoDisponible } = useResolverSolicitud();
   const insets = useSafeAreaInsets();
 
+  function toggleCurrency(toBs: boolean) {
+    if (isPresupuesto) {
+      if (toBs) {
+        presupuestoStore.setEnBs(true, bcv, markupPct);
+      } else {
+        presupuestoStore.setEnBs(false, null, null);
+      }
+    } else {
+      setLocalEnBs(toBs);
+    }
+  }
+
   const handleBack = () => {
-    if (solicitudId && items.length > 0) {
+    if (solicitudId && presupuestoStore.items.length > 0) {
       confirm({
         title: 'Cancelar selección',
         message: '¿Estás seguro de que quieres salir? Se perderán los productos seleccionados.',
@@ -43,13 +70,13 @@ export default function SeleccionarProductos() {
           router.replace('/(tabs)/notificaciones' as any);
         }
       });
+    } else if (solicitudId) {
+      usePresupuestoStore.getState().reset();
+      router.replace('/(tabs)/notificaciones' as any);
+    } else if (target === 'pedido') {
+      router.back();
     } else {
-      if (solicitudId) {
-        usePresupuestoStore.getState().reset();
-        router.replace('/(tabs)/notificaciones' as any);
-      } else {
-        router.replace({ pathname: '/(tabs)/ordenes', params: { tab: 'presupuesto' } });
-      }
+      router.replace({ pathname: '/(tabs)/ordenes', params: { tab: 'presupuesto' } });
     }
   };
 
@@ -68,7 +95,7 @@ export default function SeleccionarProductos() {
     }
 
     try {
-      await resolverSolicitud(parseInt(solicitudId, 10), empleadoId, items);
+      await resolverSolicitud(parseInt(solicitudId, 10), empleadoId, presupuestoStore.items);
       usePresupuestoStore.getState().reset();
       notify('Éxito', 'La solicitud ha sido resuelta y los productos enviados al cliente.');
       router.replace('/(tabs)/notificaciones' as any);
@@ -118,40 +145,113 @@ export default function SeleccionarProductos() {
 
   const { productos, isLoading, fetchMore, hasMore, isFetchingMore } = useProductos(debouncedSearch, 'todos');
 
-  const totalAdded = items.reduce((acc, item) => acc + item.cantidad, 0);
-  const totalAmount = items.reduce((acc, item) => acc + (item.cantidad * item.precio_unitario), 0);
-
   const getItemQuantity = React.useCallback((codigo_interno: string) => {
-    const item = items.find(i => i.producto.codigo_interno === codigo_interno);
-    return item ? item.cantidad : 0;
-  }, [items]);
-
-  const handleIncrement = (producto: Producto) => {
-    const qty = getItemQuantity(producto.codigo_interno);
-    if (qty === 0) {
-      addItem(producto, 1);
+    if (isPresupuesto) {
+      const item = presupuestoStore.items.find(i => i.producto.codigo_interno === codigo_interno);
+      return item ? item.cantidad : 0;
     } else {
-      updateItemQuantity(producto.codigo_interno, qty + 1);
+      const item = pedidoStore.items.find(i => i.codigo_producto === codigo_interno);
+      return item ? item.cantidad : 0;
     }
-  };
+  }, [isPresupuesto, presupuestoStore.items, pedidoStore.items]);
 
-  const handleDecrement = (producto: Producto) => {
+  const handleIncrement = React.useCallback((producto: Producto) => {
     const qty = getItemQuantity(producto.codigo_interno);
-    if (qty > 1) {
-      updateItemQuantity(producto.codigo_interno, qty - 1);
-    } else if (qty === 1) {
-      removeItem(producto.codigo_interno);
+    if (isPresupuesto) {
+      if (qty === 0) {
+        presupuestoStore.addItem(producto, 1);
+      } else {
+        presupuestoStore.updateItemQuantity(producto.codigo_interno, qty + 1);
+      }
+    } else {
+      const basePrice = Number(producto.precio_venta || 0);
+      if (qty === 0) {
+        pedidoStore.addItem({
+          codigo_producto: producto.codigo_interno,
+          descripcion:     producto.descripcion,
+          cantidad:        1,
+          precio_base_usd: basePrice,
+          precio_unitario: basePrice,
+        });
+      } else {
+        pedidoStore.updateItem(producto.codigo_interno, { cantidad: qty + 1 });
+      }
     }
-  };
+  }, [getItemQuantity, isPresupuesto, presupuestoStore, pedidoStore]);
+
+  const handleDecrement = React.useCallback((producto: Producto) => {
+    const qty = getItemQuantity(producto.codigo_interno);
+    if (isPresupuesto) {
+      if (qty > 1) {
+        presupuestoStore.updateItemQuantity(producto.codigo_interno, qty - 1);
+      } else if (qty === 1) {
+        presupuestoStore.removeItem(producto.codigo_interno);
+      }
+    } else {
+      if (qty > 1) {
+        pedidoStore.updateItem(producto.codigo_interno, { cantidad: qty - 1 });
+      } else if (qty === 1) {
+        pedidoStore.removeItem(producto.codigo_interno);
+      }
+    }
+  }, [getItemQuantity, isPresupuesto, presupuestoStore, pedidoStore]);
+
+  const handleSetQuantity = React.useCallback((producto: Producto, val: string) => {
+    if (val === '') {
+      if (isPresupuesto) presupuestoStore.removeItem(producto.codigo_interno);
+      else pedidoStore.removeItem(producto.codigo_interno);
+      return;
+    }
+    const num = parseInt(val, 10);
+    if (!isNaN(num) && num >= 0) {
+      if (num === 0) {
+        if (isPresupuesto) presupuestoStore.removeItem(producto.codigo_interno);
+        else pedidoStore.removeItem(producto.codigo_interno);
+      } else {
+        const qty = getItemQuantity(producto.codigo_interno);
+        if (isPresupuesto) {
+          if (qty === 0) presupuestoStore.addItem(producto, num);
+          else presupuestoStore.updateItemQuantity(producto.codigo_interno, num);
+        } else {
+          const basePrice = Number(producto.precio_venta || 0);
+          if (qty === 0) {
+            pedidoStore.addItem({
+              codigo_producto: producto.codigo_interno,
+              descripcion:     producto.descripcion,
+              cantidad:        num,
+              precio_base_usd: basePrice,
+              precio_unitario: basePrice,
+            });
+          } else {
+            pedidoStore.updateItem(producto.codigo_interno, { cantidad: num });
+          }
+        }
+      }
+    }
+  }, [getItemQuantity, isPresupuesto, presupuestoStore, pedidoStore]);
+
+  const totalAdded = isPresupuesto
+    ? presupuestoStore.items.reduce((acc, item) => acc + item.cantidad, 0)
+    : pedidoStore.items.reduce((acc, item) => acc + item.cantidad, 0);
+
+  const totalBaseUsd = isPresupuesto
+    ? presupuestoStore.items.reduce((acc, item) => acc + (item.cantidad * item.producto.precio_venta), 0)
+    : pedidoStore.items.reduce((acc, item) => acc + (item.cantidad * (item.precio_base_usd ?? item.precio_unitario ?? 0)), 0);
+
+  const totalMarkupUsd = parseFloat((totalBaseUsd * (1 + markupPct / 100)).toFixed(2));
+  const totalBs = totalMarkupUsd * bcv;
 
   const renderProducto = React.useCallback(({ item }: { item: Producto }) => {
     if (isPlaceholder(item)) return null;
-    
+
     const quantity = getItemQuantity(item.codigo_interno);
-    
+    const basePriceUsd = item.precio_venta;
+    const precioMarkupUsd = parseFloat((basePriceUsd * (1 + markupPct / 100)).toFixed(2));
+    const precioBs = bcv > 0 ? precioMarkupUsd * bcv : 0;
+
     return (
       <View style={[
-        styles.productCard, 
+        styles.productCard,
         { backgroundColor: colors.surface, borderColor: colors.border },
         isDesktop && styles.productCardDesktop
       ]}>
@@ -163,55 +263,47 @@ export default function SeleccionarProductos() {
             {item.descripcion}
           </Text>
           <Text style={[styles.productPrice, { color: colors.primary }]}>
-            {formatUSD(item.precio_venta)}
+            {formatUSD(enBs ? precioMarkupUsd : basePriceUsd)}
           </Text>
-          <Text style={[styles.productStock, { color: item.existencia <= 0 ? colors.danger : colors.success }]}>
+          {bcv > 0 && (
+            <Text style={[styles.productPriceSub, { color: colors.textMuted }]} numberOfLines={1}>
+              {enBs ? (
+                `Bs ${precioBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}  ·  Base: ${formatUSD(basePriceUsd)}`
+              ) : (
+                `+${markupPct}% (${formatUSD(precioMarkupUsd)}) · Bs ${precioBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              )}
+            </Text>
+          )}
+          <Text style={[styles.productStock, { color: item.existencia <= 0 ? colors.danger : colors.success, marginTop: 2 }]}>
             Stock: {item.existencia} {item.unidad}
           </Text>
         </View>
 
         <View style={styles.quantityControl}>
-          <Pressable 
-            style={[styles.btnAction, { backgroundColor: colors.surface, borderColor: colors.border }]} 
+          <Pressable
+            style={[styles.btnAction, { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={() => handleDecrement(item)}
           >
             <Feather name="minus" size={20} color={colors.text} />
           </Pressable>
-          
+
           <TextInput
             style={[
-              styles.quantityInput, 
-              { 
-                color: colors.text, 
+              styles.quantityInput,
+              {
+                color: colors.text,
                 backgroundColor: Platform.OS === 'ios' ? colors.bg : colors.surface,
-                borderColor: colors.border 
+                borderColor: colors.border
               }
             ]}
             keyboardType="numeric"
             value={String(quantity)}
-            onChangeText={(val) => {
-              if (val === '') {
-                removeItem(item.codigo_interno);
-                return;
-              }
-              const num = parseInt(val, 10);
-              if (!isNaN(num) && num >= 0) {
-                if (num === 0) {
-                  removeItem(item.codigo_interno);
-                } else {
-                  if (quantity === 0) {
-                    addItem(item, num);
-                  } else {
-                    updateItemQuantity(item.codigo_interno, num);
-                  }
-                }
-              }
-            }}
+            onChangeText={(val) => handleSetQuantity(item, val)}
             selectTextOnFocus
           />
-          
-          <Pressable 
-            style={[styles.btnAction, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]} 
+
+          <Pressable
+            style={[styles.btnAction, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}
             onPress={() => handleIncrement(item)}
           >
             <Feather name="plus" size={20} color={colors.primary} />
@@ -219,7 +311,7 @@ export default function SeleccionarProductos() {
         </View>
       </View>
     );
-  }, [items, colors, isDesktop, getItemQuantity, handleDecrement, handleIncrement, removeItem, addItem, updateItemQuantity, formatUSD]);
+  }, [colors, isDesktop, getItemQuantity, handleDecrement, handleIncrement, handleSetQuantity, formatUSD, enBs, markupPct, bcv]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={['top', 'bottom']}>
@@ -229,9 +321,40 @@ export default function SeleccionarProductos() {
           <Feather name="chevron-down" size={28} color={colors.text} />
         </Pressable>
         <Text style={[styles.headerTitle, { color: colors.text }]}>
-          {solicitudId ? 'Seleccionar Productos' : 'Añadir Productos'}
+          {solicitudId ? 'Seleccionar Productos' : target === 'pedido' ? 'Añadir a Pedido' : 'Añadir Productos'}
         </Text>
         <View style={{ width: 40 }} />
+      </View>
+
+      {/* Currency Toggle */}
+      <View style={[styles.currencyToggleContainer, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}>
+        <Text style={[styles.currencyLabel, { color: colors.textMuted }]}>
+          MONEDA DE REFERENCIA
+        </Text>
+        <View style={[styles.segmentedControl, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <PressableScale
+            style={[
+              styles.segmentedBtn,
+              !enBs && { backgroundColor: colors.primary },
+            ]}
+            onPress={() => toggleCurrency(false)}
+          >
+            <Text style={[styles.segmentedText, { color: !enBs ? colors.onPrimary : colors.textMuted }]}>
+              USD ($)
+            </Text>
+          </PressableScale>
+          <PressableScale
+            style={[
+              styles.segmentedBtn,
+              enBs && { backgroundColor: colors.primary },
+            ]}
+            onPress={() => toggleCurrency(true)}
+          >
+            <Text style={[styles.segmentedText, { color: enBs ? colors.onPrimary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
+              Bs. {bcv > 0 ? `(@ ${bcv.toFixed(2)})` : ''}
+            </Text>
+          </PressableScale>
+        </View>
       </View>
 
       {/* Summary Cards */}
@@ -242,7 +365,13 @@ export default function SeleccionarProductos() {
         </View>
         <View style={[styles.summaryCard, { backgroundColor: colors.surface }]}>
           <Text style={[styles.summaryLabel, { color: colors.textDim }]}>Monto Total</Text>
-          <Text style={[styles.summaryValue, { color: colors.primary }]}>{formatUSD(totalAmount)}</Text>
+          <Text style={[styles.summaryValue, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
+            {enBs && bcv > 0 ? (
+              `Bs ${totalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            ) : (
+              formatUSD(totalBaseUsd)
+            )}
+          </Text>
         </View>
       </View>
 
@@ -272,7 +401,7 @@ export default function SeleccionarProductos() {
       {/* List */}
       <FlashList
         data={productos}
-        extraData={items}
+        extraData={[presupuestoStore.items, pedidoStore.items, enBs, bcv, markupPct]}
         keyExtractor={(item) => item.codigo_interno}
         renderItem={renderProducto}
         estimatedItemSize={110}
@@ -308,7 +437,7 @@ export default function SeleccionarProductos() {
       />
 
       {/* "No lo hay": resolver sin productos cuando no se eligió ninguno */}
-      {solicitudId && items.length === 0 && (
+      {solicitudId && presupuestoStore.items.length === 0 && (
         <View style={[
           styles.submitBar,
           {
@@ -346,11 +475,11 @@ export default function SeleccionarProductos() {
       )}
 
       {/* Submit bar if solicitudId is present */}
-      {solicitudId && items.length > 0 && (
+      {solicitudId && presupuestoStore.items.length > 0 && (
         <View style={[
-          styles.submitBar, 
-          { 
-            backgroundColor: colors.surface, 
+          styles.submitBar,
+          {
+            backgroundColor: colors.surface,
             borderColor: colors.border,
             bottom: isDesktop ? undefined : (Platform.OS === 'web' ? 0 : insets.bottom),
             position: isDesktop ? 'relative' : 'absolute',
@@ -360,10 +489,14 @@ export default function SeleccionarProductos() {
           <View style={styles.submitInfo}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.submitCount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
-                {items.length} ítem{items.length > 1 ? 's' : ''}
+                {presupuestoStore.items.length} ítem{presupuestoStore.items.length > 1 ? 's' : ''}
               </Text>
               <Text style={[styles.submitTotal, { color: colors.primary }]} numberOfLines={1}>
-                {formatUSD(totalAmount)}
+                {enBs && bcv > 0 ? (
+                  `Bs ${totalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                ) : (
+                  formatUSD(totalBaseUsd)
+                )}
               </Text>
             </View>
             <PressableScale onPress={() => usePresupuestoStore.getState().reset()}>
@@ -416,6 +549,41 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.5,
   },
+  currencyToggleContainer: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'space-between',
+    marginHorizontal:  15,
+    marginTop:         12,
+    paddingVertical:   8,
+    paddingHorizontal: 12,
+    borderRadius:      12,
+    borderWidth:       0.5,
+  },
+  currencyLabel: {
+    fontSize:      scaleFont(10),
+    fontFamily:    'JetBrainsMono_700Bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    borderRadius:  8,
+    borderWidth:   0.5,
+    padding:       2,
+    gap:           2,
+  },
+  segmentedBtn: {
+    paddingVertical:   5,
+    paddingHorizontal: 12,
+    borderRadius:      6,
+    alignItems:        'center',
+    justifyContent:    'center',
+  },
+  segmentedText: {
+    fontSize:   scaleFont(11),
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
   summaryContainer: {
     flexDirection: 'row',
     padding: 15,
@@ -441,14 +609,14 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   summaryValue: {
-    fontSize: scaleFont(22),
+    fontSize: scaleFont(20),
     fontWeight: '800',
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 15,
-    marginBottom: 20,
+    marginBottom: 15,
     paddingHorizontal: 15,
     height: 50,
     borderRadius: 12,
@@ -510,7 +678,12 @@ const styles = StyleSheet.create({
   productPrice: {
     fontSize: scaleFont(16),
     fontWeight: '800',
-    marginBottom: 2,
+    marginBottom: 1,
+  },
+  productPriceSub: {
+    fontSize: scaleFont(11),
+    fontWeight: '500',
+    marginBottom: 3,
   },
   productStock: {
     fontSize: scaleFont(12),
