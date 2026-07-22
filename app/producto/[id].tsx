@@ -26,6 +26,7 @@ import { uploadPdfAndGetUrl } from '../../src/lib/pdfStorage';
 import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
 import { useTazas } from '../../src/hooks/useTazas';
 import { usePresupuestoConfig } from '../../src/hooks/usePresupuestoConfig';
+import { BarcodeScannerModal } from '../../src/components/BarcodeScannerModal';
 
 export default function ProductoDetail() {
   const { colors, tokens, formatUSD } = useTheme();
@@ -42,6 +43,7 @@ export default function ProductoDetail() {
   const [newDesc, setNewDesc] = useState('');
   const [newRef, setNewRef] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
 
   const { data: movimientos, isLoading: isLoadingMovs } = useMovimientosProducto(id);
   const hasPendingSync = movimientos?.some(m => m.backend_status === 'pendiente' || m.backend_status === 'aplicando');
@@ -1142,14 +1144,24 @@ export default function ProductoDetail() {
               <Text style={[styles.sheetLabel, { color: colors.textMuted, marginTop: 12 }]}>
                 Referencia
               </Text>
-              <TextInput
-                style={[styles.noteInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
-                placeholder={producto.referencia ?? 'Sin referencia'}
-                placeholderTextColor={colors.textDim}
-                value={newRef}
-                onChangeText={v => setNewRef(v.toUpperCase())}
-                autoCapitalize="characters"
-              />
+              <View style={[styles.inputWithScannerWrap, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}>
+                <TextInput
+                  style={[styles.inputWithScannerText, { color: colors.text }]}
+                  placeholder={producto.referencia ?? 'Sin referencia'}
+                  placeholderTextColor={colors.textDim}
+                  value={newRef}
+                  onChangeText={v => setNewRef(v.toUpperCase())}
+                  autoCapitalize="characters"
+                />
+                <PressableScale
+                  onPress={() => setShowScanner(true)}
+                  hitSlop={8}
+                  activeScale={pressScale.icon}
+                  style={styles.scannerIconBtn}
+                >
+                  <Feather name="camera" size={18} color={colors.primary} />
+                </PressableScale>
+              </View>
 
               <Text style={[styles.sheetLabel, { color: colors.textMuted, marginTop: 12 }]}>
                 Nota / Observación (opcional):
@@ -1265,6 +1277,15 @@ export default function ProductoDetail() {
         </Modal>
         </>
       )}
+
+      <BarcodeScannerModal
+        visible={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScan={(data) => {
+          setNewRef(data.toUpperCase());
+          setShowScanner(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -1867,5 +1888,23 @@ const styles = StyleSheet.create({
   miniStatusBadgeText: {
     fontSize: scaleFont(9),
     fontFamily: 'JetBrainsMono_700Bold',
+  },
+  inputWithScannerWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 0.5,
+    paddingHorizontal: 16,
+    marginTop: 6,
+  },
+  inputWithScannerText: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: scaleFont(14),
+    fontFamily: 'JetBrainsMono_400Regular',
+  },
+  scannerIconBtn: {
+    padding: 6,
+    marginLeft: 8,
   },
 });

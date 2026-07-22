@@ -173,45 +173,45 @@ function PedidoHistCard({ pedido, expanded, onToggleExpand, onEditRetry, onOpenS
         enterStyle,
       ]}
     >
-      <View style={styles.histTop}>
-        <Text style={[styles.histId, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
-          PED-{String(pedido.id).padStart(4, '0')}
-        </Text>
-        <PressableScale onPress={onOpenStatusModal} activeScale={0.94}>
+      <PressableScale onPress={onOpenStatusModal} activeScale={0.98}>
+        <View style={styles.histTop}>
+          <Text style={[styles.histId, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
+            PED-{String(pedido.id).padStart(4, '0')}
+          </Text>
           <BackendChip
             status={pedido.backend_status}
             aplicadoEn={pedido.backend_aplicado_en}
             documento={pedido.documento_hybrid}
           />
-        </PressableScale>
-      </View>
-
-      {pedido.cliente_nombre ? (
-        <Text style={[styles.histClient, { color: colors.text }]} numberOfLines={1}>
-          <Feather name="user" size={12} /> {pedido.cliente_nombre}
-        </Text>
-      ) : null}
-
-      <Text style={[styles.histMeta, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
-        {dateStr}
-        {'  ·  '}{pedido.item_count} ítem{pedido.item_count !== 1 ? 's' : ''}
-        {pedido.creado_por_nombre ? `  ·  ${pedido.creado_por_nombre}` : ''}
-      </Text>
-
-      {pedido.backend_status === 'completado' && pedido.documento_hybrid ? (
-        <View style={[styles.cajaBox, { backgroundColor: colors.success + '10', borderColor: colors.success + '30' }]}>
-          <Feather name="shopping-bag" size={12} color={colors.success} />
-          <Text style={[styles.cajaText, { color: colors.success }]} numberOfLines={1}>
-            Pedido N° {pedido.documento_hybrid} — pendiente en caja para facturar
-          </Text>
         </View>
-      ) : null}
 
-      {pedido.nota ? (
-        <Text style={[styles.histNota, { color: colors.textMuted }]} numberOfLines={1}>
-          {pedido.nota}
+        {pedido.cliente_nombre ? (
+          <Text style={[styles.histClient, { color: colors.text }]} numberOfLines={1}>
+            <Feather name="user" size={12} /> {pedido.cliente_nombre}
+          </Text>
+        ) : null}
+
+        <Text style={[styles.histMeta, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
+          {dateStr}
+          {'  ·  '}{pedido.item_count} ítem{pedido.item_count !== 1 ? 's' : ''}
+          {pedido.creado_por_nombre ? `  ·  ${pedido.creado_por_nombre}` : ''}
         </Text>
-      ) : null}
+
+        {pedido.backend_status === 'completado' && pedido.documento_hybrid ? (
+          <View style={[styles.cajaBox, { backgroundColor: colors.success + '10', borderColor: colors.success + '30' }]}>
+            <Feather name="shopping-bag" size={12} color={colors.success} />
+            <Text style={[styles.cajaText, { color: colors.success }]} numberOfLines={1}>
+              Pedido N° {pedido.documento_hybrid} — pendiente en caja para facturar
+            </Text>
+          </View>
+        ) : null}
+
+        {pedido.nota ? (
+          <Text style={[styles.histNota, { color: colors.textMuted }]} numberOfLines={1}>
+            {pedido.nota}
+          </Text>
+        ) : null}
+      </PressableScale>
 
       {expanded && showResultado ? (
         <View style={[styles.resultadoBox, { backgroundColor: colors.danger + '12', borderColor: colors.danger + '30' }]}>
@@ -225,7 +225,7 @@ function PedidoHistCard({ pedido, expanded, onToggleExpand, onEditRetry, onOpenS
         </View>
       ) : null}
 
-      {/* Acciones para pedidos en error */}
+      {/* Acciones para pedidos */}
       {showResultado ? (
         <View style={styles.actionRow}>
           <PressableScale onPress={onToggleExpand} hitSlop={6} style={styles.expandHintRow}>
@@ -250,7 +250,14 @@ function PedidoHistCard({ pedido, expanded, onToggleExpand, onEditRetry, onOpenS
             )}
           </PressableScale>
         </View>
-      ) : null}
+      ) : (
+        <View style={styles.actionRowRight}>
+          <PressableScale onPress={onOpenStatusModal} style={styles.statusLinkRow}>
+            <Text style={[styles.statusLinkText, { color: colors.primary }]}>Ver estado de pedido</Text>
+            <Feather name="chevron-right" size={12} color={colors.primary} />
+          </PressableScale>
+        </View>
+      )}
     </Animated.View>
   );
 }
@@ -387,4 +394,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   editRetryBtnText: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold' },
+  actionRowRight: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'flex-end',
+    marginTop:      4,
+  },
+  statusLinkRow: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    gap:            4,
+    paddingVertical: 2,
+  },
+  statusLinkText: {
+    fontSize:   scaleFont(11),
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
 });

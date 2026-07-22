@@ -34,7 +34,7 @@ export default function PedidoStatusModal({
   onClose,
   onProceed,
   proceedLabel = 'Ir al historial',
-}: PedidoStatusModalProps): React.JSX.Element {
+}: PedidoStatusModalProps): React.JSX.Element | null {
   const { colors } = useTheme();
 
   const [status, setStatus]             = useState<BackendStatus>('pendiente');
@@ -194,12 +194,13 @@ export default function PedidoStatusModal({
     onClose();
   }
 
+  if (!visible) return null;
+
   const numFormateado = pedidoId ? `PED-${String(pedidoId).padStart(4, '0')}` : '';
 
   return (
-    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={[styles.card, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+    <View style={styles.overlay}>
+      <View style={[styles.card, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           {/* Header */}
           <View style={styles.header}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -382,17 +383,22 @@ export default function PedidoStatusModal({
           </View>
         </View>
       </View>
-    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    zIndex: 9999,
+    elevation: 10,
   },
   card: {
     width: '100%',

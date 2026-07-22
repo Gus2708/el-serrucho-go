@@ -48,7 +48,7 @@ export default function RegistroStatusModal({
   onClose,
   onProceed,
   proceedLabel,
-}: RegistroStatusModalProps): React.JSX.Element {
+}: RegistroStatusModalProps): React.JSX.Element | null {
   const { colors } = useTheme();
 
   const [status, setStatus]             = useState<BackendStatus>('pendiente');
@@ -171,14 +171,15 @@ export default function RegistroStatusModal({
     onClose();
   }
 
+  if (!visible) return null;
+
   const numFormateado = registroId ? `${prefix}${String(registroId).padStart(4, '0')}` : '';
   const defaultActionText = tipo === 'cliente' ? 'Usar en Presupuesto' : 'Usar en Compra';
   const actionText = proceedLabel || defaultActionText;
 
   return (
-    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={[styles.card, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+    <View style={styles.overlay}>
+      <View style={[styles.card, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           {/* Header */}
           <View style={styles.header}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -353,17 +354,22 @@ export default function RegistroStatusModal({
           </View>
         </View>
       </View>
-    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    zIndex: 9999,
+    elevation: 10,
   },
   card: {
     width: '100%',
