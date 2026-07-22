@@ -224,7 +224,10 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
         {/* Agregar producto */}
         <PressableScale
           style={[styles.addProductBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }]}
-          onPress={() => router.push('/seleccionar-productos?target=pedido')}
+          onPress={() => {
+            usePedido.getState().setModalOpen(true, true);
+            router.push('/seleccionar-productos?target=pedido');
+          }}
         >
           <Feather name="search" size={16} color={colors.primary} />
           <Text style={[styles.addProductText, { color: colors.primary }]}>Agregar producto</Text>

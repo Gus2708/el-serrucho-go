@@ -42,6 +42,7 @@ export function PedidoFab(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
   const modalOpen = usePedido(s => s.modalOpen);
+  const skipModalAnimation = usePedido(s => s.skipModalAnimation);
   const setModalOpen = usePedido(s => s.setModalOpen);
   const draftCount = usePedido(s => s.items.length);
 
@@ -81,7 +82,7 @@ export function PedidoFab(): React.JSX.Element {
       >
         <PressableScale
           activeScale={0.92}
-          onPress={() => setModalOpen(true)}
+          onPress={() => setModalOpen(true, false)}
           accessibilityRole="button"
           accessibilityLabel="Nuevo pedido"
           style={[
@@ -105,20 +106,20 @@ export function PedidoFab(): React.JSX.Element {
         </PressableScale>
       </Animated.View>
 
-      <PedidoModal visible={modalOpen} onClose={() => setModalOpen(false)} />
+      <PedidoModal visible={modalOpen} skipAnimation={skipModalAnimation} onClose={() => setModalOpen(false, false)} />
     </>
   );
 }
 
 // ── Modal (armar + historial) ─────────────────────────────────────────────────
 
-function PedidoModal({ visible, onClose }: { visible: boolean; onClose: () => void }): React.JSX.Element {
+function PedidoModal({ visible, skipAnimation, onClose }: { visible: boolean; skipAnimation: boolean; onClose: () => void }): React.JSX.Element {
   const { colors } = useTheme();
   const router = useRouter();
   const [subTab, setSubTab] = useState<'armar' | 'historial'>('armar');
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
+    <Modal visible={visible} animationType={skipAnimation ? 'none' : 'slide'} transparent={false} onRequestClose={onClose}>
       <SafeAreaView style={[styles.modalRoot, { backgroundColor: colors.bg }]} edges={['top']}>
         <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
           <View style={styles.modalTitleRow}>
