@@ -41,7 +41,8 @@ export function PedidoFab(): React.JSX.Element {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
-  const [open, setOpen] = useState(false);
+  const modalOpen = usePedido(s => s.modalOpen);
+  const setModalOpen = usePedido(s => s.setModalOpen);
   const draftCount = usePedido(s => s.items.length);
 
   // Entrada: pop de escala + opacidad al montar (nada desde scale 0).
@@ -80,7 +81,7 @@ export function PedidoFab(): React.JSX.Element {
       >
         <PressableScale
           activeScale={0.92}
-          onPress={() => setOpen(true)}
+          onPress={() => setModalOpen(true)}
           accessibilityRole="button"
           accessibilityLabel="Nuevo pedido"
           style={[
@@ -104,7 +105,7 @@ export function PedidoFab(): React.JSX.Element {
         </PressableScale>
       </Animated.View>
 
-      <PedidoModal visible={open} onClose={() => setOpen(false)} />
+      <PedidoModal visible={modalOpen} onClose={() => setModalOpen(false)} />
     </>
   );
 }

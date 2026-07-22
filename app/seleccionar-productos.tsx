@@ -39,8 +39,7 @@ export default function SeleccionarProductos() {
   const markupPct        = config?.markup_porcentaje ?? 30;
   const bcv              = tasa?.bcv_usd ?? 0;
 
-  const [localEnBs, setLocalEnBs] = useState(false);
-  const enBs = isPresupuesto ? presupuestoStore.enBs : localEnBs;
+  const enBs = isPresupuesto ? presupuestoStore.enBs : pedidoStore.enBs;
 
   const { data: userAuth } = useUserRole();
   const { resolverSolicitud, isResolving, marcarNoDisponible, isMarcandoNoDisponible } = useResolverSolicitud();
@@ -54,7 +53,7 @@ export default function SeleccionarProductos() {
         presupuestoStore.setEnBs(false, null, null);
       }
     } else {
-      setLocalEnBs(toBs);
+      pedidoStore.setEnBs(toBs);
     }
   }
 

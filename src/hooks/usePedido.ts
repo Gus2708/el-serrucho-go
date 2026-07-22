@@ -22,20 +22,24 @@ export interface PedidoEditDraft {
 }
 
 interface PedidoStore {
-  clienteCodigo:  string | null;
-  clienteNombre:  string | null;
-  items:          PedidoDraftItem[];
-  nota:           string;
-  isLoading:      boolean;
+  clienteCodigo:   string | null;
+  clienteNombre:   string | null;
+  items:           PedidoDraftItem[];
+  nota:            string;
+  enBs:            boolean;
+  modalOpen:       boolean;
+  isLoading:       boolean;
   editingPedidoId: number | null;   // != null => reintentar un pedido existente (update, no insert)
-  setCliente:     (codigo: string, nombre: string) => void;
-  addItem:        (item: PedidoDraftItem) => void;
-  removeItem:     (codigo: string) => void;
-  updateItem:     (codigo: string, updates: Partial<PedidoDraftItem>) => void;
-  setNota:        (nota: string) => void;
-  clear:          () => void;
-  loadForEdit:    (draft: PedidoEditDraft) => void;
-  submit:         (userId: string) => Promise<{ pedidoId: number }>;
+  setCliente:      (codigo: string, nombre: string) => void;
+  setEnBs:         (enBs: boolean) => void;
+  setModalOpen:    (open: boolean) => void;
+  addItem:         (item: PedidoDraftItem) => void;
+  removeItem:      (codigo: string) => void;
+  updateItem:      (codigo: string, updates: Partial<PedidoDraftItem>) => void;
+  setNota:         (nota: string) => void;
+  clear:           () => void;
+  loadForEdit:     (draft: PedidoEditDraft) => void;
+  submit:          (userId: string) => Promise<{ pedidoId: number }>;
 }
 
 export const usePedido = create<PedidoStore>()((set, get) => ({
@@ -43,10 +47,14 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
   clienteNombre:   null,
   items:           [],
   nota:            '',
+  enBs:            false,
+  modalOpen:       false,
   isLoading:       false,
   editingPedidoId: null,
 
-  setCliente: (codigo, nombre) => set({ clienteCodigo: codigo, clienteNombre: nombre }),
+  setCliente:   (codigo, nombre) => set({ clienteCodigo: codigo, clienteNombre: nombre }),
+  setEnBs:      (enBs) => set({ enBs }),
+  setModalOpen: (modalOpen) => set({ modalOpen }),
 
   // Consolida por código: Hybrid permite líneas repetidas, pero el orquestador
   // (registrar_pedido) rechaza códigos duplicados, así que sumamos cantidades.
@@ -76,7 +84,7 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
   setNota: (nota) => set({ nota }),
 
   clear: () => set({
-    clienteCodigo: null, clienteNombre: null, items: [], nota: '', editingPedidoId: null,
+    clienteCodigo: null, clienteNombre: null, items: [], nota: '', editingPedidoId: null, enBs: false,
   }),
 
   loadForEdit: (draft) => set({
@@ -85,6 +93,7 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
     clienteNombre:   draft.clienteNombre,
     nota:            draft.nota,
     items:           draft.items,
+    modalOpen:       true,
   }),
 
   submit: async (userId: string) => {

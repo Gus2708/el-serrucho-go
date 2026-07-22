@@ -55,6 +55,8 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
     removeItem,
     updateItem,
     setNota,
+    enBs,
+    setEnBs,
     clear,
     submit,
   } = usePedido();
@@ -63,7 +65,6 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
   const { data: tasa }   = useTazas();
   const markupPct        = config?.markup_porcentaje ?? 30;
   const bcv              = tasa?.bcv_usd ?? 0;
-  const [enBs, setEnBs]  = React.useState<boolean>(false);
 
   const [clienteModalVisible, setClienteModalVisible] = useState(false);
   const [registroClienteVisible, setRegistroClienteVisible] = useState(false);
