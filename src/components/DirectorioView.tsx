@@ -123,10 +123,18 @@ export default function DirectorioView(): React.JSX.Element {
       <RegistroClienteModal
         visible={modalVisible && subTab === 'cliente'}
         onClose={() => setModalVisible(false)}
+        proceedLabel="Entendido"
+        onRegistered={() => {
+          queryClient.invalidateQueries({ queryKey: ['registros'] });
+        }}
       />
       <RegistroProveedorModal
         visible={modalVisible && subTab === 'proveedor'}
         onClose={() => setModalVisible(false)}
+        proceedLabel="Entendido"
+        onRegistered={() => {
+          queryClient.invalidateQueries({ queryKey: ['registros'] });
+        }}
       />
     </View>
   );

@@ -151,6 +151,19 @@ export default function SeleccionarCliente() {
       <RegistroClienteModal
         visible={registroVisible}
         onClose={() => setRegistroVisible(false)}
+        proceedLabel="Usar en Presupuesto"
+        onRegistered={(_id, data) => {
+          if (data) {
+            setCliente({
+              codigo_cliente: data.codigo,
+              nombre:         data.nombre,
+              rif:            data.rif,
+              telefono:       data.telefono || null,
+              direccion:      data.direccion || null,
+            });
+            router.replace({ pathname: '/(tabs)/ordenes', params: { tab: 'presupuesto' } });
+          }
+        }}
       />
     </SafeAreaView>
   );

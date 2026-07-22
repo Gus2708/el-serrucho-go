@@ -17,14 +17,16 @@ import { useTheme } from '../theme/ThemeContext';
 import { notify } from '../lib/notify';
 import { PressableScale } from './PressableScale';
 import { useRegistrarCliente } from '../hooks/useRegistrarCliente';
+import RegistroStatusModal, { RegisteredData } from './RegistroStatusModal';
 
 interface RegistroClienteModalProps {
   visible:       boolean;
   onClose:       () => void;
-  onRegistered?: (id: number) => void;
+  onRegistered?: (id: number, data?: RegisteredData) => void;
+  proceedLabel?: string;
 }
 
-export default function RegistroClienteModal({ visible, onClose, onRegistered }: RegistroClienteModalProps): React.JSX.Element {
+export default function RegistroClienteModal({ visible, onClose, onRegistered, proceedLabel }: RegistroClienteModalProps): React.JSX.Element {
   const { colors } = useTheme();
   const { mutateAsync, isPending } = useRegistrarCliente();
 
@@ -34,12 +36,17 @@ export default function RegistroClienteModal({ visible, onClose, onRegistered }:
   const [direccion, setDireccion] = useState<string>('');
   const [nota, setNota]           = useState<string>('');
 
+  const [showStatusModal, setShowStatusModal] = useState<boolean>(false);
+  const [submittedData, setSubmittedData]     = useState<{ id: number; nombre: string; rif: string; telefono?: string; direccion?: string } | null>(null);
+
   function resetForm(): void {
     setNombre('');
     setRif('');
     setTelefono('');
     setDireccion('');
     setNota('');
+    setSubmittedData(null);
+    setShowStatusModal(false);
   }
 
   function handleClose(): void {
@@ -58,65 +65,95 @@ export default function RegistroClienteModal({ visible, onClose, onRegistered }:
     }
     try {
       const { id } = await mutateAsync({ nombre, rif, telefono, direccion, nota });
-      notify('Cliente en cola', `Registro #${id} encolado para darse de alta en Hybrid.`);
-      onRegistered?.(id);
-      resetForm();
-      onClose();
+      setSubmittedData({ id, nombre: nombre.trim().toUpperCase(), rif: rif.trim().toUpperCase(), telefono, direccion });
+      setShowStatusModal(true);
     } catch (e: any) {
       notify('Error', e?.message ?? 'No se pudo registrar el cliente.');
     }
   }
 
+  function handleStatusProceed(data: RegisteredData): void {
+    setShowStatusModal(false);
+    onRegistered?.(data.id, data);
+    resetForm();
+    onClose();
+  }
+
+  function handleStatusClose(): void {
+    if (submittedData) {
+      onRegistered?.(submittedData.id);
+    }
+    setShowStatusModal(false);
+    resetForm();
+    onClose();
+  }
+
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
-      <View style={styles.modalOverlay}>
-        <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-          <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Registrar cliente</Text>
-            <Pressable onPress={handleClose} hitSlop={8}>
-              <Feather name="x" size={22} color={colors.textMuted} />
-            </Pressable>
-          </View>
-
-          <View style={[styles.infoBanner, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}>
-            <Feather name="user-plus" size={15} color={colors.primary} style={styles.infoBannerIcon} />
-            <View style={styles.infoBannerTextContainer}>
-              <Text style={[styles.infoBannerTitle, { color: colors.primary }]}>Registro automático en Hybrid</Text>
-              <Text style={[styles.infoBannerSub, { color: colors.textMuted }]}>
-                El cliente se dará de alta solo en el POS. Se aplica fuera de horario y aparecerá en el
-                selector tras la próxima sincronización.
-              </Text>
+    <>
+      <Modal visible={visible && !showStatusModal} animationType="slide" transparent onRequestClose={handleClose}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Registrar cliente</Text>
+              <Pressable onPress={handleClose} hitSlop={8}>
+                <Feather name="x" size={22} color={colors.textMuted} />
+              </Pressable>
             </View>
+
+            <View style={[styles.infoBanner, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}>
+              <Feather name="user-plus" size={15} color={colors.primary} style={styles.infoBannerIcon} />
+              <View style={styles.infoBannerTextContainer}>
+                <Text style={[styles.infoBannerTitle, { color: colors.primary }]}>Registro automático en Hybrid</Text>
+                <Text style={[styles.infoBannerSub, { color: colors.textMuted }]}>
+                  El cliente se dará de alta en el POS y aparecerá listo para usar en tu presupuesto o venta.
+                </Text>
+              </View>
+            </View>
+
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <LabeledInput label="NOMBRE / RAZÓN SOCIAL *" value={nombre} onChangeText={setNombre} placeholder="Nombre del cliente" autoCapitalize="characters" />
+              <LabeledInput label="RIF / CÉDULA *" value={rif} onChangeText={setRif} placeholder="J-000000000 / V-00000000" autoCapitalize="characters" />
+              <LabeledInput label="TELÉFONO" value={telefono} onChangeText={setTelefono} placeholder="0000-0000000" keyboardType="phone-pad" />
+              <LabeledInput label="DIRECCIÓN" value={direccion} onChangeText={setDireccion} placeholder="Dirección (opcional)" />
+              <LabeledInput label="NOTA" value={nota} onChangeText={setNota} placeholder="Observaciones (opcional)" multiline />
+
+              <PressableScale
+                style={[styles.formSubmitBtn, { backgroundColor: colors.primary }]}
+                dimmed={isPending}
+                disabled={isPending}
+                onPress={handleSubmit}
+              >
+                {isPending ? (
+                  <ActivityIndicator color={colors.onPrimary} />
+                ) : (
+                  <>
+                    <Feather name="send" size={16} color={colors.onPrimary} />
+                    <Text style={[styles.formSubmitText, { color: colors.onPrimary }]}>Registrar cliente</Text>
+                  </>
+                )}
+              </PressableScale>
+
+              <View style={{ height: 24 }} />
+            </ScrollView>
           </View>
-
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <LabeledInput label="NOMBRE / RAZÓN SOCIAL *" value={nombre} onChangeText={setNombre} placeholder="Nombre del cliente" autoCapitalize="characters" />
-            <LabeledInput label="RIF / CÉDULA *" value={rif} onChangeText={setRif} placeholder="J-000000000 / V-00000000" autoCapitalize="characters" />
-            <LabeledInput label="TELÉFONO" value={telefono} onChangeText={setTelefono} placeholder="0000-0000000" keyboardType="phone-pad" />
-            <LabeledInput label="DIRECCIÓN" value={direccion} onChangeText={setDireccion} placeholder="Dirección (opcional)" />
-            <LabeledInput label="NOTA" value={nota} onChangeText={setNota} placeholder="Observaciones (opcional)" multiline />
-
-            <PressableScale
-              style={[styles.formSubmitBtn, { backgroundColor: colors.primary }]}
-              dimmed={isPending}
-              disabled={isPending}
-              onPress={handleSubmit}
-            >
-              {isPending ? (
-                <ActivityIndicator color={colors.onPrimary} />
-              ) : (
-                <>
-                  <Feather name="send" size={16} color={colors.onPrimary} />
-                  <Text style={[styles.formSubmitText, { color: colors.onPrimary }]}>Registrar cliente</Text>
-                </>
-              )}
-            </PressableScale>
-
-            <View style={{ height: 24 }} />
-          </ScrollView>
         </View>
-      </View>
-    </Modal>
+      </Modal>
+
+      {submittedData && (
+        <RegistroStatusModal
+          visible={showStatusModal}
+          tipo="cliente"
+          registroId={submittedData.id}
+          initialNombre={submittedData.nombre}
+          initialRif={submittedData.rif}
+          initialTelefono={submittedData.telefono}
+          initialDireccion={submittedData.direccion}
+          onClose={handleStatusClose}
+          onProceed={handleStatusProceed}
+          proceedLabel={proceedLabel}
+        />
+      )}
+    </>
   );
 }
 

@@ -355,6 +355,12 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
       <RegistroClienteModal
         visible={registroClienteVisible}
         onClose={() => setRegistroClienteVisible(false)}
+        proceedLabel="Usar en Pedido"
+        onRegistered={(_id, data) => {
+          if (data) {
+            setCliente(data.codigo, data.nombre);
+          }
+        }}
       />
       <ProductoPickerModal
         visible={productoModalVisible}

@@ -348,6 +348,12 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
       <RegistroProveedorModal
         visible={proveedorNuevoModalVisible}
         onClose={() => setProveedorNuevoModalVisible(false)}
+        proceedLabel="Usar en Compra"
+        onRegistered={(_id, data) => {
+          if (data) {
+            setProveedor(data.codigo, data.nombre);
+          }
+        }}
       />
       <ProductoPickerModal
         visible={productoModalVisible}
