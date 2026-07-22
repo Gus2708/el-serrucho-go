@@ -23,6 +23,7 @@ import { supabase, Producto } from '../lib/supabase';
 import { usePedido, PedidoDraftItem } from '../hooks/usePedido';
 import { useProductos } from '../hooks/useProductos';
 import { useTazas } from '../hooks/useTazas';
+import { usePresupuestoConfig } from '../hooks/usePresupuestoConfig';
 import { PressableScale } from './PressableScale';
 import { pressScale } from '../theme/motion';
 import RegistroClienteModal from './RegistroClienteModal';
@@ -58,9 +59,11 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
     submit,
   } = usePedido();
 
-  const { data: tasa } = useTazas();
-  const bcv = tasa?.bcv_usd ?? 0;
-  const [enBs, setEnBs] = React.useState<boolean>(false);
+  const { data: config } = usePresupuestoConfig();
+  const { data: tasa }   = useTazas();
+  const markupPct        = config?.markup_porcentaje ?? 30;
+  const bcv              = tasa?.bcv_usd ?? 0;
+  const [enBs, setEnBs]  = React.useState<boolean>(false);
 
   const [clienteModalVisible, setClienteModalVisible] = useState(false);
   const [registroClienteVisible, setRegistroClienteVisible] = useState(false);
@@ -81,7 +84,8 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
         .in('codigo_interno', missingCodigos);
       if (data) {
         data.forEach(p => {
-          updateItem(p.codigo_interno, { precio_unitario: Number(p.precio_venta) });
+          const price = Number(p.precio_venta);
+          updateItem(p.codigo_interno, { precio_base_usd: price, precio_unitario: price });
         });
       }
       return data ?? [];
@@ -91,8 +95,12 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
   });
 
   const totalUnidades = items.reduce((sum, item) => sum + item.cantidad, 0);
-  const totalUsd = items.reduce((sum, item) => sum + item.cantidad * (item.precio_unitario ?? 0), 0);
-  const totalBs = totalUsd * bcv;
+  const totalBaseUsd = items.reduce((sum, item) => {
+    const p = item.precio_base_usd ?? item.precio_unitario ?? 0;
+    return sum + item.cantidad * p;
+  }, 0);
+  const totalMarkupUsd = parseFloat((totalBaseUsd * (1 + markupPct / 100)).toFixed(2));
+  const totalBs = totalMarkupUsd * bcv;
 
   function handleSelectCliente(cliente: ClienteRow): void {
     setCliente(cliente.codigo_cliente, cliente.nombre);
@@ -100,11 +108,13 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
   }
 
   function handleSelectProducto(producto: Producto): void {
+    const basePrice = Number(producto.precio_venta || 0);
     addItem({
       codigo_producto: producto.codigo_interno,
       descripcion:     producto.descripcion,
       cantidad:        1,
-      precio_unitario: producto.precio_venta,
+      precio_base_usd: basePrice,
+      precio_unitario: basePrice,
     });
     setProductoModalVisible(false);
   }
@@ -269,6 +279,7 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
                 item={item}
                 enBs={enBs}
                 bcv={bcv}
+                markupPct={markupPct}
                 onRemove={() => removeItem(item.codigo_producto)}
                 onUpdate={updates => updateItem(item.codigo_producto, updates)}
               />
@@ -311,10 +322,13 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
             <Text style={[styles.submitCount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
               {items.length} ítem{items.length > 1 ? 's' : ''} · {totalUnidades} und
             </Text>
-            {totalUsd > 0 && (
+            {totalBaseUsd > 0 && (
               <Text style={[styles.submitTotal, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
-                Est: {formatUSD(totalUsd)}
-                {enBs && bcv > 0 ? `  ·  Bs. ${totalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
+                {enBs && bcv > 0 ? (
+                  `Est: ${formatUSD(totalBaseUsd)} (+${markupPct}% = ${formatUSD(totalMarkupUsd)}) · Bs. ${totalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                ) : (
+                  `Est: ${formatUSD(totalBaseUsd)}`
+                )}
               </Text>
             )}
             <PressableScale onPress={() => confirm({ title: 'Limpiar pedido', message: 'Se perderán los ítems agregados.', confirmText: 'Limpiar', destructive: true, onConfirm: clear })} style={{ marginTop: 2 }}>
@@ -374,21 +388,26 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
 // ── Item card ─────────────────────────────────────────────────────────────────
 
 interface PedidoItemCardProps {
-  item:     PedidoDraftItem;
-  enBs:     boolean;
-  bcv:      number;
-  onRemove: () => void;
-  onUpdate: (updates: Partial<PedidoDraftItem>) => void;
+  item:      PedidoDraftItem;
+  enBs:      boolean;
+  bcv:       number;
+  markupPct: number;
+  onRemove:  () => void;
+  onUpdate:  (updates: Partial<PedidoDraftItem>) => void;
 }
 
-function PedidoItemCard({ item, enBs, bcv, onRemove, onUpdate }: PedidoItemCardProps): React.JSX.Element {
+function PedidoItemCard({ item, enBs, bcv, markupPct, onRemove, onUpdate }: PedidoItemCardProps): React.JSX.Element {
   const { colors, formatUSD } = useTheme();
   const [cantidadInput, setCantidadInput] = useState<string>(String(item.cantidad));
   const decimalKeyboard = Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad';
 
-  const precioUnitarioUsd = item.precio_unitario ?? 0;
-  const subtotalUsd = item.cantidad * precioUnitarioUsd;
-  const subtotalBs = subtotalUsd * bcv;
+  const precioBaseUsd = item.precio_base_usd ?? item.precio_unitario ?? 0;
+  const precioMarkupUsd = parseFloat((precioBaseUsd * (1 + markupPct / 100)).toFixed(2));
+  const precioBs = precioMarkupUsd * bcv;
+
+  const subtotalBaseUsd = item.cantidad * precioBaseUsd;
+  const subtotalMarkupUsd = item.cantidad * precioMarkupUsd;
+  const subtotalBs = subtotalMarkupUsd * bcv;
 
   function handleCantidadChange(v: string): void {
     const val = v.replace(',', '.');
@@ -448,11 +467,11 @@ function PedidoItemCard({ item, enBs, bcv, onRemove, onUpdate }: PedidoItemCardP
         <View style={[styles.controlGroup, { alignItems: 'flex-end' }]}>
           <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>PRECIO UNIT.</Text>
           <Text style={[styles.priceVal, { color: colors.text }]}>
-            {precioUnitarioUsd > 0 ? formatUSD(precioUnitarioUsd) : '—'}
+            {precioBaseUsd > 0 ? formatUSD(enBs ? precioMarkupUsd : precioBaseUsd) : '—'}
           </Text>
-          {enBs && bcv > 0 && precioUnitarioUsd > 0 && (
+          {enBs && bcv > 0 && precioBaseUsd > 0 && (
             <Text style={[styles.priceSubBs, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
-              Bs. {(precioUnitarioUsd * bcv).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              +{markupPct}% (Bs. {precioBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
             </Text>
           )}
         </View>
@@ -460,9 +479,9 @@ function PedidoItemCard({ item, enBs, bcv, onRemove, onUpdate }: PedidoItemCardP
         <View style={[styles.controlGroup, { alignItems: 'flex-end' }]}>
           <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>SUBTOTAL</Text>
           <Text style={[styles.subtotalVal, { color: colors.primary }]}>
-            {subtotalUsd > 0 ? formatUSD(subtotalUsd) : '—'}
+            {subtotalBaseUsd > 0 ? formatUSD(enBs ? subtotalMarkupUsd : subtotalBaseUsd) : '—'}
           </Text>
-          {enBs && bcv > 0 && subtotalUsd > 0 && (
+          {enBs && bcv > 0 && subtotalBaseUsd > 0 && (
             <Text style={[styles.priceSubBs, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
               Bs. {subtotalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
@@ -582,6 +601,10 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
   const { colors, formatUSD } = useTheme();
   const [search, setSearch] = useState<string>('');
   const { productos, isLoading } = useProductos(search);
+  const { data: config } = usePresupuestoConfig();
+  const { data: tasa }   = useTazas();
+  const markupPct        = config?.markup_porcentaje ?? 30;
+  const bcv              = tasa?.bcv_usd ?? 0;
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -613,25 +636,37 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
               data={productos}
               keyExtractor={p => p.codigo_interno}
               keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => (
-                <PressableScale
-                  activeScale={pressScale.row}
-                  style={[styles.pickerRow, { borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
-                  onPress={() => onSelect(item)}
-                >
-                  <View style={{ flex: 1, paddingRight: 8 }}>
-                    <Text style={[styles.pickerRowTitle, { color: colors.text }]} numberOfLines={1}>
-                      {item.descripcion}
-                    </Text>
-                    <Text style={[styles.pickerRowSub, { color: colors.textMuted }]} numberOfLines={1}>
-                      {item.codigo_interno}
-                    </Text>
-                  </View>
-                  <Text style={[styles.pickerRowPrice, { color: colors.primary }]}>
-                    {formatUSD(item.precio_venta)}
-                  </Text>
-                </PressableScale>
-              )}
+              renderItem={({ item }) => {
+                const precioMarkupUsd = parseFloat((item.precio_venta * (1 + markupPct / 100)).toFixed(2));
+                const precioBs = bcv > 0 ? precioMarkupUsd * bcv : 0;
+                return (
+                  <PressableScale
+                    activeScale={pressScale.row}
+                    style={[styles.pickerRow, { borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+                    onPress={() => onSelect(item)}
+                  >
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <Text style={[styles.pickerRowTitle, { color: colors.text }]} numberOfLines={1}>
+                        {item.descripcion}
+                      </Text>
+                      <Text style={[styles.pickerRowSub, { color: colors.textMuted }]} numberOfLines={1}>
+                        {item.codigo_interno}
+                      </Text>
+                    </View>
+
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={[styles.pickerRowPrice, { color: colors.primary }]}>
+                        {formatUSD(item.precio_venta)}
+                      </Text>
+                      {bcv > 0 && (
+                        <Text style={[styles.pickerRowSub, { color: colors.textMuted }]} numberOfLines={1}>
+                          +{markupPct}% ({formatUSD(precioMarkupUsd)}) · Bs {precioBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </Text>
+                      )}
+                    </View>
+                  </PressableScale>
+                );
+              }}
               ListEmptyComponent={
                 <View style={styles.empty}>
                   <Feather name="package" size={28} color={colors.textDim} />

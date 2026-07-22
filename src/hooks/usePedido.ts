@@ -6,10 +6,11 @@ import { supabase } from '../lib/supabase';
 // (a diferencia de la compra, ver useCompra). El backend (flujo_pedido_real)
 // solo teclea código y cantidad en la pantalla de Pedidos.
 export interface PedidoDraftItem {
-  codigo_producto: string;
-  descripcion:     string;
-  cantidad:        number;
+  codigo_producto:  string;
+  descripcion:      string;
+  cantidad:         number;
   precio_unitario?: number;
+  precio_base_usd?: number;
 }
 
 export interface PedidoEditDraft {
