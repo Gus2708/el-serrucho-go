@@ -21,7 +21,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#010100"
       },
-      "package": "com.ferreteria.elserrucho.go"
+      "package": "com.ferreteria.elserrucho.go",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "bundler": "metro",

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "262222899868",
+    "project_id": "el-serrucho-go",
+    "storage_bucket": "el-serrucho-go.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:262222899868:android:34fc82d9aba48c2038db59",
+        "android_client_info": {
+          "package_name": "com.ferreteria.elserrucho.go"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB9zmXo4-OkzPGwUdwQ2zgQE1-B8N2cTfI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

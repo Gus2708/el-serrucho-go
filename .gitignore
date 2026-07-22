@@ -45,8 +45,62 @@ supabase/.temp/
 *.mobileprovision
 
 # OS artifacts
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+android/build/
+android/.gradle/
+ios/build/
+ios/Pods/
+ios/DerivedData/
+
+# EAS
+eas-build-*.tgz
+
+# TypeScript
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test coverage
+coverage/
+
+# Supabase local
+supabase/.temp/
+
+# Certificates & signing
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# OS artifacts
 .DS_Store
 Thumbs.db
 
 # Merge artifacts
 *.orig.*
+
+# Agents
+.agents/
+.claude/
+
+# Firebase Admin SDK credentials
+*-firebase-adminsdk-*.json

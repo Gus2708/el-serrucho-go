@@ -24,6 +24,7 @@ import { usePedido, PedidoDraftItem } from '../hooks/usePedido';
 import { useProductos } from '../hooks/useProductos';
 import { PressableScale } from './PressableScale';
 import { pressScale } from '../theme/motion';
+import RegistroClienteModal from './RegistroClienteModal';
 
 interface ClienteRow {
   codigo_cliente: string;
@@ -57,6 +58,7 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
   } = usePedido();
 
   const [clienteModalVisible, setClienteModalVisible] = useState(false);
+  const [registroClienteVisible, setRegistroClienteVisible] = useState(false);
   const [productoModalVisible, setProductoModalVisible] = useState(false);
 
   const totalUnidades = items.reduce((sum, item) => sum + item.cantidad, 0);
@@ -271,6 +273,14 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
         visible={clienteModalVisible}
         onClose={() => setClienteModalVisible(false)}
         onSelect={handleSelectCliente}
+        onCreate={() => {
+          setClienteModalVisible(false);
+          setRegistroClienteVisible(true);
+        }}
+      />
+      <RegistroClienteModal
+        visible={registroClienteVisible}
+        onClose={() => setRegistroClienteVisible(false)}
       />
       <ProductoPickerModal
         visible={productoModalVisible}
@@ -357,9 +367,10 @@ interface ClientePickerModalProps {
   visible:  boolean;
   onClose:  () => void;
   onSelect: (cliente: ClienteRow) => void;
+  onCreate: () => void;
 }
 
-function ClientePickerModal({ visible, onClose, onSelect }: ClientePickerModalProps): React.JSX.Element {
+function ClientePickerModal({ visible, onClose, onSelect, onCreate }: ClientePickerModalProps): React.JSX.Element {
   const { colors } = useTheme();
   const [search, setSearch] = useState<string>('');
 
@@ -403,6 +414,14 @@ function ClientePickerModal({ visible, onClose, onSelect }: ClientePickerModalPr
               autoFocus
             />
           </View>
+
+          <PressableScale
+            style={[styles.nuevoClienteBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }]}
+            onPress={onCreate}
+          >
+            <Feather name="user-plus" size={16} color={colors.primary} />
+            <Text style={[styles.nuevoClienteText, { color: colors.primary }]}>Registrar nuevo cliente</Text>
+          </PressableScale>
 
           {isLoading ? (
             <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
@@ -716,6 +735,17 @@ const styles = StyleSheet.create({
     paddingVertical:   Platform.OS === 'ios' ? 10 : 4,
   },
   searchInput: { flex: 1, fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_400Regular' },
+  nuevoClienteBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    gap:             8,
+    paddingVertical: 12,
+    borderRadius:    12,
+    borderWidth:     1,
+    borderStyle:     'dashed',
+  },
+  nuevoClienteText: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
 
   pickerRow: {
     paddingVertical:   12,

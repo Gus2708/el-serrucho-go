@@ -26,6 +26,7 @@ import { useUserRole, isPrivilegedRole } from '../hooks/useUserRole';
 import { PressableScale } from './PressableScale';
 import { pressScale } from '../theme/motion';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
+import RegistroProveedorModal from './RegistroProveedorModal';
 
 // Ficha de Inventario de HybridLite trunca la descripción a los 60 caracteres
 // (confirmado en compras.log 2026-07-17: "PUERTA MULTILOCK...QUINTE" != "...QUINTERO",
@@ -63,6 +64,7 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
   const isPrivileged = isPrivilegedRole(userAuth?.role);
 
   const [proveedorModalVisible, setProveedorModalVisible] = useState(false);
+  const [proveedorNuevoModalVisible, setProveedorNuevoModalVisible] = useState(false);
   const [productoModalVisible, setProductoModalVisible] = useState(false);
   const [productoNuevoModalVisible, setProductoNuevoModalVisible] = useState(false);
 
@@ -335,8 +337,17 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
 
       <ProveedorPickerModal
         visible={proveedorModalVisible}
+        canCreate={isPrivileged}
         onClose={() => setProveedorModalVisible(false)}
         onSelect={handleSelectProveedor}
+        onCreate={() => {
+          setProveedorModalVisible(false);
+          setProveedorNuevoModalVisible(true);
+        }}
+      />
+      <RegistroProveedorModal
+        visible={proveedorNuevoModalVisible}
+        onClose={() => setProveedorNuevoModalVisible(false)}
       />
       <ProductoPickerModal
         visible={productoModalVisible}
@@ -505,12 +516,14 @@ function CompraItemCard({ item, onRemove, onUpdate }: CompraItemCardProps): Reac
 // ── Modal: selector de proveedor ─────────────────────────────────────────────
 
 interface ProveedorPickerModalProps {
-  visible:  boolean;
-  onClose:  () => void;
-  onSelect: (proveedor: Proveedor) => void;
+  visible:   boolean;
+  canCreate: boolean;
+  onClose:   () => void;
+  onSelect:  (proveedor: Proveedor) => void;
+  onCreate:  () => void;
 }
 
-function ProveedorPickerModal({ visible, onClose, onSelect }: ProveedorPickerModalProps): React.JSX.Element {
+function ProveedorPickerModal({ visible, canCreate, onClose, onSelect, onCreate }: ProveedorPickerModalProps): React.JSX.Element {
   const { colors } = useTheme();
   const { data: proveedores, isLoading } = useProveedores();
   const [search, setSearch] = useState<string>('');
@@ -543,6 +556,16 @@ function ProveedorPickerModal({ visible, onClose, onSelect }: ProveedorPickerMod
               autoFocus
             />
           </View>
+
+          {canCreate ? (
+            <PressableScale
+              style={[styles.nuevoProveedorBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }]}
+              onPress={onCreate}
+            >
+              <Feather name="plus" size={16} color={colors.primary} />
+              <Text style={[styles.addProductText, { color: colors.primary }]}>Nuevo proveedor</Text>
+            </PressableScale>
+          ) : null}
 
           {isLoading ? (
             <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
@@ -937,6 +960,16 @@ const styles = StyleSheet.create({
     borderStyle:       'dashed',
   },
   addProductText: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
+  nuevoProveedorBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    gap:             8,
+    paddingVertical: 12,
+    borderRadius:    12,
+    borderWidth:     1,
+    borderStyle:     'dashed',
+  },
 
   empty: {
     alignItems:      'center',

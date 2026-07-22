@@ -42,8 +42,9 @@ import { DraftRestoreBanner } from '../../src/components/DraftRestoreBanner';
 import ComprasView from '../../src/components/ComprasView';
 import ComprasHistorialView from '../../src/components/ComprasHistorialView';
 import AprobacionesView from '../../src/components/AprobacionesView';
+import DirectorioView from '../../src/components/DirectorioView';
 
-type Tab = 'ajuste' | 'presupuesto' | 'historial' | 'fallas' | 'compras' | 'aprobaciones';
+type Tab = 'ajuste' | 'presupuesto' | 'historial' | 'fallas' | 'compras' | 'aprobaciones' | 'directorio';
 
 export default function Ordenes() {
   const { colors, formatUSD } = useTheme();
@@ -56,7 +57,7 @@ export default function Ordenes() {
   const isPrivileged = isPrivilegedRole(userAuth?.role);
 
   useEffect(() => {
-    const valid: Tab[] = ['ajuste', 'presupuesto', 'historial', 'fallas', 'compras', 'aprobaciones'];
+    const valid: Tab[] = ['ajuste', 'presupuesto', 'historial', 'fallas', 'compras', 'aprobaciones', 'directorio'];
     if (params.tab && valid.includes(params.tab as Tab)) {
       // Compras/Aprobaciones son solo para privilegiados: no dejar caer un empleado ahí.
       if ((params.tab === 'compras' || params.tab === 'aprobaciones') && !isPrivileged) return;
@@ -87,6 +88,7 @@ export default function Ordenes() {
           {isPrivileged && <TabBtn label="Aprobaciones" active={tab === 'aprobaciones'} onPress={() => setTab('aprobaciones')} />}
           <TabBtn label="Presupuesto" active={tab === 'presupuesto'} onPress={() => setTab('presupuesto')} />
           {isPrivileged && <TabBtn label="Compras" active={tab === 'compras'} onPress={() => setTab('compras')} />}
+          <TabBtn label="Directorio" active={tab === 'directorio'} onPress={() => setTab('directorio')} />
           <TabBtn label="Fallas" active={tab === 'fallas'} onPress={() => setTab('fallas')} />
           <TabBtn label="Historial" active={tab === 'historial'} onPress={() => setTab('historial')} />
         </ScrollView>
@@ -96,6 +98,7 @@ export default function Ordenes() {
       {tab === 'aprobaciones' && isPrivileged && <AprobacionesView />}
       {tab === 'presupuesto' && <PresupuestoView router={router} />}
       {tab === 'compras' && isPrivileged && <ComprasTab router={router} />}
+      {tab === 'directorio' && <DirectorioView />}
       {tab === 'fallas' && <FallasView />}
       {tab === 'historial' && <HistorialView queryClient={queryClient} />}
     </SafeAreaView>

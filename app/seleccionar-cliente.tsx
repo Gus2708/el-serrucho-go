@@ -8,6 +8,7 @@ import { useTheme } from '../src/theme/ThemeContext';
 import { usePresupuestoStore, Cliente } from '../src/hooks/usePresupuestoStore';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../src/lib/supabase';
+import RegistroClienteModal from '../src/components/RegistroClienteModal';
 
 function useClientesSearch(search: string) {
   return useQuery({
@@ -37,7 +38,8 @@ export default function SeleccionarCliente() {
   const { colors } = useTheme();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  
+  const [registroVisible, setRegistroVisible] = useState(false);
+
   const { cliente: selectedCliente, setCliente } = usePresupuestoStore();
 
   useEffect(() => {
@@ -79,7 +81,9 @@ export default function SeleccionarCliente() {
           <Feather name="chevron-down" size={28} color={colors.text} />
         </Pressable>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Seleccionar Cliente</Text>
-        <View style={{ width: 40 }} />
+        <Pressable onPress={() => setRegistroVisible(true)} style={styles.btnBack} hitSlop={8}>
+          <Feather name="user-plus" size={24} color={colors.primary} />
+        </Pressable>
       </View>
 
       {/* Search */}
@@ -101,6 +105,19 @@ export default function SeleccionarCliente() {
           </Pressable>
         )}
       </View>
+
+      {/* Registrar nuevo cliente */}
+      <Pressable
+        onPress={() => setRegistroVisible(true)}
+        style={({ pressed }) => [
+          styles.registrarBtn,
+          { borderColor: colors.primary, backgroundColor: colors.primaryFaded },
+          pressed && { opacity: 0.7 },
+        ]}
+      >
+        <Feather name="user-plus" size={18} color={colors.primary} />
+        <Text style={[styles.registrarText, { color: colors.primary }]}>Registrar nuevo cliente</Text>
+      </Pressable>
 
       {/* List */}
       <FlatList
@@ -129,6 +146,11 @@ export default function SeleccionarCliente() {
             </Text>
           )
         }
+      />
+
+      <RegistroClienteModal
+        visible={registroVisible}
+        onClose={() => setRegistroVisible(false)}
       />
     </SafeAreaView>
   );
@@ -170,6 +192,22 @@ const styles = StyleSheet.create({
     flex: 1,
     height: '100%',
     fontSize: scaleFont(16),
+  },
+  registrarBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginHorizontal: 15,
+    marginBottom: 5,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+  },
+  registrarText: {
+    fontSize: scaleFont(14),
+    fontWeight: '700',
   },
   listContainer: {
     paddingHorizontal: 15,

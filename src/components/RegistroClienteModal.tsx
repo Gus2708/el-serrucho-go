@@ -1,0 +1,235 @@
+import { scaleFont } from '../theme/responsive';
+import * as React from 'react';
+import { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  TextInput,
+  ScrollView,
+  Modal,
+  ActivityIndicator,
+  Platform,
+} from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import { useTheme } from '../theme/ThemeContext';
+import { notify } from '../lib/notify';
+import { PressableScale } from './PressableScale';
+import { useRegistrarCliente } from '../hooks/useRegistrarCliente';
+
+interface RegistroClienteModalProps {
+  visible:       boolean;
+  onClose:       () => void;
+  onRegistered?: (id: number) => void;
+}
+
+export default function RegistroClienteModal({ visible, onClose, onRegistered }: RegistroClienteModalProps): React.JSX.Element {
+  const { colors } = useTheme();
+  const { mutateAsync, isPending } = useRegistrarCliente();
+
+  const [nombre, setNombre]       = useState<string>('');
+  const [rif, setRif]             = useState<string>('');
+  const [telefono, setTelefono]   = useState<string>('');
+  const [direccion, setDireccion] = useState<string>('');
+  const [nota, setNota]           = useState<string>('');
+
+  function resetForm(): void {
+    setNombre('');
+    setRif('');
+    setTelefono('');
+    setDireccion('');
+    setNota('');
+  }
+
+  function handleClose(): void {
+    resetForm();
+    onClose();
+  }
+
+  async function handleSubmit(): Promise<void> {
+    if (nombre.trim().length === 0) {
+      notify('Falta información', 'El nombre es obligatorio.');
+      return;
+    }
+    if (rif.trim().length === 0) {
+      notify('Falta información', 'El RIF / cédula es obligatorio: de él se genera el código en el POS.');
+      return;
+    }
+    try {
+      const { id } = await mutateAsync({ nombre, rif, telefono, direccion, nota });
+      notify('Cliente en cola', `Registro #${id} encolado para darse de alta en Hybrid.`);
+      onRegistered?.(id);
+      resetForm();
+      onClose();
+    } catch (e: any) {
+      notify('Error', e?.message ?? 'No se pudo registrar el cliente.');
+    }
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Registrar cliente</Text>
+            <Pressable onPress={handleClose} hitSlop={8}>
+              <Feather name="x" size={22} color={colors.textMuted} />
+            </Pressable>
+          </View>
+
+          <View style={[styles.infoBanner, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}>
+            <Feather name="user-plus" size={15} color={colors.primary} style={styles.infoBannerIcon} />
+            <View style={styles.infoBannerTextContainer}>
+              <Text style={[styles.infoBannerTitle, { color: colors.primary }]}>Registro automático en Hybrid</Text>
+              <Text style={[styles.infoBannerSub, { color: colors.textMuted }]}>
+                El cliente se dará de alta solo en el POS. Se aplica fuera de horario y aparecerá en el
+                selector tras la próxima sincronización.
+              </Text>
+            </View>
+          </View>
+
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <LabeledInput label="NOMBRE / RAZÓN SOCIAL *" value={nombre} onChangeText={setNombre} placeholder="Nombre del cliente" autoCapitalize="characters" />
+            <LabeledInput label="RIF / CÉDULA *" value={rif} onChangeText={setRif} placeholder="J-000000000 / V-00000000" autoCapitalize="characters" />
+            <LabeledInput label="TELÉFONO" value={telefono} onChangeText={setTelefono} placeholder="0000-0000000" keyboardType="phone-pad" />
+            <LabeledInput label="DIRECCIÓN" value={direccion} onChangeText={setDireccion} placeholder="Dirección (opcional)" />
+            <LabeledInput label="NOTA" value={nota} onChangeText={setNota} placeholder="Observaciones (opcional)" multiline />
+
+            <PressableScale
+              style={[styles.formSubmitBtn, { backgroundColor: colors.primary }]}
+              dimmed={isPending}
+              disabled={isPending}
+              onPress={handleSubmit}
+            >
+              {isPending ? (
+                <ActivityIndicator color={colors.onPrimary} />
+              ) : (
+                <>
+                  <Feather name="send" size={16} color={colors.onPrimary} />
+                  <Text style={[styles.formSubmitText, { color: colors.onPrimary }]}>Registrar cliente</Text>
+                </>
+              )}
+            </PressableScale>
+
+            <View style={{ height: 24 }} />
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ── Campo etiquetado ──────────────────────────────────────────────────────────
+
+interface LabeledInputProps {
+  label:          string;
+  value:          string;
+  onChangeText:   (v: string) => void;
+  placeholder?:   string;
+  autoCapitalize?: 'none' | 'characters' | 'words' | 'sentences';
+  keyboardType?:  'default' | 'phone-pad' | 'email-address';
+  multiline?:     boolean;
+}
+
+function LabeledInput({ label, value, onChangeText, placeholder, autoCapitalize = 'sentences', keyboardType = 'default', multiline = false }: LabeledInputProps): React.JSX.Element {
+  const { colors } = useTheme();
+  return (
+    <View style={styles.formField}>
+      <Text style={[styles.formLabel, { color: colors.textMuted }]}>{label}</Text>
+      <TextInput
+        style={[
+          styles.formInput,
+          { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface },
+          multiline && styles.formInputMultiline,
+        ]}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textDim}
+        value={value}
+        onChangeText={onChangeText}
+        autoCapitalize={autoCapitalize}
+        autoCorrect={false}
+        keyboardType={keyboardType}
+        multiline={multiline}
+        numberOfLines={multiline ? 2 : 1}
+      />
+    </View>
+  );
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  modalOverlay: {
+    flex:            1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent:  'flex-end',
+  },
+  modalContent: {
+    maxHeight:            '85%',
+    borderTopLeftRadius:  20,
+    borderTopRightRadius: 20,
+    borderWidth:          0.5,
+    padding:              16,
+    gap:                  12,
+  },
+  modalHeader: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+  },
+  modalTitle: { fontSize: scaleFont(17), fontFamily: 'JetBrainsMono_700Bold' },
+
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems:    'flex-start',
+    padding:       12,
+    borderRadius:  12,
+    borderWidth:   0.5,
+  },
+  infoBannerIcon:          { marginTop: 2, marginRight: 10 },
+  infoBannerTextContainer: { flex: 1 },
+  infoBannerTitle: {
+    fontSize:      scaleFont(12),
+    fontFamily:    'JetBrainsMono_700Bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom:  2,
+  },
+  infoBannerSub: {
+    fontSize:   scaleFont(11),
+    fontFamily: 'JetBrainsMono_400Regular',
+    lineHeight: scaleFont(15),
+  },
+
+  formField: { marginBottom: 14 },
+  formLabel: {
+    fontSize:      scaleFont(9),
+    fontFamily:    'JetBrainsMono_500Medium',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    marginBottom:  6,
+  },
+  formInput: {
+    fontSize:          scaleFont(14),
+    fontFamily:        'JetBrainsMono_400Regular',
+    borderWidth:       0.5,
+    borderRadius:      10,
+    paddingHorizontal: 12,
+    paddingVertical:   10,
+  },
+  formInputMultiline: {
+    minHeight:         56,
+    textAlignVertical: 'top',
+  },
+  formSubmitBtn: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'center',
+    gap:            8,
+    borderRadius:   12,
+    paddingVertical: 14,
+    marginTop:      4,
+  },
+  formSubmitText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
+});
