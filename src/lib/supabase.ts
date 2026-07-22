@@ -121,6 +121,9 @@ export type Presupuesto = {
   en_bs:              boolean;
   tasa_cambio?:       number | null;
   porcentaje_recargo?: number | null;
+  // Enlace de conversión a pedido (migr. 037). null = aún no convertido.
+  pedido_id?:         number | null;
+  convertido_en?:     string | null;
 };
 
 export type PresupuestoConfig = {

@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { Presupuesto, PresupuestoDetalle } from '../lib/supabase';
+import { PedidoDraftItem } from './usePedido';
 
 const PAGE_SIZE = 20;
 
@@ -119,4 +120,24 @@ export function usePresupuestoWithDetails(presupuestoId: number | null) {
     },
     enabled: !!presupuestoId,
   });
+}
+
+/**
+ * Ítems de un presupuesto en formato de draft de pedido (código + descripción +
+ * cantidad). NO se copia el precio del presupuesto: el pedido usa el precio
+ * maestro vigente del producto en Hybrid, así que PedidosView lo recarga solo.
+ */
+export async function fetchPresupuestoItemsForPedido(presupuestoId: number): Promise<PedidoDraftItem[]> {
+  const { data, error } = await supabase
+    .from('presupuestos_detalle')
+    .select('codigo_producto, descripcion, cantidad')
+    .eq('presupuesto_id', presupuestoId);
+
+  if (error) throw error;
+
+  return (data ?? []).map((it: any) => ({
+    codigo_producto: it.codigo_producto,
+    descripcion:     it.descripcion ?? '',
+    cantidad:        Number(it.cantidad),
+  }));
 }

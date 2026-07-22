@@ -30,12 +30,13 @@ import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 import { useInventarioStore } from '../../src/hooks/useInventarioStore';
 import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
 import { useOrdenesHistory, BackendResumen } from '../../src/hooks/useOrdenesHistory';
-import { useUserRole, isPrivilegedRole } from '../../src/hooks/useUserRole';
+import { useUserRole, isPrivilegedRole, canMakePedidos } from '../../src/hooks/useUserRole';
+import { usePedido } from '../../src/hooks/usePedido';
 import { supabase } from '../../src/lib/supabase';
 import { buildPdfHtml, buildPresupuestoPdfHtml, printHtml, getPresupuestoFilename } from '../../src/utils/pdfGenerator';
 import PresupuestoView from '../../src/components/PresupuestoView';
 import FallasView from '../../src/components/FallasView';
-import { usePresupuestosHistory } from '../../src/hooks/usePresupuestosHistory';
+import { usePresupuestosHistory, fetchPresupuestoItemsForPedido } from '../../src/hooks/usePresupuestosHistory';
 import { OrdenCambioDetailModal } from '../../src/components/OrdenCambioDetailModal';
 import { PresupuestoEditModal } from '../../src/components/PresupuestoEditModal';
 import { DraftRestoreBanner } from '../../src/components/DraftRestoreBanner';
@@ -535,12 +536,15 @@ function HistorialView({ queryClient }: { queryClient: any }) {
   const setScrollOffsetOrdenes = useInventarioStore(s => s.setScrollOffsetOrdenes);
   const scrollRef = useRef<ScrollView>(null);
 
+  const router = useRouter();
   const [subTab, setSubTab] = useState<'ajuste' | 'presupuesto'>('ajuste');
   const [selectedOrden, setSelectedOrden] = useState<any | null>(null);
   const [editPresupuestoId, setEditPresupuestoId] = useState<number | null>(null);
+  const [convertingId, setConvertingId] = useState<number | null>(null);
   const { data: userAuth } = useUserRole();
   const isAdmin = userAuth?.role === 'admin';
   const currentUserId = userAuth?.profile?.id;
+  const allowedToOrder = canMakePedidos(userAuth);
 
   // Realtime subscription to refresh lists automatically
   useEffect(() => {
@@ -780,6 +784,50 @@ function HistorialView({ queryClient }: { queryClient: any }) {
     });
   };
 
+  // Convertir un presupuesto en un pedido: precarga cliente + ítems en el store
+  // de pedido y abre su modal (montado en el Dashboard vía PedidoFab) para que
+  // el usuario revise y emita a caja. No modifica el presupuesto.
+  const handleConvertToPedido = async (o: any) => {
+    const doLoad = async () => {
+      setConvertingId(o.id);
+      try {
+        const items = await fetchPresupuestoItemsForPedido(o.id);
+        if (items.length === 0) {
+          notify('Sin ítems', 'Este presupuesto no tiene productos para convertir.');
+          return;
+        }
+        usePedido.getState().loadFromPresupuesto({
+          presupuestoId: o.id,
+          clienteCodigo: o.cliente_id ?? null,
+          clienteNombre: o.cliente_nombre ?? null,
+          nota:          o.nota ?? '',
+          items,
+        });
+        // El armador de pedido vive en el Dashboard (PedidoFab); navegamos allí
+        // para que el modal ya abierto (modalOpen) quede sobre una pantalla coherente.
+        router.push('/(tabs)');
+      } catch (err: any) {
+        notify('Error', err?.message ?? 'No se pudo convertir el presupuesto en pedido.');
+      } finally {
+        setConvertingId(null);
+      }
+    };
+
+    // Si ya hay un pedido en construcción, confirmamos antes de reemplazarlo.
+    const enCurso = usePedido.getState().items.length;
+    if (enCurso > 0) {
+      confirm({
+        title:       'Reemplazar pedido en curso',
+        message:     `Tienes un pedido a medio armar con ${enCurso} ítem${enCurso > 1 ? 's' : ''}. Convertir este presupuesto lo reemplazará.`,
+        confirmText: 'Reemplazar',
+        destructive: true,
+        onConfirm:   doLoad,
+      });
+      return;
+    }
+    await doLoad();
+  };
+
   // Guardar scroll (el setter de Zustand es estable, no provoca re-render aquí)
   const handleScroll = useCallback((event: any) => {
     const offset = event.nativeEvent.contentOffset.y;
@@ -897,6 +945,34 @@ function HistorialView({ queryClient }: { queryClient: any }) {
                   <Text style={[styles.histNota, { color: colors.textMuted }]} numberOfLines={1}>
                     {o.nota}
                   </Text>
+                ) : null}
+
+                {isPresupuesto && (o as any).pedido_id ? (
+                  <View style={[styles.convertedBadge, { borderColor: colors.success + '55', backgroundColor: colors.success + '18' }]}>
+                    <Feather name="check-circle" size={13} color={colors.success} />
+                    <Text style={[styles.convertedText, { color: colors.success }]} numberOfLines={1} adjustsFontSizeToFit>
+                      Convertido a PED-{String((o as any).pedido_id).padStart(4, '0')}
+                    </Text>
+                  </View>
+                ) : isPresupuesto && allowedToOrder ? (
+                  <PressableScale
+                    style={[styles.convertBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }]}
+                    activeScale={pressScale.row}
+                    onPress={() => handleConvertToPedido(o)}
+                    disabled={convertingId !== null}
+                    dimmed={convertingId === o.id}
+                  >
+                    {convertingId === o.id ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <>
+                        <Feather name="shopping-cart" size={14} color={colors.primary} />
+                        <Text style={[styles.convertBtnText, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
+                          Convertir a pedido
+                        </Text>
+                      </>
+                    )}
+                  </PressableScale>
                 ) : null}
 
                 <View style={styles.histFooter}>
@@ -1292,6 +1368,30 @@ const styles = StyleSheet.create({
     marginTop:         4,
   },
   pdfBtnText: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold' },
+  convertBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    gap:             6,
+    marginTop:       10,
+    paddingVertical: 10,
+    borderRadius:    10,
+    borderWidth:     1,
+    borderStyle:     'dashed',
+  },
+  convertBtnText: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold' },
+  convertedBadge: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'center',
+    gap:               6,
+    marginTop:         10,
+    paddingVertical:   9,
+    paddingHorizontal: 12,
+    borderRadius:      10,
+    borderWidth:       0.5,
+  },
+  convertedText: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold' },
   histFooter: {
     flexDirection: 'row',
     alignItems: 'center',

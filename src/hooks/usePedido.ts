@@ -21,6 +21,18 @@ export interface PedidoEditDraft {
   items:         PedidoDraftItem[];
 }
 
+// Draft para "convertir un presupuesto en pedido": trae cliente + ítems del
+// presupuesto pero crea un pedido NUEVO (editingPedidoId = null). El cliente
+// puede venir null (presupuesto sin cliente): el usuario lo elige antes de
+// emitir. Los ítems no llevan precio — el pedido usa el precio maestro de Hybrid.
+export interface PedidoFromPresupuestoDraft {
+  presupuestoId: number;   // origen — se marca como convertido al emitir el pedido
+  clienteCodigo: string | null;
+  clienteNombre: string | null;
+  nota:          string;
+  items:         PedidoDraftItem[];
+}
+
 interface PedidoStore {
   clienteCodigo:      string | null;
   clienteNombre:      string | null;
@@ -31,6 +43,7 @@ interface PedidoStore {
   skipModalAnimation: boolean;
   isLoading:          boolean;
   editingPedidoId:    number | null;   // != null => reintentar un pedido existente (update, no insert)
+  presupuestoOrigenId: number | null;  // != null => al emitir, marcar ese presupuesto como convertido
   setCliente:         (codigo: string, nombre: string) => void;
   setEnBs:            (enBs: boolean) => void;
   setModalOpen:       (open: boolean, skipAnimation?: boolean) => void;
@@ -39,8 +52,9 @@ interface PedidoStore {
   updateItem:         (codigo: string, updates: Partial<PedidoDraftItem>) => void;
   setNota:            (nota: string) => void;
   clear:              () => void;
-  loadForEdit:        (draft: PedidoEditDraft) => void;
-  submit:             (userId: string) => Promise<{ pedidoId: number }>;
+  loadForEdit:         (draft: PedidoEditDraft) => void;
+  loadFromPresupuesto: (draft: PedidoFromPresupuestoDraft) => void;
+  submit:              (userId: string) => Promise<{ pedidoId: number }>;
 }
 
 export const usePedido = create<PedidoStore>()((set, get) => ({
@@ -53,6 +67,7 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
   skipModalAnimation: false,
   isLoading:          false,
   editingPedidoId:    null,
+  presupuestoOrigenId: null,
 
   setCliente:   (codigo, nombre) => set({ clienteCodigo: codigo, clienteNombre: nombre }),
   setEnBs:      (enBs) => set({ enBs }),
@@ -86,11 +101,12 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
   setNota: (nota) => set({ nota }),
 
   clear: () => set({
-    clienteCodigo: null, clienteNombre: null, items: [], nota: '', editingPedidoId: null, enBs: false, skipModalAnimation: false,
+    clienteCodigo: null, clienteNombre: null, items: [], nota: '', editingPedidoId: null, presupuestoOrigenId: null, enBs: false, skipModalAnimation: false,
   }),
 
   loadForEdit: (draft) => set({
     editingPedidoId: draft.pedidoId,
+    presupuestoOrigenId: null,   // reintentar un pedido no es una conversión
     clienteCodigo:   draft.clienteCodigo,
     clienteNombre:   draft.clienteNombre,
     nota:            draft.nota,
@@ -98,8 +114,23 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
     modalOpen:       true,
   }),
 
+  // Convertir presupuesto → pedido NUEVO: editingPedidoId queda en null para que
+  // submit() haga INSERT (no update). Abre el modal del PedidoFab para que el
+  // usuario revise (cliente, precio maestro actual) y emita a caja.
+  loadFromPresupuesto: (draft) => set({
+    editingPedidoId:     null,
+    presupuestoOrigenId: draft.presupuestoId,
+    clienteCodigo:       draft.clienteCodigo,
+    clienteNombre:       draft.clienteNombre,
+    nota:                draft.nota,
+    items:               draft.items,
+    enBs:                false,
+    modalOpen:           true,
+    skipModalAnimation:  false,
+  }),
+
   submit: async (userId: string) => {
-    const { clienteCodigo, clienteNombre, items, nota, editingPedidoId } = get();
+    const { clienteCodigo, clienteNombre, items, nota, editingPedidoId, presupuestoOrigenId } = get();
 
     if (!clienteCodigo) throw new Error('Selecciona un cliente antes de emitir el pedido.');
     if (items.length === 0) throw new Error('Agrega al menos un producto antes de emitir el pedido.');
@@ -175,6 +206,19 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
         .insert(itemRows(pedido.id));
 
       if (itemsError) throw itemsError;
+
+      // Si el pedido nació de un presupuesto, márcalo como convertido. Es
+      // best-effort: el pedido ya está creado (fuente de verdad para caja), así
+      // que un fallo aquí solo omite la etiqueta "Convertido", no rompe la emisión.
+      if (presupuestoOrigenId !== null) {
+        const { error: markError } = await supabase.rpc('marcar_presupuesto_convertido', {
+          p_presupuesto_id: presupuestoOrigenId,
+          p_pedido_id:      pedido.id,
+        });
+        if (markError) {
+          console.warn('[usePedido] no se pudo marcar el presupuesto como convertido:', markError.message);
+        }
+      }
 
       set({ isLoading: false });
       return { pedidoId: pedido.id };

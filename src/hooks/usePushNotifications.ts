@@ -71,9 +71,19 @@ Notifications.setNotificationHandler({
   }),
 });
 
-async function ensureSecurityAlertChannel(): Promise<void> {
+async function ensureAndroidChannels(): Promise<void> {
   if (Platform.OS !== 'android') return;
   try {
+    // Canal usado por send-push para pagos Zelle y avisos de bots (channelId: 'default').
+    // Debe existir en el dispositivo o Android 8+ no muestra el push.
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'Notificaciones',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#F5B200',
+      sound: 'default',
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
     await Notifications.setNotificationChannelAsync('alerta-seguridad', {
       name: 'Alertas de seguridad',
       importance: Notifications.AndroidImportance.MAX,
@@ -84,12 +94,12 @@ async function ensureSecurityAlertChannel(): Promise<void> {
       bypassDnd: true,
     });
   } catch (e) {
-    console.warn('[push] no se pudo crear el canal de alerta-seguridad:', e);
+    console.warn('[push] no se pudieron crear los canales de notificación:', e);
   }
 }
 
 async function subscribeNative(): Promise<void> {
-  await ensureSecurityAlertChannel();
+  await ensureAndroidChannels();
 
   // Request permission (on Android 13+ this shows the system dialog; older = auto-granted).
   const { status: existing } = await Notifications.getPermissionsAsync();
