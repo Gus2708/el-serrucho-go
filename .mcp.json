@@ -3,6 +3,10 @@
     "supabase": {
       "type": "http",
       "url": "https://mcp.supabase.com/mcp?project_ref=rgniqjfooifchyctnbzu"
+    },
+    "engram": {
+      "command": "C:\\Users\\OFICINA\\.engram\\bin\\engram.exe",
+      "args": ["mcp", "--tools=agent", "--project=el-serrucho-go"]
     }
   }
 }

@@ -22,17 +22,18 @@
 ---
 
 ## Key Features
-
-| Feature | Description |
+| Feature | Description |
 |---|---|
 | **Real-time Analytics** | Daily sales trends, profit summaries, and top-selling product rankings |
-| **Hybrid Sync Engine** | Bridges local POS `.dat` files with the Supabase cloud backend via a Python watcher |
+| **Hybrid Writeback Engine** | Bi-directional synchronization bridging Supabase with local POS (HybridLite) via Python hardware automation (`SendInput`) |
+| **Role Approval Gates** | Three-tier security model (Admin, Super-employee, Employee) with approval workflows for stock adjustments and purchase queues |
 | **RBAC** | Role-based access for Administrators and Employees with tailored interfaces |
 | **Interactive Charts** | Dynamic sparklines and donut charts for financial health tracking |
-| **Smart Alerts** | Gemini AI anomaly detection for inventory discrepancies and fraud signals |
+| **Smart Alerts & Zelle** | Instant Zelle payment push notifications (MS Graph API) & Gemini AI anomaly detection |
 | **State Persistence** | Global search and filter state preserved across navigation (Zustand) |
 | **Responsive UI** | Dynamic font scaling and flexible layouts optimized for all screen sizes |
-| **PDF Export** | Professional report generation for invoices and inventory lists |
+| **PDF Export** | Professional report generation for invoices, change orders, quotes, and inventory lists |
+| **Engram Persistent Memory** | AI Agent session context and architectural memory persistence via Engram MCP server |
 
 ---
 
@@ -47,9 +48,10 @@
 
 ### Backend
 - **Platform**: [Supabase](https://supabase.com/)
-- **Database**: PostgreSQL with Row Level Security (RLS)
-- **Realtime**: Supabase Realtime for instant dashboard updates
-- **Serverless**: Edge Functions for complex business logic (anomaly detection)
+- **Database**: PostgreSQL with Row Level Security (RLS) & Approval RPCs
+- **Realtime**: Supabase Realtime for instant dashboard & writeback status chips updates
+- **Serverless**: Edge Functions (`send-push`, `detect-anomalies`)
+- **Agent Memory**: [Engram](https://github.com/Gentleman-Programming/engram) persistent memory engine
 
 ---
 
@@ -66,174 +68,66 @@
 │   │   ├── inventario.tsx        # Virtualized inventory (7k+ products)
 │   │   ├── alertas.tsx           # Stock anomalies & AI fraud detector cards
 │   │   ├── reportes.tsx          # Admin financial charts & product velocity
-│   │   └── ordenes.tsx           # State-persisted physical change orders builder
+│   │   └── ordenes.tsx           # Physical change orders & writeback tracker
 │   ├── producto/[id].tsx         # Product detail & dynamic order controller
+│   ├── compras.tsx               # Merchandise reception & purchase queue manager
+│   ├── carga-pedidos.tsx         # Customer order builder for POS cashier checkout
+│   ├── pagos.tsx                 # Real-time Zelle payment verification list
+│   ├── seleccionar-cliente.tsx   # Directory selector for quotes & orders
 │   ├── perfil.tsx                # Session info, role, and logout
 │   ├── _layout.tsx               # Global providers (QueryClient, AuthGuard, Fonts)
 │   └── +not-found.tsx            # 404 fallback route
 ├── src/
-│   ├── components/               # Atomic & presentational UI components
-│   │   ├── SparklineChart.tsx    # Responsive SVG chart for 24h trends
-│   │   ├── ProductRow.tsx        # Memoized FlashList item with layout scaling
-│   │   ├── SyncBadge.tsx         # Three-state POS sync indicator
-│   │   └── ...                   # DonutChart, AlertCard, StatCard, etc.
-│   ├── hooks/                    # React Query & mutation hooks
-│   │   ├── useProductos.ts       # Infinite query — 50 items/page
-│   │   ├── useSyncStatus.ts      # Dual-path local widget fallback
-│   │   └── ...                   # useVentasHoy, useAlertas, useUserRole, etc.
+├── components/               # UI components
+│   │   ├── DirectorioView.tsx    # Customer/Supplier directory management
+│   │   ├── ComprasView.tsx       # Merchandise reception view
+│   │   ├── CargaPedidosView.tsx  # POS order entry view
+│   │   └── ...                   # SparklineChart, SyncBadge, StatCard, etc.
+│   ├── hooks/                    # React Query & Zustand state hooks
+│   │   ├── useOrdenCambio.ts     # Stock/Price change order emitter
+│   │   ├── useAprobaciones.ts     # Role gate approval inbox & RPC triggers
+│   │   ├── useRegistrosDirectorio.ts # Client/Supplier writeback queue hook
+│   │   ├── useRealtimeSync.ts    # Debounced Supabase Realtime orchestrator
+│   │   ├── usePagosZelle.ts      # Instant Zelle payment status hook
+│   │   └── ...                   # useProductos, useUserRole, useCompra, etc.
 │   ├── lib/supabase.ts           # Typed Supabase client
 │   └── theme/
-│       ├── ThemeContext.tsx       # Dynamic context (colors, dimensions, formatUSD)
 │       └── brands/el-serrucho.ts # Gold palette, dark background, USD currency
+├── docs/                         # Architecture contracts & pipeline specs
+│   ├── WRITEBACK-PIPELINE.md     # Stock/Price writeback specification
+│   ├── REGISTRO-DIRECTORIO-PIPELINE.md # Directory writeback specification
+│   └── PLAN-ZELLE-LISTENER.md    # MS Graph Zelle notification specification
 ├── supabase/
-│   ├── migrations/               # PostgreSQL migration chain (001-012)
-│   └── functions/detect-anomalies/ # Gemini Flash 1.5 anomaly detection
-└── eas.json                      # Expo Application Services profiles
+│   ├── migrations/               # PostgreSQL migration chain (001-035)
+│   └── functions/                # Edge functions (send-push, detect-anomalies)
+└── .mcp.json                     # MCP server config (Supabase + Engram)
 ```
 
 ---
 
-## Database Architecture & Supabase Schema
+## Database Architecture & Writeback Pipeline
 
-The backend consists of a PostgreSQL database on Supabase, synchronized in real-time by an on-premise Python watcher that reads native POS `.dat` files.
+The system features a **closed-loop bi-directional synchronization pipeline** connecting the cloud database with the local on-premise POS system (HybridLite).
 
-### Entity-Relationship Diagram
+### Writeback Flow Overview
 
-```mermaid
-erDiagram
-    clientes {
-        VARCHAR codigo_cliente PK
-        VARCHAR nombre
-        VARCHAR rif
-        VARCHAR telefono
-        TEXT direccion
-        TIMESTAMPTZ created_at
-    }
-    productos {
-        VARCHAR codigo_interno PK
-        VARCHAR descripcion
-        VARCHAR unidad
-        VARCHAR codigo_barras
-        NUMERIC costo
-        NUMERIC precio_venta
-        NUMERIC existencia
-        TIMESTAMPTZ actualizado_en
-    }
-    ventas {
-        BIGINT id PK
-        BIGINT id_unico UK
-        VARCHAR documento
-        TIMESTAMPTZ fecha_emision
-        VARCHAR rif_cliente
-        NUMERIC total_neto
-        NUMERIC total_bruto
-        NUMERIC total_impuesto
-        VARCHAR metodo_pago
-        INTEGER status
-        VARCHAR numero_control
-        TIMESTAMPTZ created_at
-    }
-    ventas_detalle {
-        BIGINT id PK
-        BIGINT venta_id FK
-        VARCHAR documento
-        VARCHAR codigo_producto FK
-        NUMERIC cantidad
-        NUMERIC precio_venta
-        VARCHAR costo_str
-        TIMESTAMPTZ created_at
-    }
-    anomalias {
-        BIGINT id PK
-        VARCHAR codigo_producto FK
-        VARCHAR tipo
-        VARCHAR severidad
-        TEXT explicacion
-        TIMESTAMPTZ detectado_en
-        BOOLEAN resuelto
-    }
-    profiles {
-        UUID id PK
-        VARCHAR role
-        VARCHAR email
-        VARCHAR display_name
-        TIMESTAMPTZ updated_at
-    }
-    ordenes_cambio {
-        BIGINT id PK
-        UUID creado_por FK
-        TEXT nota
-        VARCHAR status
-        TEXT pdf_url
-        TIMESTAMPTZ creado_en
-    }
-    ordenes_cambio_items {
-        BIGINT id PK
-        BIGINT orden_id FK
-        VARCHAR codigo_producto FK
-        NUMERIC existencia_actual
-        NUMERIC nueva_existencia
-        NUMERIC delta
-        TEXT nota
-    }
-    presupuestos {
-        BIGINT id PK
-        UUID creado_por FK
-        VARCHAR cliente_id FK
-        NUMERIC total_usd
-        VARCHAR status
-        TEXT pdf_url
-        TEXT nota
-        TIMESTAMPTZ creado_en
-    }
-    presupuestos_detalle {
-        BIGINT id PK
-        BIGINT presupuesto_id FK
-        VARCHAR codigo_producto FK
-        NUMERIC cantidad
-        NUMERIC precio_unitario
-        NUMERIC subtotal
-    }
-    fallas_negocio {
-        UUID id PK
-        TEXT texto
-        VARCHAR codigo_producto FK
-        UUID creado_por FK
-        BOOLEAN pedido
-        TIMESTAMPTZ creado_en
-    }
-
-    ventas ||--o{ ventas_detalle : "contains"
-    productos ||--o{ ventas_detalle : "referenced_in"
-    clientes ||--o{ ventas : "buys"
-    productos ||--o{ anomalias : "subject_of"
-    profiles ||--o{ ordenes_cambio : "creates"
-    ordenes_cambio ||--|{ ordenes_cambio_items : "contains"
-    productos ||--o{ ordenes_cambio_items : "tracks"
-    profiles ||--o{ presupuestos : "creates"
-    clientes ||--o{ presupuestos : "requested_by"
-    presupuestos ||--|{ presupuestos_detalle : "contains"
-    productos ||--o{ presupuestos_detalle : "quotes"
-    productos ||--o{ fallas_negocio : "logs_shortage"
-    profiles ||--o{ fallas_negocio : "reports"
+```text
+App (El Serrucho Go)                Supabase (PostgreSQL Queue)           Backend (Python Watchdog 24/7)
+────────────────────                ───────────────────────────           ───────────────────────────────
+1. Emit Change Order / Purchase  ─► Inserts row (backend_status='pendiente') ─► Sondeas queued rows via Service Key
+2. Monitor Live Status Chips    ◄─ Emits Realtime updates (backend_status) ◄─ Executes SendInput hardware UI automation
+3. Inventory Refreshed          ◄─ Sync-Engine reads DBISAM and updates catalog ◄─ Verifies commit in local DBISAM
 ```
 
-### Key Database Conventions
+### Supported Writeback Pipelines
+1. **Stock / Price / Cost / Ficha (`ordenes_cambio_items`):** Emits stock deltas, price updates, costs, and product references. Emitted items follow the 3-state role approval gate before queueing.
+2. **Purchases (`compras_app_items`):** Receives supplier inventory, automatically creating non-existent catalog items in HybridLite before recording the purchase.
+3. **Customer Orders (`pedidos_app_items`):** Emits presales/delivery notes into HybridLite (`TPedidos.dat`) so cashiers can instantly retrieve and bill them without manual line entry.
+4. **Directory Registration (`registro_clientes_app` / `registro_proveedores_app`):** Registers new clients and suppliers in HybridLite (`TClientes.Dat` / `TProveedores.Dat`) and populates their assigned IDs.
+5. **Zelle Payment Alerts (`pagos_zelle`):** Monitors Bank of America notifications via MS Graph API, inserting records and firing push notifications & realtime sound alerts.
 
-> **Read-Only tables** — the app must never `INSERT`/`UPDATE`/`DELETE` on `productos`, `ventas`, `ventas_detalle`, `clientes`, or `tazas`. These are owned exclusively by the POS sync engine.
-
-| Convention | Rule |
-|---|---|
-| **IVA 16%** | `productos.precio_venta` includes 16% IVA. To compare with `costo` (ex-IVA): `margin = ((precio_venta / 1.16) - costo) / (precio_venta / 1.16)` |
-| **Currency** | All monetary values are stored in USD to avoid inflationary noise. The `tazas` table is an internal translation layer, never exposed in client UI. |
-| **Costo sanitization** | `ventas_detalle.costo_str` is raw text from legacy POS schemas. Always parse with `safe_numeric(costo_str)` on the database side. |
-| **Active transactions** | All sales aggregations must filter by `ventas.status = 1`. |
-
-### Row Level Security (RLS)
-
-- **Global read**: authenticated users can read `productos`, `clientes`, `ventas`, `ventas_detalle`, `tazas`, `anomalias`, `profiles`.
-- **Ownership isolation**: `ordenes_cambio`, `presupuestos`, and their item tables are restricted to `creado_por = auth.uid()`.
-- **Realtime publication**: `productos` and `fallas_negocio` are subscribed to `supabase_realtime` for instant UI updates.
+### Status Machine (`backend_status`)
+- `espera_aprobacion` ➔ `pendiente` ➔ `aplicando` ➔ `completado` | `error` | `rechazado`
 
 ---
 
@@ -243,7 +137,8 @@ erDiagram
 
 - Node.js (latest LTS)
 - Expo Go app (physical device) or Android/iOS emulator
-- A Supabase project with the migrations applied
+- A Supabase project with migrations 001–035 applied
+- Engram CLI (`engram`) installed for AI memory sync
 
 ### Environment Variables
 
@@ -268,23 +163,26 @@ npm start
 
 ## Architecture & Decisions
 
-- **Server-state first**: React Query handles all data fetching — caching, background sync, and stale-while-revalidate out of the box.
-- **Typed routes**: Expo typed routes for compile-time navigation safety.
-- **Versioned migrations**: All schema changes live in `/supabase/migrations` — sequential, reviewable, and reproducible across environments.
-- **Atomic design**: Components are split into presentational (dumb) and container (smart) layers. FlashList handles virtualization for the 7k+ product inventory.
+- **Server-state first**: React Query handles all data fetching — caching, background sync, and debounced realtime revalidation (1.5s).
+- **Hardware-Isolated Writeback**: Local backend operates an isolated instance of HybridLite using Win32 `SendInput` and hardware mutex locks (`Local\SerruchoBotMouseLock`).
+- **Role Approval Gate**: Employees queue stock edits as `espera_aprobacion`; Admins/Super-employees approve via SECURITY DEFINER RPCs (`aprobar_orden`).
+- **Engram Persistent Memory**: Architectural context and research logs stored locally in Engram DB (`~/.engram/engram.db`).
 
 ---
 
 ## Changelog
 
-### v2.3
-- **Quotes engine**: Added `presupuestos` + `presupuestos_detalle` tables with draft states, item builder, and PDF export.
-- **Dynamic sales ranking**: Server-side RPC `get_top_productos(days_ago)` for adjustable time-range product performance.
-- **Stockout log**: New `fallas_negocio` table lets employees flag missed sales in real-time, with Supabase Realtime alerts.
-- **View restoration**: Backend migrations restoring `vw_ventas_detalle_usd` and fixing legacy document foreign key mappings.
-- **Intelligent inventory**: Zustand global store persists search and filter state across navigation.
-- **Robust navigation**: Smart back-navigation from product detail always returns to the correct inventory context.
-- **Mobile optimization**: Dynamic font scaling (`adjustsFontSizeToFit`) and overflow handling for small screens (iPhone SE).
+### v2.4 (Current)
+- **Full Writeback Integration**: Connected stock adjustments, prices, costs, purchases, customer orders, and directory registrations to HybridLite via SendInput Python automation.
+- **Role Approval Inbox**: Dedicated approval flow for employee stock adjustments (`useAprobaciones.ts`).
+- **Zelle Payment Notifications**: Integrated Microsoft Graph API watcher with Supabase push notifications & realtime audio feedback.
+- **Engram MCP Support**: Added `.mcp.json` integration for persistent AI memory tracking.
+
+---
+
+<p align="center">
+  Developed with care for <strong>Ferretería El Serrucho</strong>
+</p>Dynamic font scaling (`adjustsFontSizeToFit`) and overflow handling for small screens (iPhone SE).
 - **Sync indicators**: Real-time POS sync status badges based on last update timestamp.
 
 ---
