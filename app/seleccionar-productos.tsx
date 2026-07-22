@@ -17,6 +17,7 @@ import { BarcodeScannerModal } from '../src/components/BarcodeScannerModal';
 import { useUserRole } from '../src/hooks/useUserRole';
 import { useResolverSolicitud } from '../src/hooks/useResolverSolicitud';
 import { confirm, notify } from '../src/lib/notify';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { PressableScale } from '../src/components/PressableScale';
 import { pressScale } from '../src/theme/motion';
 
@@ -241,20 +242,27 @@ export default function SeleccionarProductos() {
   const totalMarkupUsd = parseFloat((totalBaseUsd * (1 + markupPct / 100)).toFixed(2));
   const totalBs = totalMarkupUsd * bcv;
 
-  const renderProducto = React.useCallback(({ item }: { item: Producto }) => {
+  const renderProducto = React.useCallback(({ item, index }: { item: Producto; index: number }) => {
     if (isPlaceholder(item)) return null;
 
     const quantity = getItemQuantity(item.codigo_interno);
     const basePriceUsd = item.precio_venta;
     const precioMarkupUsd = parseFloat((basePriceUsd * (1 + markupPct / 100)).toFixed(2));
     const precioBs = bcv > 0 ? precioMarkupUsd * bcv : 0;
+    const isSelected = quantity > 0;
 
     return (
-      <View style={[
-        styles.productCard,
-        { backgroundColor: colors.surface, borderColor: colors.border },
-        isDesktop && styles.productCardDesktop
-      ]}>
+      <Animated.View
+        entering={FadeInDown.duration(160).delay(Math.min(index * 25, 200))}
+        style={[
+          styles.productCard,
+          {
+            backgroundColor: isSelected ? colors.primary + '0A' : colors.surface,
+            borderColor:     isSelected ? colors.primary + '60' : colors.border,
+          },
+          isDesktop && styles.productCardDesktop
+        ]}
+      >
         <View style={styles.productInfo}>
           <Text style={[styles.productCode, { color: colors.textDim }]} numberOfLines={1} adjustsFontSizeToFit>
             {item.codigo_interno}{item.referencia ? `  ·  Ref: ${item.referencia}` : ''}
@@ -280,20 +288,21 @@ export default function SeleccionarProductos() {
         </View>
 
         <View style={styles.quantityControl}>
-          <Pressable
+          <PressableScale
             style={[styles.btnAction, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            activeScale={pressScale.icon}
             onPress={() => handleDecrement(item)}
           >
-            <Feather name="minus" size={20} color={colors.text} />
-          </Pressable>
+            <Feather name="minus" size={18} color={colors.text} />
+          </PressableScale>
 
           <TextInput
             style={[
               styles.quantityInput,
               {
-                color: colors.text,
+                color:           colors.text,
                 backgroundColor: Platform.OS === 'ios' ? colors.bg : colors.surface,
-                borderColor: colors.border
+                borderColor:     isSelected ? colors.primary : colors.border
               }
             ]}
             keyboardType="numeric"
@@ -302,14 +311,15 @@ export default function SeleccionarProductos() {
             selectTextOnFocus
           />
 
-          <Pressable
+          <PressableScale
             style={[styles.btnAction, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}
+            activeScale={pressScale.icon}
             onPress={() => handleIncrement(item)}
           >
-            <Feather name="plus" size={20} color={colors.primary} />
-          </Pressable>
+            <Feather name="plus" size={18} color={colors.primary} />
+          </PressableScale>
         </View>
-      </View>
+      </Animated.View>
     );
   }, [colors, isDesktop, getItemQuantity, handleDecrement, handleIncrement, handleSetQuantity, formatUSD, enBs, markupPct, bcv]);
 
@@ -317,9 +327,9 @@ export default function SeleccionarProductos() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={['top', 'bottom']}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Pressable onPress={handleBack} style={styles.btnBack}>
+        <PressableScale onPress={handleBack} style={styles.btnBack} activeScale={pressScale.icon}>
           <Feather name="chevron-down" size={28} color={colors.text} />
-        </Pressable>
+        </PressableScale>
         <Text style={[styles.headerTitle, { color: colors.text }]}>
           {solicitudId ? 'Seleccionar Productos' : target === 'pedido' ? 'Añadir a Pedido' : 'Añadir Productos'}
         </Text>
