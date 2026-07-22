@@ -1134,7 +1134,8 @@ export default function ProductoDetail() {
                 placeholder={producto.descripcion}
                 placeholderTextColor={colors.textDim}
                 value={newDesc}
-                onChangeText={setNewDesc}
+                onChangeText={v => setNewDesc(v.toUpperCase())}
+                autoCapitalize="characters"
                 multiline
               />
 
@@ -1146,7 +1147,8 @@ export default function ProductoDetail() {
                 placeholder={producto.referencia ?? 'Sin referencia'}
                 placeholderTextColor={colors.textDim}
                 value={newRef}
-                onChangeText={setNewRef}
+                onChangeText={v => setNewRef(v.toUpperCase())}
+                autoCapitalize="characters"
               />
 
               <Text style={[styles.sheetLabel, { color: colors.textMuted, marginTop: 12 }]}>

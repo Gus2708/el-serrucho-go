@@ -431,7 +431,8 @@ function CompraItemCard({ item, onRemove, onUpdate }: CompraItemCardProps): Reac
                 <TextInput
                   style={[styles.itemNameInput, { color: colors.text }]}
                   value={item.descripcion}
-                  onChangeText={v => onUpdate({ descripcion: v })}
+                  onChangeText={v => onUpdate({ descripcion: v.toUpperCase() })}
+                  autoCapitalize="characters"
                   maxLength={DESCRIPCION_MAX}
                 />
                 {item.descripcion.length > DESCRIPCION_MAX - 10 ? (
@@ -644,7 +645,8 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
               placeholder="Buscar por código o descripción…"
               placeholderTextColor={colors.textDim}
               value={search}
-              onChangeText={setSearch}
+              onChangeText={v => setSearch(v.toUpperCase())}
+              autoCapitalize="characters"
               autoFocus
             />
           </View>
@@ -805,7 +807,7 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
                   placeholder="Código del producto"
                   placeholderTextColor={colors.textDim}
                   value={codigo}
-                  onChangeText={setCodigo}
+                  onChangeText={v => setCodigo(v.toUpperCase())}
                   autoCapitalize="characters"
                 />
                 <PressableScale onPress={() => setScannerTarget('codigo')} hitSlop={8} activeScale={pressScale.icon}>
@@ -826,7 +828,8 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
                 placeholder="Descripción del producto"
                 placeholderTextColor={colors.textDim}
                 value={descripcion}
-                onChangeText={setDescripcion}
+                onChangeText={v => setDescripcion(v.toUpperCase())}
+                autoCapitalize="characters"
                 maxLength={DESCRIPCION_MAX}
               />
             </View>
@@ -839,7 +842,8 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
                   placeholder="Referencia del proveedor"
                   placeholderTextColor={colors.textDim}
                   value={referencia}
-                  onChangeText={setReferencia}
+                  onChangeText={v => setReferencia(v.toUpperCase())}
+                  autoCapitalize="characters"
                 />
                 <PressableScale onPress={() => setScannerTarget('referencia')} hitSlop={8} activeScale={pressScale.icon}>
                   <Feather name="camera" size={18} color={colors.primary} />
