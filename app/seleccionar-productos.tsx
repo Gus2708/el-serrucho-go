@@ -14,7 +14,7 @@ import { usePresupuestoConfig } from '../src/hooks/usePresupuestoConfig';
 import { useTazas } from '../src/hooks/useTazas';
 import { useDeviceSize } from '../src/hooks/useDeviceSize';
 import { BarcodeScannerModal } from '../src/components/BarcodeScannerModal';
-import { useUserRole } from '../src/hooks/useUserRole';
+import { useUserRole, canMakePedidos } from '../src/hooks/useUserRole';
 import { useResolverSolicitud } from '../src/hooks/useResolverSolicitud';
 import { confirm, notify } from '../src/lib/notify';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -42,6 +42,7 @@ export default function SeleccionarProductos() {
   const enBs = isPresupuesto ? presupuestoStore.enBs : pedidoStore.enBs;
 
   const { data: userAuth } = useUserRole();
+  const allowedToOrder = canMakePedidos(userAuth);
   const { resolverSolicitud, isResolving, marcarNoDisponible, isMarcandoNoDisponible } = useResolverSolicitud();
   const insets = useSafeAreaInsets();
 
@@ -156,6 +157,10 @@ export default function SeleccionarProductos() {
   }, [isPresupuesto, presupuestoStore.items, pedidoStore.items]);
 
   const handleIncrement = React.useCallback((producto: Producto) => {
+    if (!isPresupuesto && !allowedToOrder) {
+      notify('Acceso Restringido', 'No tienes permiso para realizar pedidos.');
+      return;
+    }
     const qty = getItemQuantity(producto.codigo_interno);
     if (isPresupuesto) {
       if (qty === 0) {
@@ -177,9 +182,13 @@ export default function SeleccionarProductos() {
         pedidoStore.updateItem(producto.codigo_interno, { cantidad: qty + 1 });
       }
     }
-  }, [getItemQuantity, isPresupuesto, presupuestoStore, pedidoStore]);
+  }, [getItemQuantity, isPresupuesto, presupuestoStore, pedidoStore, allowedToOrder]);
 
   const handleDecrement = React.useCallback((producto: Producto) => {
+    if (!isPresupuesto && !allowedToOrder) {
+      notify('Acceso Restringido', 'No tienes permiso para realizar pedidos.');
+      return;
+    }
     const qty = getItemQuantity(producto.codigo_interno);
     if (isPresupuesto) {
       if (qty > 1) {
@@ -194,9 +203,13 @@ export default function SeleccionarProductos() {
         pedidoStore.removeItem(producto.codigo_interno);
       }
     }
-  }, [getItemQuantity, isPresupuesto, presupuestoStore, pedidoStore]);
+  }, [getItemQuantity, isPresupuesto, presupuestoStore, pedidoStore, allowedToOrder]);
 
   const handleSetQuantity = React.useCallback((producto: Producto, val: string) => {
+    if (!isPresupuesto && !allowedToOrder) {
+      notify('Acceso Restringido', 'No tienes permiso para realizar pedidos.');
+      return;
+    }
     if (val === '') {
       if (isPresupuesto) presupuestoStore.removeItem(producto.codigo_interno);
       else pedidoStore.removeItem(producto.codigo_interno);
@@ -228,7 +241,7 @@ export default function SeleccionarProductos() {
         }
       }
     }
-  }, [getItemQuantity, isPresupuesto, presupuestoStore, pedidoStore]);
+  }, [getItemQuantity, isPresupuesto, presupuestoStore, pedidoStore, allowedToOrder]);
 
   const totalAdded = isPresupuesto
     ? presupuestoStore.items.reduce((acc, item) => acc + item.cantidad, 0)

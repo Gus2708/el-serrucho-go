@@ -28,6 +28,11 @@ const ROLES: { value: UserRole; label: string }[] = [
   { value: 'admin',         label: 'Admin' },
 ];
 
+// Module permissions togglable per user (absent/true = enabled, false = disabled).
+const PERM_CATS: { key: keyof NotifPrefs; label: string; icon: keyof typeof Feather.glyphMap }[] = [
+  { key: 'pedidos', label: 'Hacer pedidos', icon: 'shopping-cart' },
+];
+
 // Notification categories togglable per user. Opt-out semantics live in the
 // send-push edge function (absent/true = enabled, false = disabled). "zelle"
 // groups pagos + alertas de estafa; "bots" groups atenciones + solicitudes.
@@ -257,6 +262,21 @@ export default function AdminUsuarios(): React.JSX.Element {
                     </Text>
                   ) : null}
                 </PressableScale>
+
+                {/* Permisos de módulos y acciones */}
+                <View style={[styles.notifSection, { borderColor: colors.border }]}>
+                  <Text style={[styles.notifSectionTitle, { color: colors.textDim }]}>PERMISOS</Text>
+                  {PERM_CATS.map(cat => (
+                    <NotifToggleRow
+                      key={cat.key}
+                      icon={cat.icon}
+                      label={cat.label}
+                      enabled={u.notif_prefs?.[cat.key] !== false}
+                      disabled={saving}
+                      onToggle={() => handleToggleNotif(u, cat.key)}
+                    />
+                  ))}
+                </View>
 
                 {/* Preferencias de notificaciones por categoría */}
                 <View style={[styles.notifSection, { borderColor: colors.border }]}>

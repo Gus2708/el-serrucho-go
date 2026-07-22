@@ -23,6 +23,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { spring, timing, pressScale } from '../theme/motion';
 import { PressableScale } from './PressableScale';
 import { usePedido } from '../hooks/usePedido';
+import { useUserRole, canMakePedidos } from '../hooks/useUserRole';
 import PedidosView from './PedidosView';
 import PedidosHistorialView from './PedidosHistorialView';
 
@@ -37,14 +38,18 @@ const FAB_SIZE = 58;
  * el press usa PressableScale (spring), y el badge de ítems en borrador aparece
  * con un pop. Respeta prefers-reduced-motion.
  */
-export function PedidoFab(): React.JSX.Element {
+export function PedidoFab(): React.JSX.Element | null {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
+  const { data: userAuth } = useUserRole();
+  const allowedToOrder = canMakePedidos(userAuth);
   const modalOpen = usePedido(s => s.modalOpen);
   const skipModalAnimation = usePedido(s => s.skipModalAnimation);
   const setModalOpen = usePedido(s => s.setModalOpen);
   const draftCount = usePedido(s => s.items.length);
+
+  if (!allowedToOrder) return null;
 
   // Entrada: pop de escala + opacidad al montar (nada desde scale 0).
   const enter = useSharedValue(reduced ? 1 : 0);

@@ -14,7 +14,7 @@ import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { useProductos, isPlaceholder } from '../hooks/useProductos';
 import { useFallas } from '../hooks/useFallas';
-import { useUserRole } from '../hooks/useUserRole';
+import { useUserRole, canMakePedidos } from '../hooks/useUserRole';
 import { notify, confirm } from '../lib/notify';
 import { PressableScale } from './PressableScale';
 import { pressScale } from '../theme/motion';
@@ -25,6 +25,7 @@ export default function FallasView() {
   const [isFocused, setIsFocused] = useState(false);
 
   const { data: userAuth } = useUserRole();
+  const allowedToOrder = canMakePedidos(userAuth);
   const currentUserId = userAuth?.profile?.id;
 
   const { fallas, isLoading: isLoadingFallas, addFalla, togglePedido, deleteFalla } = useFallas();
@@ -173,7 +174,13 @@ export default function FallasView() {
               hitSlop={12}
               style={[styles.checkBtn]}
               activeScale={pressScale.icon}
-              onPress={() => togglePedido({ id: falla.id, currentStatus: falla.pedido })}
+              onPress={() => {
+                if (!allowedToOrder && !falla.pedido) {
+                  notify('Acceso Restringido', 'No tienes permiso para realizar pedidos.');
+                  return;
+                }
+                togglePedido({ id: falla.id, currentStatus: falla.pedido });
+              }}
             >
               <Feather
                 name={falla.pedido ? "check-square" : "square"}

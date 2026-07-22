@@ -18,6 +18,13 @@ export function isPrivilegedRole(role: UserRole | undefined | null): boolean {
   return role === 'admin' || role === 'superempleado';
 }
 
+/** Verifica si el usuario está activo y tiene permiso para hacer pedidos (semántica opt-out). */
+export function canMakePedidos(userAuth?: { profile?: Profile | null; is_active?: boolean } | null): boolean {
+  if (!userAuth || !userAuth.profile) return false;
+  if (userAuth.is_active === false || userAuth.profile.is_active === false) return false;
+  return userAuth.profile.notif_prefs?.pedidos !== false;
+}
+
 function saveRoleToLocal(data: { role: string; is_active: boolean; profile: Profile | null }) {
   if (Platform.OS !== 'web') return;
   try {

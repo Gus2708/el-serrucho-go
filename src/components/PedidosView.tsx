@@ -24,6 +24,7 @@ import { usePedido, PedidoDraftItem } from '../hooks/usePedido';
 import { useProductos } from '../hooks/useProductos';
 import { useTazas } from '../hooks/useTazas';
 import { usePresupuestoConfig } from '../hooks/usePresupuestoConfig';
+import { useUserRole, canMakePedidos } from '../hooks/useUserRole';
 import { PressableScale } from './PressableScale';
 import { pressScale } from '../theme/motion';
 import RegistroClienteModal from './RegistroClienteModal';
@@ -63,6 +64,9 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
 
   const { data: config } = usePresupuestoConfig();
   const { data: tasa }   = useTazas();
+  const { data: userAuth } = useUserRole();
+  const allowedToOrder = canMakePedidos(userAuth);
+
   const markupPct        = config?.markup_porcentaje ?? 30;
   const bcv              = tasa?.bcv_usd ?? 0;
 
@@ -149,6 +153,10 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
   }
 
   function handleSubmit(): void {
+    if (!allowedToOrder) {
+      notify('Acceso Restringido', 'No tienes permiso para realizar pedidos.');
+      return;
+    }
     if (!clienteCodigo || items.length === 0) return;
     const problema = primerItemInvalido();
     if (problema) {
@@ -166,11 +174,23 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
     });
   }
 
-  const canSubmit = Boolean(clienteCodigo) && items.length > 0 && !isLoading;
+  const canSubmit = allowedToOrder && Boolean(clienteCodigo) && items.length > 0 && !isLoading;
 
   return (
     <View style={styles.flex}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+
+        {!allowedToOrder ? (
+          <View style={[styles.infoBanner, { backgroundColor: colors.danger + '10', borderColor: colors.danger + '30' }]}>
+            <Feather name="lock" size={15} color={colors.danger} style={styles.infoBannerIcon} />
+            <View style={styles.infoBannerTextContainer}>
+              <Text style={[styles.infoBannerTitle, { color: colors.danger }]}>Acceso restringido</Text>
+              <Text style={[styles.infoBannerSub, { color: colors.textMuted }]}>
+                No tienes permiso para realizar pedidos. Contacta a un administrador.
+              </Text>
+            </View>
+          </View>
+        ) : null}
 
         {editingPedidoId !== null ? (
           <View style={[styles.infoBanner, { backgroundColor: colors.warning + '10', borderColor: colors.warning + '30' }]}>

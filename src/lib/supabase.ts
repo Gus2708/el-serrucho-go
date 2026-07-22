@@ -144,8 +144,9 @@ export type UserRole = 'admin' | 'superempleado' | 'empleado';
 // category is enabled; only an explicit `false` disables it. Read by the
 // send-push edge function and managed by admins in the user manager.
 export type NotifPrefs = {
-  bots?:  boolean;
-  zelle?: boolean;
+  bots?:    boolean;
+  zelle?:   boolean;
+  pedidos?: boolean;
 };
 
 export type Profile = {
