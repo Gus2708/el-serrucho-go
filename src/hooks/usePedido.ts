@@ -9,6 +9,7 @@ export interface PedidoDraftItem {
   codigo_producto: string;
   descripcion:     string;
   cantidad:        number;
+  precio_unitario?: number;
 }
 
 export interface PedidoEditDraft {

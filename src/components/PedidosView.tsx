@@ -22,6 +22,7 @@ import { notify, confirm } from '../lib/notify';
 import { supabase, Producto } from '../lib/supabase';
 import { usePedido, PedidoDraftItem } from '../hooks/usePedido';
 import { useProductos } from '../hooks/useProductos';
+import { useTazas } from '../hooks/useTazas';
 import { PressableScale } from './PressableScale';
 import { pressScale } from '../theme/motion';
 import RegistroClienteModal from './RegistroClienteModal';
@@ -38,7 +39,7 @@ interface PedidosViewProps {
 }
 
 export default function PedidosView({ router, onEmitted }: PedidosViewProps): React.JSX.Element {
-  const { colors } = useTheme();
+  const { colors, formatUSD } = useTheme();
   const insets = useSafeAreaInsets();
   const { isDesktop } = useDeviceSize();
   const {
@@ -57,11 +58,41 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
     submit,
   } = usePedido();
 
+  const { data: tasa } = useTazas();
+  const bcv = tasa?.bcv_usd ?? 0;
+  const [enBs, setEnBs] = React.useState<boolean>(false);
+
   const [clienteModalVisible, setClienteModalVisible] = useState(false);
   const [registroClienteVisible, setRegistroClienteVisible] = useState(false);
   const [productoModalVisible, setProductoModalVisible] = useState(false);
 
+  // Precargar precios de ítems sin precio (ej: cargados para editar desde historial)
+  const missingCodigos = React.useMemo(() => {
+    return items.filter(it => it.precio_unitario === undefined).map(it => it.codigo_producto);
+  }, [items]);
+
+  useQuery({
+    queryKey: ['productos-prices-pedidos', missingCodigos],
+    queryFn: async () => {
+      if (missingCodigos.length === 0) return [];
+      const { data } = await supabase
+        .from('productos')
+        .select('codigo_interno, precio_venta')
+        .in('codigo_interno', missingCodigos);
+      if (data) {
+        data.forEach(p => {
+          updateItem(p.codigo_interno, { precio_unitario: Number(p.precio_venta) });
+        });
+      }
+      return data ?? [];
+    },
+    enabled: missingCodigos.length > 0,
+    staleTime: 60_000,
+  });
+
   const totalUnidades = items.reduce((sum, item) => sum + item.cantidad, 0);
+  const totalUsd = items.reduce((sum, item) => sum + item.cantidad * (item.precio_unitario ?? 0), 0);
+  const totalBs = totalUsd * bcv;
 
   function handleSelectCliente(cliente: ClienteRow): void {
     setCliente(cliente.codigo_cliente, cliente.nombre);
@@ -73,6 +104,7 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
       codigo_producto: producto.codigo_interno,
       descripcion:     producto.descripcion,
       cantidad:        1,
+      precio_unitario: producto.precio_venta,
     });
     setProductoModalVisible(false);
   }
@@ -187,6 +219,40 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
           <Text style={[styles.addProductText, { color: colors.primary }]}>Agregar producto</Text>
         </PressableScale>
 
+        {items.length > 0 && (
+          <View style={[styles.currencyToggleContainer, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}>
+            <Text style={[styles.currencyLabel, { color: colors.textMuted }]}>
+              MONEDA DE REFERENCIA
+            </Text>
+            <View style={[styles.segmentedControl, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <PressableScale
+                style={[
+                  styles.segmentedBtn,
+                  !enBs && { backgroundColor: colors.primary },
+                ]}
+                activeScale={pressScale.row}
+                onPress={() => setEnBs(false)}
+              >
+                <Text style={[styles.segmentedText, { color: !enBs ? colors.onPrimary : colors.textMuted }]}>
+                  USD ($)
+                </Text>
+              </PressableScale>
+              <PressableScale
+                style={[
+                  styles.segmentedBtn,
+                  enBs && { backgroundColor: colors.primary },
+                ]}
+                activeScale={pressScale.row}
+                onPress={() => setEnBs(true)}
+              >
+                <Text style={[styles.segmentedText, { color: enBs ? colors.onPrimary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
+                  Bs. {bcv > 0 ? `(@ ${bcv.toFixed(2)})` : ''}
+                </Text>
+              </PressableScale>
+            </View>
+          </View>
+        )}
+
         {items.length === 0 ? (
           <View style={styles.empty}>
             <Feather name="clipboard" size={36} color={colors.textDim} />
@@ -201,6 +267,8 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
               <PedidoItemCard
                 key={item.codigo_producto}
                 item={item}
+                enBs={enBs}
+                bcv={bcv}
                 onRemove={() => removeItem(item.codigo_producto)}
                 onUpdate={updates => updateItem(item.codigo_producto, updates)}
               />
@@ -243,7 +311,13 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
             <Text style={[styles.submitCount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
               {items.length} ítem{items.length > 1 ? 's' : ''} · {totalUnidades} und
             </Text>
-            <PressableScale onPress={() => confirm({ title: 'Limpiar pedido', message: 'Se perderán los ítems agregados.', confirmText: 'Limpiar', destructive: true, onConfirm: clear })} style={{ marginTop: 4 }}>
+            {totalUsd > 0 && (
+              <Text style={[styles.submitTotal, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
+                Est: {formatUSD(totalUsd)}
+                {enBs && bcv > 0 ? `  ·  Bs. ${totalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
+              </Text>
+            )}
+            <PressableScale onPress={() => confirm({ title: 'Limpiar pedido', message: 'Se perderán los ítems agregados.', confirmText: 'Limpiar', destructive: true, onConfirm: clear })} style={{ marginTop: 2 }}>
               <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
                 Limpiar pedido
               </Text>
@@ -295,14 +369,20 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
 
 interface PedidoItemCardProps {
   item:     PedidoDraftItem;
+  enBs:     boolean;
+  bcv:      number;
   onRemove: () => void;
   onUpdate: (updates: Partial<PedidoDraftItem>) => void;
 }
 
-function PedidoItemCard({ item, onRemove, onUpdate }: PedidoItemCardProps): React.JSX.Element {
-  const { colors } = useTheme();
+function PedidoItemCard({ item, enBs, bcv, onRemove, onUpdate }: PedidoItemCardProps): React.JSX.Element {
+  const { colors, formatUSD } = useTheme();
   const [cantidadInput, setCantidadInput] = useState<string>(String(item.cantidad));
   const decimalKeyboard = Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad';
+
+  const precioUnitarioUsd = item.precio_unitario ?? 0;
+  const subtotalUsd = item.cantidad * precioUnitarioUsd;
+  const subtotalBs = subtotalUsd * bcv;
 
   function handleCantidadChange(v: string): void {
     const val = v.replace(',', '.');
@@ -331,30 +411,56 @@ function PedidoItemCard({ item, onRemove, onUpdate }: PedidoItemCardProps): Reac
         </PressableScale>
       </View>
 
-      <View style={styles.qtyRow}>
-        <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>CANTIDAD</Text>
-        <View style={styles.qtyControls}>
-          <PressableScale
-            onPress={() => step(-1)}
-            style={[styles.qtyBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
-            activeScale={pressScale.icon}
-          >
-            <Feather name="minus" size={14} color={colors.text} />
-          </PressableScale>
-          <TextInput
-            style={[styles.qtyInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
-            keyboardType={decimalKeyboard}
-            value={cantidadInput}
-            onChangeText={handleCantidadChange}
-            selectTextOnFocus
-          />
-          <PressableScale
-            onPress={() => step(1)}
-            style={[styles.qtyBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
-            activeScale={pressScale.icon}
-          >
-            <Feather name="plus" size={14} color={colors.text} />
-          </PressableScale>
+      <View style={styles.controlsRow}>
+        <View style={styles.controlGroup}>
+          <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>CANTIDAD</Text>
+          <View style={styles.qtyControls}>
+            <PressableScale
+              onPress={() => step(-1)}
+              style={[styles.qtyBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+              activeScale={pressScale.icon}
+            >
+              <Feather name="minus" size={14} color={colors.text} />
+            </PressableScale>
+            <TextInput
+              style={[styles.qtyInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+              keyboardType={decimalKeyboard}
+              value={cantidadInput}
+              onChangeText={handleCantidadChange}
+              selectTextOnFocus
+            />
+            <PressableScale
+              onPress={() => step(1)}
+              style={[styles.qtyBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+              activeScale={pressScale.icon}
+            >
+              <Feather name="plus" size={14} color={colors.text} />
+            </PressableScale>
+          </View>
+        </View>
+
+        <View style={[styles.controlGroup, { alignItems: 'flex-end' }]}>
+          <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>PRECIO UNIT.</Text>
+          <Text style={[styles.priceVal, { color: colors.text }]}>
+            {precioUnitarioUsd > 0 ? formatUSD(precioUnitarioUsd) : '—'}
+          </Text>
+          {enBs && bcv > 0 && precioUnitarioUsd > 0 && (
+            <Text style={[styles.priceSubBs, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
+              Bs. {(precioUnitarioUsd * bcv).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Text>
+          )}
+        </View>
+
+        <View style={[styles.controlGroup, { alignItems: 'flex-end' }]}>
+          <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>SUBTOTAL</Text>
+          <Text style={[styles.subtotalVal, { color: colors.primary }]}>
+            {subtotalUsd > 0 ? formatUSD(subtotalUsd) : '—'}
+          </Text>
+          {enBs && bcv > 0 && subtotalUsd > 0 && (
+            <Text style={[styles.priceSubBs, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
+              Bs. {subtotalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Text>
+          )}
         </View>
       </View>
     </View>
@@ -467,7 +573,7 @@ interface ProductoPickerModalProps {
 }
 
 function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModalProps): React.JSX.Element {
-  const { colors } = useTheme();
+  const { colors, formatUSD } = useTheme();
   const [search, setSearch] = useState<string>('');
   const { productos, isLoading } = useProductos(search);
 
@@ -504,14 +610,19 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
               renderItem={({ item }) => (
                 <PressableScale
                   activeScale={pressScale.row}
-                  style={[styles.pickerRow, { borderColor: colors.border }]}
+                  style={[styles.pickerRow, { borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
                   onPress={() => onSelect(item)}
                 >
-                  <Text style={[styles.pickerRowTitle, { color: colors.text }]} numberOfLines={1}>
-                    {item.descripcion}
-                  </Text>
-                  <Text style={[styles.pickerRowSub, { color: colors.textMuted }]} numberOfLines={1}>
-                    {item.codigo_interno}
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={[styles.pickerRowTitle, { color: colors.text }]} numberOfLines={1}>
+                      {item.descripcion}
+                    </Text>
+                    <Text style={[styles.pickerRowSub, { color: colors.textMuted }]} numberOfLines={1}>
+                      {item.codigo_interno}
+                    </Text>
+                  </View>
+                  <Text style={[styles.pickerRowPrice, { color: colors.primary }]}>
+                    {formatUSD(item.precio_venta)}
                   </Text>
                 </PressableScale>
               )}
@@ -748,4 +859,68 @@ const styles = StyleSheet.create({
   },
   pickerRowTitle: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
   pickerRowSub:   { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', marginTop: 2 },
+  pickerRowPrice: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
+
+  currencyToggleContainer: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'space-between',
+    marginHorizontal:  16,
+    paddingVertical:   8,
+    paddingHorizontal: 12,
+    borderRadius:      12,
+    borderWidth:       0.5,
+  },
+  currencyLabel: {
+    fontSize:      scaleFont(10),
+    fontFamily:    'JetBrainsMono_700Bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    borderRadius:  8,
+    borderWidth:   0.5,
+    padding:       2,
+    gap:           2,
+  },
+  segmentedBtn: {
+    paddingVertical:   5,
+    paddingHorizontal: 12,
+    borderRadius:      6,
+    alignItems:        'center',
+    justifyContent:    'center',
+  },
+  segmentedText: {
+    fontSize:   scaleFont(11),
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
+
+  controlsRow: {
+    flexDirection:  'row',
+    alignItems:     'flex-end',
+    justifyContent: 'space-between',
+    marginTop:      6,
+    gap:            8,
+  },
+  controlGroup: {
+    gap: 2,
+  },
+  priceVal: {
+    fontSize:   scaleFont(14),
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
+  subtotalVal: {
+    fontSize:   scaleFont(14),
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
+  priceSubBs: {
+    fontSize:   scaleFont(10),
+    fontFamily: 'JetBrainsMono_400Regular',
+  },
+  submitTotal: {
+    fontSize:   scaleFont(12),
+    fontFamily: 'JetBrainsMono_700Bold',
+    marginTop:  1,
+  },
 });
