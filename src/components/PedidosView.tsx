@@ -682,6 +682,10 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
                       </Text>
                       <Text style={[styles.pickerRowSub, { color: colors.textMuted }]} numberOfLines={1}>
                         {item.codigo_interno}
+                        {'  ·  '}
+                        <Text style={{ color: item.existencia <= 0 ? colors.danger : colors.textMuted, fontFamily: 'JetBrainsMono_700Bold' }}>
+                          {item.existencia} {item.unidad || 'uds'}
+                        </Text>
                       </Text>
                     </View>
 

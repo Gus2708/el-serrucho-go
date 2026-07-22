@@ -38,6 +38,10 @@ export default function ProductoDetail() {
   const [newPrice, setNewPrice] = useState('');
   const [newCost, setNewCost] = useState('');
   const [isSavingPrice, setIsSavingPrice] = useState(false);
+  const [showEditSheet, setShowEditSheet] = useState(false);
+  const [newDesc, setNewDesc] = useState('');
+  const [newRef, setNewRef] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const { data: movimientos, isLoading: isLoadingMovs } = useMovimientosProducto(id);
   const hasPendingSync = movimientos?.some(m => m.backend_status === 'pendiente' || m.backend_status === 'aplicando');
@@ -104,12 +108,13 @@ export default function ProductoDetail() {
     }).start(() => {
       setShowAddSheet(false);
       setShowPriceSheet(false);
+      setShowEditSheet(false);
     });
   };
 
   // Reset animation when sheet opens
   useEffect(() => {
-    if (showAddSheet || showPriceSheet) {
+    if (showAddSheet || showPriceSheet || showEditSheet) {
       Animated.spring(panY, {
         toValue: 0,
         useNativeDriver: Platform.OS !== 'web',
@@ -119,7 +124,7 @@ export default function ProductoDetail() {
     } else {
       panY.setValue(screenHeight);
     }
-  }, [showAddSheet, showPriceSheet]);
+  }, [showAddSheet, showPriceSheet, showEditSheet]);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -342,6 +347,23 @@ export default function ProductoDetail() {
             <Feather name="dollar-sign" size={16} color={colors.primary} />
             <Text style={[styles.addBtnText, { color: colors.primary }]}>
               Ajustar precio
+            </Text>
+          </PressableScale>
+
+          {/* Edit Description/Reference CTA */}
+          <PressableScale
+            style={[styles.addBtn, { backgroundColor: colors.primaryFaded, borderColor: colors.primary, marginTop: 8 }]}
+            onPress={() => {
+              setNewDesc(producto.descripcion ?? '');
+              setNewRef(producto.referencia ?? '');
+              setAdjustmentNote('');
+              setErrorMsg(null);
+              setShowEditSheet(true);
+            }}
+          >
+            <Feather name="edit-3" size={16} color={colors.primary} />
+            <Text style={[styles.addBtnText, { color: colors.primary }]}>
+              Editar datos
             </Text>
           </PressableScale>
 
@@ -1037,6 +1059,204 @@ export default function ProductoDetail() {
                   )}
                 </PressableScale>
               </View>
+              </ScrollView>
+            </Animated.View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        {/* Edit Description/Reference sheet */}
+        <Modal
+          visible={showEditSheet}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowEditSheet(false)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={[
+              styles.sheetOverlay,
+              Platform.OS === 'web' && { justifyContent: 'center', padding: 16 }
+            ]}
+          >
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => setShowEditSheet(false)}
+            />
+            <Animated.View
+              style={[
+                styles.sheet,
+                {
+                  backgroundColor: colors.surface,
+                  transform: [{ translateY: panY }]
+                }
+              ]}
+            >
+              <ScrollView
+                bounces={false}
+                contentContainerStyle={{ paddingBottom: 24 }}
+                showsVerticalScrollIndicator={false}
+              >
+              <View
+                {...panResponder.panHandlers}
+                style={styles.modalHandleArea}
+              >
+                <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+              </View>
+
+              <Text style={[styles.sheetTitle, { color: colors.text }]}>
+                Editar datos
+              </Text>
+              <Text style={[styles.sheetSub, { color: colors.textMuted, marginBottom: 8 }]} numberOfLines={1}>
+                {producto.descripcion}
+              </Text>
+
+              {/* Banner de writeback automático */}
+              <View style={[styles.sheetBanner, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30', marginBottom: 12 }]}>
+                <Feather name="zap" size={13} color={colors.primary} style={{ marginRight: 6, marginTop: 1 }} />
+                <Text style={[styles.sheetBannerText, { color: colors.textMuted }]}>
+                  La descripción y referencia se encolarán y actualizarán automáticamente en el POS Hybrid.
+                </Text>
+              </View>
+
+              {errorMsg && (
+                <View style={{ backgroundColor: colors.danger + '22', padding: 8, borderRadius: 8, marginBottom: 8 }}>
+                  <Text style={{ color: colors.danger, fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold', textAlign: 'center' }}>
+                    {errorMsg}
+                  </Text>
+                </View>
+              )}
+
+              <Text style={[styles.sheetLabel, { color: colors.textMuted }]}>
+                Descripción
+              </Text>
+              <TextInput
+                style={[styles.noteInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                placeholder={producto.descripcion}
+                placeholderTextColor={colors.textDim}
+                value={newDesc}
+                onChangeText={setNewDesc}
+                multiline
+              />
+
+              <Text style={[styles.sheetLabel, { color: colors.textMuted, marginTop: 12 }]}>
+                Referencia
+              </Text>
+              <TextInput
+                style={[styles.noteInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                placeholder={producto.referencia ?? 'Sin referencia'}
+                placeholderTextColor={colors.textDim}
+                value={newRef}
+                onChangeText={setNewRef}
+              />
+
+              <Text style={[styles.sheetLabel, { color: colors.textMuted, marginTop: 12 }]}>
+                Nota / Observación (opcional):
+              </Text>
+              <TextInput
+                style={[styles.noteInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                placeholder="Ej. Corrección de nombre, actualización de referencia..."
+                placeholderTextColor={colors.textDim}
+                value={adjustmentNote}
+                onChangeText={setAdjustmentNote}
+                maxLength={100}
+                returnKeyType="done"
+              />
+
+              <PressableScale
+                style={[
+                  {
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingVertical: 14,
+                    borderRadius: 14,
+                    backgroundColor: colors.primary,
+                    marginTop: 16,
+                  },
+                ]}
+                dimmed={isSavingEdit}
+                disabled={isSavingEdit}
+                onPress={async () => {
+                  if (isSavingEdit) return;
+
+                  const descTrim = newDesc.trim();
+                  const refTrim = newRef.trim();
+                  const descActual = (producto.descripcion ?? '').trim();
+                  const refActual = (producto.referencia ?? '').trim();
+                  const descChanged = descTrim !== descActual;
+                  const refChanged = refTrim !== refActual;
+
+                  if (!descChanged && !refChanged) {
+                    setErrorMsg('No cambiaste ningún dato');
+                    return;
+                  }
+                  if (descChanged && descTrim === '') {
+                    setErrorMsg('La descripción no puede quedar vacía');
+                    return;
+                  }
+
+                  setErrorMsg(null);
+                  setIsSavingEdit(true);
+
+                  try {
+                    const { data: { user } } = await supabase.auth.getUser();
+                    if (!user) throw new Error('Usuario no autenticado');
+
+                    const noteText = adjustmentNote.trim() || 'Edición de datos (descripción/referencia)';
+
+                    const { data: orden, error: ordenError } = await supabase
+                      .from('ordenes_cambio')
+                      .insert({ creado_por: user.id, nota: noteText, status: 'borrador' })
+                      .select('id')
+                      .single();
+
+                    if (ordenError || !orden) throw ordenError ?? new Error('Error al crear orden');
+
+                    const { error: itemError } = await supabase
+                      .from('ordenes_cambio_items')
+                      .insert({
+                        orden_id: orden.id,
+                        codigo_producto: producto.codigo_interno,
+                        descripcion: producto.descripcion,
+                        existencia_actual: producto.existencia,
+                        nueva_existencia: producto.existencia, // keep same -> delta 0, no stock change
+                        precio_actual: producto.precio_venta,
+                        nuevo_precio: null, // no price change
+                        costo: null, // skip cost detection in backend
+                        nueva_descripcion: descChanged ? descTrim : null,
+                        nueva_referencia: refChanged ? refTrim : null,
+                        nota: noteText,
+                      });
+
+                    if (itemError) throw itemError;
+
+                    await supabase.from('ordenes_cambio').update({ status: 'emitido' }).eq('id', orden.id);
+                    await supabase.from('comandos_remotos').insert([{ comando: 'sync_inventory', status: 'pendiente' }]);
+
+                    notify('Éxito', 'Cambio de datos encolado.');
+                    queryClient.invalidateQueries({ queryKey: ['producto', id] });
+                    queryClient.invalidateQueries({ queryKey: ['movimientos-producto', id] });
+                    queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+
+                    setNewDesc('');
+                    setNewRef('');
+                    setAdjustmentNote('');
+                    setShowEditSheet(false);
+                  } catch (e: any) {
+                    console.error(e);
+                    setErrorMsg(e.message ?? 'Error al guardar la edición');
+                  } finally {
+                    setIsSavingEdit(false);
+                  }
+                }}
+              >
+                {isSavingEdit ? (
+                  <ActivityIndicator color={colors.onPrimary} size="small" />
+                ) : (
+                  <Text style={{ fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', color: colors.onPrimary }}>
+                    Aplicar y Encolar
+                  </Text>
+                )}
+              </PressableScale>
               </ScrollView>
             </Animated.View>
           </KeyboardAvoidingView>

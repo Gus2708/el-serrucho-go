@@ -656,23 +656,38 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
               data={productos}
               keyExtractor={p => p.codigo_interno}
               keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.pickerRow,
-                    { borderColor: colors.border },
-                    pressed && { backgroundColor: colors.primaryFaded },
-                  ]}
-                  onPress={() => onSelect(item)}
-                >
-                  <Text style={[styles.pickerRowTitle, { color: colors.text }]} numberOfLines={1}>
-                    {item.descripcion}
-                  </Text>
-                  <Text style={[styles.pickerRowSub, { color: colors.textMuted }]} numberOfLines={1}>
-                    {item.codigo_interno}
-                  </Text>
-                </Pressable>
-              )}
+              renderItem={({ item }) => {
+                const isOut = item.existencia <= 0;
+                const badgeBg = isOut ? colors.danger + '1A' : colors.surface;
+                const badgeBorder = isOut ? colors.danger + '40' : colors.border;
+                const badgeTextColor = isOut ? colors.danger : colors.textMuted;
+
+                return (
+                  <PressableScale
+                    activeScale={pressScale.row}
+                    style={[
+                      styles.pickerRow,
+                      { borderColor: colors.border },
+                    ]}
+                    onPress={() => onSelect(item)}
+                  >
+                    <View style={styles.pickerRowLeft}>
+                      <Text style={[styles.pickerRowTitle, { color: colors.text }]} numberOfLines={1}>
+                        {item.descripcion}
+                      </Text>
+                      <Text style={[styles.pickerRowSub, { color: colors.textMuted }]} numberOfLines={1}>
+                        {item.codigo_interno}
+                        {item.referencia ? `  ·  Ref: ${item.referencia}` : ''}
+                      </Text>
+                    </View>
+                    <View style={[styles.pickerStockBadge, { backgroundColor: badgeBg, borderColor: badgeBorder }]}>
+                      <Text style={[styles.pickerStockText, { color: badgeTextColor }]}>
+                        {item.existencia} {item.unidad || 'uds'}
+                      </Text>
+                    </View>
+                  </PressableScale>
+                );
+              }}
               ListEmptyComponent={
                 <View style={styles.empty}>
                   <Feather name="package" size={28} color={colors.textDim} />
@@ -1158,12 +1173,30 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_400Regular' },
 
   pickerRow: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'space-between',
+    gap:               10,
     paddingVertical:   12,
     paddingHorizontal: 4,
     borderBottomWidth: 0.5,
   },
+  pickerRowLeft:  { flex: 1 },
   pickerRowTitle: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
   pickerRowSub:   { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', marginTop: 2 },
+  pickerStockBadge: {
+    paddingHorizontal: 8,
+    paddingVertical:   4,
+    borderRadius:      6,
+    borderWidth:       0.5,
+    alignItems:        'center',
+    justifyContent:    'center',
+  },
+  pickerStockText: {
+    fontSize:    scaleFont(11),
+    fontFamily:  'JetBrainsMono_700Bold',
+    fontVariant: ['tabular-nums'],
+  },
 
   formField:     { marginBottom: 14 },
   formLabelRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
