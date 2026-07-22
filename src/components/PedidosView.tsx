@@ -324,13 +324,20 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
               {items.length} ítem{items.length > 1 ? 's' : ''} · {totalUnidades} und
             </Text>
             {totalBaseUsd > 0 && (
-              <Text style={[styles.submitTotal, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
-                {enBs && bcv > 0 ? (
-                  `Est: ${formatUSD(totalBaseUsd)} (+${markupPct}% = ${formatUSD(totalMarkupUsd)}) · Bs. ${totalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                ) : (
-                  `Est: ${formatUSD(totalBaseUsd)}`
-                )}
-              </Text>
+              enBs && bcv > 0 ? (
+                <>
+                  <Text style={[styles.submitTotalBs, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
+                    Bs. {totalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                  <Text style={[styles.submitSubRef, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
+                    Base: {formatUSD(totalBaseUsd)} · +{markupPct}% ({formatUSD(totalMarkupUsd)})
+                  </Text>
+                </>
+              ) : (
+                <Text style={[styles.submitTotalUsd, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
+                  Est: {formatUSD(totalBaseUsd)}
+                </Text>
+              )
             )}
             <PressableScale onPress={() => confirm({ title: 'Limpiar pedido', message: 'Se perderán los ítems agregados.', confirmText: 'Limpiar', destructive: true, onConfirm: clear })} style={{ marginTop: 2 }}>
               <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
@@ -960,9 +967,19 @@ const styles = StyleSheet.create({
     fontSize:   scaleFont(10),
     fontFamily: 'JetBrainsMono_400Regular',
   },
-  submitTotal: {
-    fontSize:   scaleFont(12),
+  submitTotalBs: {
+    fontSize:   scaleFont(14),
     fontFamily: 'JetBrainsMono_700Bold',
+    marginTop:  1,
+  },
+  submitTotalUsd: {
+    fontSize:   scaleFont(13),
+    fontFamily: 'JetBrainsMono_700Bold',
+    marginTop:  1,
+  },
+  submitSubRef: {
+    fontSize:   scaleFont(10),
+    fontFamily: 'JetBrainsMono_400Regular',
     marginTop:  1,
   },
 });

@@ -374,13 +374,18 @@ export default function SeleccionarProductos() {
         </View>
         <View style={[styles.summaryCard, { backgroundColor: colors.surface }]}>
           <Text style={[styles.summaryLabel, { color: colors.textDim }]}>Monto Total</Text>
-          <Text style={[styles.summaryValue, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
+          <Text style={[styles.summaryValue, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
             {enBs && bcv > 0 ? (
               `Bs ${totalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
             ) : (
               formatUSD(totalBaseUsd)
             )}
           </Text>
+          {enBs && bcv > 0 && totalBaseUsd > 0 && (
+            <Text style={{ fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_400Regular', color: colors.textMuted, marginTop: 2 }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+              Base: {formatUSD(totalBaseUsd)} · +{markupPct}%
+            </Text>
+          )}
         </View>
       </View>
 
