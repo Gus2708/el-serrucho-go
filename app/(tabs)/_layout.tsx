@@ -2,7 +2,6 @@ import { Platform, View } from 'react-native';
 import { Tabs } from 'expo-router';
 import { FloatingTabBar } from '../../src/components/FloatingTabBar';
 import { Sidebar } from '../../src/components/Sidebar';
-import { PedidoFab } from '../../src/components/PedidoFab';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 
 export default function TabLayout() {
@@ -30,8 +29,6 @@ export default function TabLayout() {
       {/* Content pane: fills the full remaining viewport width on desktop */}
       <View style={{ flex: 1, minWidth: 0 }}>
         {tabs}
-        {/* Botón flotante de pedido (carrito), a la mano sobre todas las pestañas */}
-        <PedidoFab />
       </View>
     </View>
   );

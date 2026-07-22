@@ -42,6 +42,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { PressableScale } from '../../src/components/PressableScale';
 import { timing, staggerDelay, pressScale } from '../../src/theme/motion';
+import { PedidoFab } from '../../src/components/PedidoFab';
 
 const logo = require('../../src/assets/img/EL SERRUCHO go.png');
 
@@ -581,6 +582,9 @@ export default function Index() {
 
         <View style={styles.bottomPad} />
       </ScrollView>
+
+      {/* Botón flotante de pedido (carrito), visible exclusivamente en el Dashboard */}
+      <PedidoFab />
     </SafeAreaView>
   );
 }
