@@ -18,6 +18,7 @@ import { notify } from '../lib/notify';
 import { usePedidosHistory, PedidoConItems, fetchPedidoItemsForEdit } from '../hooks/usePedidosHistory';
 import { usePedido } from '../hooks/usePedido';
 import { PressableScale } from './PressableScale';
+import PedidoStatusModal from './PedidoStatusModal';
 
 interface PedidosHistorialViewProps {
   onEditRetry?: () => void;   // navega a "Nuevo pedido" tras precargar el draft
@@ -30,6 +31,7 @@ export default function PedidosHistorialView({ onEditRetry }: PedidosHistorialVi
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [loadingEditId, setLoadingEditId] = useState<number | null>(null);
+  const [statusModalPedido, setStatusModalPedido] = useState<PedidoConItems | null>(null);
   const loadForEdit = usePedido(s => s.loadForEdit);
 
   const handleEditRetry = useCallback(async (pedido: PedidoConItems) => {
@@ -93,41 +95,56 @@ export default function PedidosHistorialView({ onEditRetry }: PedidosHistorialVi
   }
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.scroll}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
-      }
-    >
-      {pedidos.map((pedido, index) => (
-        <PedidoHistCard
-          key={pedido.id}
-          index={index}
-          pedido={pedido}
-          expanded={expandedId === pedido.id}
-          onToggleExpand={() => setExpandedId(prev => (prev === pedido.id ? null : pedido.id))}
-          onEditRetry={() => handleEditRetry(pedido)}
-          isLoadingEdit={loadingEditId === pedido.id}
+    <>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
+        }
+      >
+        {pedidos.map((pedido, index) => (
+          <PedidoHistCard
+            key={pedido.id}
+            index={index}
+            pedido={pedido}
+            expanded={expandedId === pedido.id}
+            onToggleExpand={() => setExpandedId(prev => (prev === pedido.id ? null : pedido.id))}
+            onEditRetry={() => handleEditRetry(pedido)}
+            onOpenStatusModal={() => setStatusModalPedido(pedido)}
+            isLoadingEdit={loadingEditId === pedido.id}
+          />
+        ))}
+        <View style={{ height: 150 }} />
+      </ScrollView>
+
+      {statusModalPedido && (
+        <PedidoStatusModal
+          visible={Boolean(statusModalPedido)}
+          pedidoId={statusModalPedido.id}
+          initialCliente={statusModalPedido.cliente_nombre}
+          initialItemCount={statusModalPedido.item_count}
+          onClose={() => setStatusModalPedido(null)}
+          onProceed={() => setStatusModalPedido(null)}
         />
-      ))}
-      <View style={{ height: 150 }} />
-    </ScrollView>
+      )}
+    </>
   );
 }
 
 // ── Card ──────────────────────────────────────────────────────────────────────
 
 interface PedidoHistCardProps {
-  pedido:         PedidoConItems;
-  expanded:       boolean;
-  onToggleExpand: () => void;
-  onEditRetry:    () => void;
-  isLoadingEdit:  boolean;
-  index?:         number;
+  pedido:            PedidoConItems;
+  expanded:          boolean;
+  onToggleExpand:    () => void;
+  onEditRetry:       () => void;
+  onOpenStatusModal: () => void;
+  isLoadingEdit:     boolean;
+  index?:            number;
 }
 
-function PedidoHistCard({ pedido, expanded, onToggleExpand, onEditRetry, isLoadingEdit, index = 0 }: PedidoHistCardProps): React.JSX.Element {
+function PedidoHistCard({ pedido, expanded, onToggleExpand, onEditRetry, onOpenStatusModal, isLoadingEdit, index = 0 }: PedidoHistCardProps): React.JSX.Element {
   const { colors } = useTheme();
   const reduced = useReducedMotion();
   const progress = useSharedValue(0);
@@ -160,11 +177,13 @@ function PedidoHistCard({ pedido, expanded, onToggleExpand, onEditRetry, isLoadi
         <Text style={[styles.histId, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
           PED-{String(pedido.id).padStart(4, '0')}
         </Text>
-        <BackendChip
-          status={pedido.backend_status}
-          aplicadoEn={pedido.backend_aplicado_en}
-          documento={pedido.documento_hybrid}
-        />
+        <PressableScale onPress={onOpenStatusModal} activeScale={0.94}>
+          <BackendChip
+            status={pedido.backend_status}
+            aplicadoEn={pedido.backend_aplicado_en}
+            documento={pedido.documento_hybrid}
+          />
+        </PressableScale>
       </View>
 
       {pedido.cliente_nombre ? (

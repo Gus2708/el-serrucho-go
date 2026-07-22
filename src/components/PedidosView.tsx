@@ -28,6 +28,7 @@ import { useUserRole, canMakePedidos } from '../hooks/useUserRole';
 import { PressableScale } from './PressableScale';
 import { pressScale } from '../theme/motion';
 import RegistroClienteModal from './RegistroClienteModal';
+import PedidoStatusModal from './PedidoStatusModal';
 
 interface ClienteRow {
   codigo_cliente: string;
@@ -73,6 +74,8 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
   const [clienteModalVisible, setClienteModalVisible] = useState(false);
   const [registroClienteVisible, setRegistroClienteVisible] = useState(false);
   const [productoModalVisible, setProductoModalVisible] = useState(false);
+  const [statusModalVisible, setStatusModalVisible] = useState(false);
+  const [submittedPedido, setSubmittedPedido] = useState<{ id: number; clienteNombre?: string | null; itemCount?: number } | null>(null);
 
   // Precargar precios de ítems sin precio (ej: cargados para editar desde historial)
   const missingCodigos = React.useMemo(() => {
@@ -140,13 +143,19 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
     const wasEditing = editingPedidoId !== null;
     try {
       const userId = await getUserId();
+      const currentClientName = clienteNombre;
+      const totalItemsCount = items.length;
+
       const { pedidoId } = await submit(userId);
+
       clear();
-      notify(
-        wasEditing ? 'Pedido reencolado' : 'Pedido emitido',
-        `PED-${String(pedidoId).padStart(4, '0')} en cola para registrarse en Hybrid y pasar a caja.`
-      );
-      onEmitted?.();
+
+      setSubmittedPedido({
+        id: pedidoId,
+        clienteNombre: currentClientName,
+        itemCount: totalItemsCount,
+      });
+      setStatusModalVisible(true);
     } catch (e: any) {
       notify('Error', e.message ?? (wasEditing ? 'No se pudo reintentar el pedido' : 'No se pudo emitir el pedido'));
     }
@@ -412,6 +421,24 @@ export default function PedidosView({ router, onEmitted }: PedidosViewProps): Re
         onClose={() => setProductoModalVisible(false)}
         onSelect={handleSelectProducto}
       />
+      {submittedPedido && (
+        <PedidoStatusModal
+          visible={statusModalVisible}
+          pedidoId={submittedPedido.id}
+          initialCliente={submittedPedido.clienteNombre}
+          initialItemCount={submittedPedido.itemCount}
+          onClose={() => {
+            setStatusModalVisible(false);
+            setSubmittedPedido(null);
+            onEmitted?.();
+          }}
+          onProceed={() => {
+            setStatusModalVisible(false);
+            setSubmittedPedido(null);
+            onEmitted?.();
+          }}
+        />
+      )}
     </View>
   );
 }

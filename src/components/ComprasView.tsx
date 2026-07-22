@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -617,15 +617,24 @@ function ProveedorPickerModal({ visible, canCreate, onClose, onSelect, onCreate 
 // ── Modal: selector de producto ──────────────────────────────────────────────
 
 interface ProductoPickerModalProps {
-  visible:  boolean;
-  onClose:  () => void;
-  onSelect: (producto: Producto) => void;
+  visible:        boolean;
+  initialSearch?: string;
+  onClose:        () => void;
+  onSelect:       (producto: Producto) => void;
 }
 
-function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModalProps): React.JSX.Element {
+function ProductoPickerModal({ visible, initialSearch = '', onClose, onSelect }: ProductoPickerModalProps): React.JSX.Element {
   const { colors } = useTheme();
   const [search, setSearch] = useState<string>('');
+  const [scannerVisible, setScannerVisible] = useState<boolean>(false);
   const { productos, isLoading } = useProductos(search);
+
+  useEffect(() => {
+    if (visible) {
+      setSearch(initialSearch ? normalizeSearchTerm(initialSearch) : '');
+      setScannerVisible(false);
+    }
+  }, [visible, initialSearch]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -642,13 +651,25 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
             <Feather name="search" size={16} color={colors.textDim} />
             <TextInput
               style={[styles.searchInput, { color: colors.text }]}
-              placeholder="Buscar por código o descripción…"
+              placeholder="Buscar por código, descripción o barras…"
               placeholderTextColor={colors.textDim}
               value={search}
               onChangeText={v => setSearch(normalizeSearchTerm(v))}
               autoCapitalize="characters"
               autoFocus
             />
+            {search.length > 0 && (
+              <Pressable onPress={() => setSearch('')} hitSlop={8} style={{ padding: 4, marginRight: 2 }}>
+                <Feather name="x-circle" size={16} color={colors.textDim} />
+              </Pressable>
+            )}
+            <PressableScale
+              style={[styles.scanBtn, { backgroundColor: colors.primaryFaded, borderColor: colors.primary + '40' }]}
+              onPress={() => setScannerVisible(true)}
+              hitSlop={4}
+            >
+              <Feather name="camera" size={16} color={colors.primary} />
+            </PressableScale>
           </View>
 
           {isLoading ? (
@@ -680,6 +701,7 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
                       <Text style={[styles.pickerRowSub, { color: colors.textMuted }]} numberOfLines={1}>
                         {item.codigo_interno}
                         {item.referencia ? `  ·  Ref: ${item.referencia}` : ''}
+                        {item.codigo_barras ? `  ·  CB: ${item.codigo_barras}` : ''}
                       </Text>
                     </View>
                     <View style={[styles.pickerStockBadge, { backgroundColor: badgeBg, borderColor: badgeBorder }]}>
@@ -700,6 +722,14 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
           )}
         </View>
       </View>
+      <BarcodeScannerModal
+        visible={scannerVisible}
+        onClose={() => setScannerVisible(false)}
+        onScan={(data) => {
+          setSearch(normalizeSearchTerm(data));
+          setScannerVisible(false);
+        }}
+      />
     </Modal>
   );
 }
@@ -1175,6 +1205,15 @@ const styles = StyleSheet.create({
     paddingVertical:   Platform.OS === 'ios' ? 10 : 4,
   },
   searchInput: { flex: 1, fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_400Regular' },
+  scanBtn: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'center',
+    paddingHorizontal: 8,
+    paddingVertical:   6,
+    borderRadius:      8,
+    borderWidth:       0.5,
+  },
 
   pickerRow: {
     flexDirection:     'row',
