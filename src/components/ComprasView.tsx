@@ -752,7 +752,53 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
   const [costoInput, setCostoInput] = useState<string>('');
   const [precioInput, setPrecioInput] = useState<string>('');
   const [scannerTarget, setScannerTarget] = useState<'codigo' | 'referencia' | null>(null);
+
+  const [checkingCode, setCheckingCode] = useState<boolean>(false);
+  const [existingProductInDb, setExistingProductInDb] = useState<{ codigo_interno: string; descripcion: string } | null>(null);
+
   const decimalKeyboard = Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad';
+
+  useEffect(() => {
+    const trimmed = codigo.trim().toUpperCase();
+    if (!trimmed) {
+      setExistingProductInDb(null);
+      setCheckingCode(false);
+      return;
+    }
+
+    let isMounted = true;
+    setCheckingCode(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('productos')
+          .select('codigo_interno, descripcion')
+          .or(`codigo_interno.ilike.${trimmed},codigo_barras.ilike.${trimmed}`)
+          .limit(1)
+          .maybeSingle();
+
+        if (isMounted) {
+          if (!error && data) {
+            setExistingProductInDb(data);
+          } else {
+            setExistingProductInDb(null);
+          }
+          setCheckingCode(false);
+        }
+      } catch {
+        if (isMounted) {
+          setExistingProductInDb(null);
+          setCheckingCode(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [codigo]);
 
   function resetForm(): void {
     setCodigo('');
@@ -761,6 +807,8 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
     setCantidadInput('1');
     setCostoInput('');
     setPrecioInput('');
+    setExistingProductInDb(null);
+    setCheckingCode(false);
   }
 
   function handleClose(): void {
@@ -768,8 +816,8 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
     onClose();
   }
 
-  function handleAdd(): void {
-    const codigoTrim = codigo.trim();
+  async function handleAdd(): Promise<void> {
+    const codigoTrim = codigo.trim().toUpperCase();
     const descripcionTrim = descripcion.trim();
     const cantidad = parseFloat(cantidadInput.replace(',', '.'));
     const costo = parseFloat(costoInput.replace(',', '.'));
@@ -779,6 +827,39 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
       notify('Error', 'El código es obligatorio');
       return;
     }
+    if (checkingCode) {
+      notify('Verificando', 'Por favor espera a que finalice la verificación del código.');
+      return;
+    }
+    if (existingProductInDb) {
+      notify(
+        'Código ya registrado',
+        `El código "${codigoTrim}" ya pertenece al producto "${existingProductInDb.descripcion}" en el sistema. No se puede crear como producto nuevo.`
+      );
+      return;
+    }
+    if (existingCodes.includes(codigoTrim)) {
+      notify('Error', 'Ya agregaste ese código a la compra actual');
+      return;
+    }
+
+    // Verificación final sincrónica con la base de datos por seguridad
+    const { data: existingCheck } = await supabase
+      .from('productos')
+      .select('codigo_interno, descripcion')
+      .or(`codigo_interno.ilike.${codigoTrim},codigo_barras.ilike.${codigoTrim}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (existingCheck) {
+      setExistingProductInDb(existingCheck);
+      notify(
+        'Código ya registrado',
+        `El producto "${existingCheck.descripcion}" (${existingCheck.codigo_interno}) ya existe en el sistema. Selecciónalo desde la lista de productos.`
+      );
+      return;
+    }
+
     if (!descripcionTrim) {
       notify('Error', 'La descripción es obligatoria');
       return;
@@ -797,10 +878,6 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
     }
     if (isNaN(precio) || precio < 0) {
       notify('Error', 'El precio es obligatorio');
-      return;
-    }
-    if (existingCodes.includes(codigoTrim)) {
-      notify('Error', 'Ya agregaste ese código');
       return;
     }
 
@@ -831,7 +908,13 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={styles.formField}>
               <Text style={[styles.formLabel, { color: colors.textMuted }]}>CÓDIGO</Text>
-              <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+              <View style={[
+                styles.inputWrap,
+                {
+                  borderColor: existingProductInDb ? colors.danger : colors.border,
+                  backgroundColor: colors.surface,
+                }
+              ]}>
                 <TextInput
                   style={[styles.inputWithIcon, { color: colors.text }]}
                   placeholder="Código del producto"
@@ -844,6 +927,40 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
                   <Feather name="camera" size={18} color={colors.primary} />
                 </PressableScale>
               </View>
+
+              {codigo.trim().length > 0 ? (
+                checkingCode ? (
+                  <View style={styles.codeStatusRow}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                    <Text style={[styles.codeStatusText, { color: colors.textMuted }]}>
+                      Verificando disponibilidad de código en el sistema...
+                    </Text>
+                  </View>
+                ) : existingProductInDb ? (
+                  <View style={[styles.codeBanner, { backgroundColor: colors.danger + '15', borderColor: colors.danger + '40' }]}>
+                    <Feather name="alert-triangle" size={15} color={colors.danger} style={{ marginTop: 2 }} />
+                    <Text style={[styles.codeBannerText, { color: colors.danger }]}>
+                      ¡Este código ya existe en el sistema!{'\n'}
+                      <Text style={{ fontWeight: '700' }}>{existingProductInDb.descripcion}</Text> ({existingProductInDb.codigo_interno}){'\n'}
+                      No puedes crearlo como producto nuevo. Selecciónalo en la lista existente.
+                    </Text>
+                  </View>
+                ) : existingCodes.includes(codigo.trim().toUpperCase()) ? (
+                  <View style={[styles.codeBanner, { backgroundColor: colors.warning + '15', borderColor: colors.warning + '40' }]}>
+                    <Feather name="alert-circle" size={15} color={colors.warning} />
+                    <Text style={[styles.codeBannerText, { color: colors.warning }]}>
+                      Este código ya fue agregado a la compra actual.
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.codeStatusRow}>
+                    <Feather name="check-circle" size={14} color={colors.success ?? '#10b981'} />
+                    <Text style={[styles.codeStatusText, { color: colors.success ?? '#10b981' }]}>
+                      Código disponible (no existe en inventario)
+                    </Text>
+                  </View>
+                )
+              ) : null}
             </View>
 
             <View style={styles.formField}>
@@ -923,9 +1040,10 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
             <PressableScale
               style={[
                 styles.formSubmitBtn,
-                { backgroundColor: colors.primary },
+                { backgroundColor: Boolean(existingProductInDb) ? colors.textDim : colors.primary },
               ]}
               onPress={handleAdd}
+              disabled={Boolean(existingProductInDb)}
             >
               <Feather name="plus" size={16} color={colors.onPrimary} />
               <Text style={[styles.formSubmitText, { color: colors.onPrimary }]}>Agregar a la compra</Text>
@@ -1284,4 +1402,29 @@ const styles = StyleSheet.create({
     marginTop:         4,
   },
   formSubmitText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
+  codeStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+  },
+  codeStatusText: {
+    fontSize: scaleFont(11),
+    fontFamily: 'JetBrainsMono_400Regular',
+  },
+  codeBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 0.5,
+  },
+  codeBannerText: {
+    flex: 1,
+    fontSize: scaleFont(11),
+    fontFamily: 'JetBrainsMono_400Regular',
+    lineHeight: scaleFont(16),
+  },
 });
