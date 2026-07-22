@@ -431,12 +431,9 @@ function ClientePickerModal({ visible, onClose, onSelect, onCreate }: ClientePic
               keyExtractor={c => c.codigo_cliente}
               keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.pickerRow,
-                    { borderColor: colors.border },
-                    pressed && { backgroundColor: colors.primaryFaded },
-                  ]}
+                <PressableScale
+                  activeScale={pressScale.row}
+                  style={[styles.pickerRow, { borderColor: colors.border }]}
                   onPress={() => onSelect(item)}
                 >
                   <Text style={[styles.pickerRowTitle, { color: colors.text }]} numberOfLines={1}>
@@ -445,7 +442,7 @@ function ClientePickerModal({ visible, onClose, onSelect, onCreate }: ClientePic
                   <Text style={[styles.pickerRowSub, { color: colors.textMuted }]} numberOfLines={1}>
                     {item.codigo_cliente}{item.rif ? `  ·  ${item.rif}` : ''}
                   </Text>
-                </Pressable>
+                </PressableScale>
               )}
               ListEmptyComponent={
                 <View style={styles.empty}>
@@ -480,9 +477,9 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
         <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Agregar producto</Text>
-            <Pressable onPress={onClose} hitSlop={8}>
+            <PressableScale onPress={onClose} hitSlop={8} activeScale={pressScale.icon}>
               <Feather name="x" size={22} color={colors.textMuted} />
-            </Pressable>
+            </PressableScale>
           </View>
 
           <View style={[styles.searchBox, { borderColor: colors.border, backgroundColor: colors.surface }]}>
@@ -505,12 +502,9 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
               keyExtractor={p => p.codigo_interno}
               keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.pickerRow,
-                    { borderColor: colors.border },
-                    pressed && { backgroundColor: colors.primaryFaded },
-                  ]}
+                <PressableScale
+                  activeScale={pressScale.row}
+                  style={[styles.pickerRow, { borderColor: colors.border }]}
                   onPress={() => onSelect(item)}
                 >
                   <Text style={[styles.pickerRowTitle, { color: colors.text }]} numberOfLines={1}>
@@ -519,7 +513,7 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
                   <Text style={[styles.pickerRowSub, { color: colors.textMuted }]} numberOfLines={1}>
                     {item.codigo_interno}
                   </Text>
-                </Pressable>
+                </PressableScale>
               )}
               ListEmptyComponent={
                 <View style={styles.empty}>

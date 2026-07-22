@@ -91,7 +91,9 @@ export function PedidoFab(): React.JSX.Element {
             },
           ]}
         >
-          <Feather name="shopping-cart" size={24} color={colors.onPrimary} />
+          <View style={styles.iconWrap}>
+            <Feather name="shopping-cart" size={24} color={colors.onPrimary} style={styles.cartIcon} />
+          </View>
           {draftCount > 0 ? (
             <Animated.View style={[styles.badge, { backgroundColor: colors.bg, borderColor: colors.primary }, badgeStyle]}>
               <Text style={[styles.badgeText, { color: colors.primary }]} numberOfLines={1}>
@@ -128,18 +130,20 @@ function PedidoModal({ visible, onClose }: { visible: boolean; onClose: () => vo
         </View>
 
         <View style={[styles.subTabContainer, { backgroundColor: '#0A0A0A', borderColor: colors.border }]}>
-          <Pressable
-            style={[styles.subTabBtn, subTab === 'armar' && { backgroundColor: colors.surface, borderColor: '#333' }]}
+          <PressableScale
+            activeScale={pressScale.row}
+            style={[styles.subTabBtn, subTab === 'armar' && { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={() => setSubTab('armar')}
           >
             <Text style={[styles.subTabText, { color: subTab === 'armar' ? colors.primary : colors.textMuted }]}>Nuevo pedido</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.subTabBtn, subTab === 'historial' && { backgroundColor: colors.surface, borderColor: '#333' }]}
+          </PressableScale>
+          <PressableScale
+            activeScale={pressScale.row}
+            style={[styles.subTabBtn, subTab === 'historial' && { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={() => setSubTab('historial')}
           >
             <Text style={[styles.subTabText, { color: subTab === 'historial' ? colors.primary : colors.textMuted }]}>Historial</Text>
-          </Pressable>
+          </PressableScale>
         </View>
 
         {subTab === 'armar'
@@ -165,6 +169,18 @@ const styles = StyleSheet.create({
     shadowOpacity:  0.4,
     shadowRadius:   10,
     elevation:      10,
+  },
+  iconWrap: {
+    width:          24,
+    height:         24,
+    alignItems:     'center',
+    justifyContent: 'center',
+    marginLeft:     -1,
+  },
+  cartIcon: {
+    textAlign:         'center',
+    textAlignVertical: 'center',
+    lineHeight:        24,
   },
   badge: {
     position:       'absolute',

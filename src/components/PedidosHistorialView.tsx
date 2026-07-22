@@ -3,8 +3,16 @@ import { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useReducedMotion,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
 import { scaleFont } from '../theme/responsive';
 import { useTheme } from '../theme/ThemeContext';
+import { spring, timing, staggerDelay } from '../theme/motion';
 import { supabase } from '../lib/supabase';
 import { notify } from '../lib/notify';
 import { usePedidosHistory, PedidoConItems, fetchPedidoItemsForEdit } from '../hooks/usePedidosHistory';
@@ -92,9 +100,10 @@ export default function PedidosHistorialView({ onEditRetry }: PedidosHistorialVi
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
       }
     >
-      {pedidos.map(pedido => (
+      {pedidos.map((pedido, index) => (
         <PedidoHistCard
           key={pedido.id}
+          index={index}
           pedido={pedido}
           expanded={expandedId === pedido.id}
           onToggleExpand={() => setExpandedId(prev => (prev === pedido.id ? null : pedido.id))}
@@ -115,20 +124,36 @@ interface PedidoHistCardProps {
   onToggleExpand: () => void;
   onEditRetry:    () => void;
   isLoadingEdit:  boolean;
+  index?:         number;
 }
 
-function PedidoHistCard({ pedido, expanded, onToggleExpand, onEditRetry, isLoadingEdit }: PedidoHistCardProps): React.JSX.Element {
+function PedidoHistCard({ pedido, expanded, onToggleExpand, onEditRetry, isLoadingEdit, index = 0 }: PedidoHistCardProps): React.JSX.Element {
   const { colors } = useTheme();
+  const reduced = useReducedMotion();
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withDelay(staggerDelay(index), withTiming(1, timing.enter));
+  }, [index, progress]);
+
+  const enterStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: reduced
+      ? []
+      : [{ translateY: (1 - progress.value) * 10 }, { scale: 0.96 + progress.value * 0.04 }],
+  }));
+
   const dateStr = new Date(pedido.creado_en).toLocaleString('es-VE', {
     day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
   });
   const showResultado = pedido.backend_status === 'error' && Boolean(pedido.backend_resultado);
 
   return (
-    <View
+    <Animated.View
       style={[
         styles.histCard,
         { backgroundColor: colors.surface, borderColor: colors.border },
+        enterStyle,
       ]}
     >
       <View style={styles.histTop}>
@@ -207,7 +232,7 @@ function PedidoHistCard({ pedido, expanded, onToggleExpand, onEditRetry, isLoadi
           </PressableScale>
         </View>
       ) : null}
-    </View>
+    </Animated.View>
   );
 }
 
