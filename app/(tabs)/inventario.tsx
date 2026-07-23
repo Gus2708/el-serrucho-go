@@ -112,8 +112,10 @@ export default function Inventario() {
             placeholderTextColor={colors.textDim}
             value={search}
             onChangeText={v => setSearch(normalizeSearchTerm(v))}
-            autoCapitalize="none"
+            autoCapitalize="characters"
+            autoComplete="off"
             autoCorrect={false}
+            spellCheck={false}
             returnKeyType="search"
             clearButtonMode="while-editing"
           />

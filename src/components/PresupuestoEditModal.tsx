@@ -691,7 +691,9 @@ function AddProductsPicker({
             value={search}
             onChangeText={v => setSearch(normalizeSearchTerm(v))}
             autoCapitalize="characters"
+            autoComplete="off"
             autoCorrect={false}
+            spellCheck={false}
           />
           {search.length > 0 && (
             <Pressable onPress={() => setSearch('')} hitSlop={8}>

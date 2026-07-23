@@ -656,6 +656,9 @@ function ProductoPickerModal({ visible, initialSearch = '', onClose, onSelect }:
               value={search}
               onChangeText={v => setSearch(normalizeSearchTerm(v))}
               autoCapitalize="characters"
+              autoComplete="off"
+              autoCorrect={false}
+              spellCheck={false}
               autoFocus
             />
             {search.length > 0 && (
@@ -920,8 +923,11 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
                   placeholder="Código del producto"
                   placeholderTextColor={colors.textDim}
                   value={codigo}
-                  onChangeText={v => setCodigo(v.toUpperCase())}
+                  onChangeText={v => setCodigo(normalizeSearchTerm(v))}
                   autoCapitalize="characters"
+                  autoComplete="off"
+                  autoCorrect={false}
+                  spellCheck={false}
                 />
                 <PressableScale onPress={() => setScannerTarget('codigo')} hitSlop={8} activeScale={pressScale.icon}>
                   <Feather name="camera" size={18} color={colors.primary} />
@@ -975,9 +981,12 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
                 placeholder="Descripción del producto"
                 placeholderTextColor={colors.textDim}
                 value={descripcion}
-                onChangeText={v => setDescripcion(v.toUpperCase())}
+                onChangeText={v => setDescripcion(normalizeSearchTerm(v))}
                 autoCapitalize="characters"
                 maxLength={DESCRIPCION_MAX}
+                autoComplete="off"
+                autoCorrect={false}
+                spellCheck={false}
               />
             </View>
 
@@ -989,8 +998,11 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
                   placeholder="Referencia del proveedor"
                   placeholderTextColor={colors.textDim}
                   value={referencia}
-                  onChangeText={v => setReferencia(v.toUpperCase())}
+                  onChangeText={v => setReferencia(normalizeSearchTerm(v))}
                   autoCapitalize="characters"
+                  autoComplete="off"
+                  autoCorrect={false}
+                  spellCheck={false}
                 />
                 <PressableScale onPress={() => setScannerTarget('referencia')} hitSlop={8} activeScale={pressScale.icon}>
                   <Feather name="camera" size={18} color={colors.primary} />

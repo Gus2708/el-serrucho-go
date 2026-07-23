@@ -109,6 +109,9 @@ export default function FallasView() {
             value={search}
             onChangeText={v => setSearch(normalizeSearchTerm(v))}
             autoCapitalize="characters"
+            autoComplete="off"
+            autoCorrect={false}
+            spellCheck={false}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setTimeout(() => setIsFocused(false), 200)}
             onSubmitEditing={handleAddCustom}

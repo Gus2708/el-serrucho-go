@@ -684,6 +684,9 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
               value={search}
               onChangeText={v => setSearch(normalizeSearchTerm(v))}
               autoCapitalize="characters"
+              autoComplete="off"
+              autoCorrect={false}
+              spellCheck={false}
               autoFocus
             />
           </View>

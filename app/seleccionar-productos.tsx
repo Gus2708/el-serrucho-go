@@ -412,7 +412,9 @@ export default function SeleccionarProductos() {
           value={search}
           onChangeText={v => setSearch(normalizeSearchTerm(v))}
           autoCapitalize="characters"
+          autoComplete="off"
           autoCorrect={false}
+          spellCheck={false}
           clearButtonMode="always"
         />
         {search.length > 0 && Platform.OS !== 'ios' && (
