@@ -75,7 +75,12 @@ export default function SeleccionarProductos() {
       usePresupuestoStore.getState().reset();
       router.replace('/(tabs)/notificaciones' as any);
     } else if (target === 'pedido') {
-      router.back();
+      // El armador de pedido es un Modal montado en el Dashboard (PedidoFab),
+      // no una ruta. router.back() es frágil: según el historial puede caer en
+      // otra pantalla (p. ej. si el pedido se abrió al convertir un presupuesto).
+      // Reaseguramos el modal abierto y volvemos explícitamente al Dashboard.
+      pedidoStore.setModalOpen(true, true);
+      router.replace('/(tabs)');
     } else {
       router.replace({ pathname: '/(tabs)/ordenes', params: { tab: 'presupuesto' } });
     }
