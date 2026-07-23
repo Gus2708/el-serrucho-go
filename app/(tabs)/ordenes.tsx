@@ -101,12 +101,43 @@ export default function Ordenes() {
 
       {tab === 'ajuste' && <AjustesTab router={router} isPrivileged={isPrivileged} queryClient={queryClient} />}
       {tab === 'aprobaciones' && isPrivileged && <AprobacionesView />}
-      {tab === 'presupuesto' && <PresupuestoView router={router} />}
+      {tab === 'presupuesto' && <PresupuestoTab router={router} queryClient={queryClient} />}
       {tab === 'compras' && isPrivileged && <ComprasTab router={router} />}
       {tab === 'directorio' && <DirectorioView />}
       {tab === 'fallas' && <FallasView />}
       {tab === 'historial' && <HistorialView queryClient={queryClient} initialSubTab="todo" />}
     </SafeAreaView>
+  );
+}
+
+// ── Presupuesto (armar presupuesto + historial en sub-toggle) ────────────────
+
+function PresupuestoTab({ router, queryClient }: { router: any; queryClient: any }) {
+  const { colors } = useTheme();
+  const [subTab, setSubTab] = useState<'armar' | 'historial'>('armar');
+
+  return (
+    <View style={styles.flex}>
+      <View style={[styles.subTabContainer, { backgroundColor: '#0A0A0A', borderColor: colors.border }]}>
+        <PressableScale
+          activeScale={pressScale.row}
+          style={[styles.subTabBtn, subTab === 'armar' && { backgroundColor: colors.surface, borderColor: '#333' }]}
+          onPress={() => setSubTab('armar')}
+        >
+          <Text style={[styles.subTabText, { color: subTab === 'armar' ? colors.primary : colors.textMuted }]}>Nuevo presupuesto</Text>
+        </PressableScale>
+        <PressableScale
+          activeScale={pressScale.row}
+          style={[styles.subTabBtn, subTab === 'historial' && { backgroundColor: colors.surface, borderColor: '#333' }]}
+          onPress={() => setSubTab('historial')}
+        >
+          <Text style={[styles.subTabText, { color: subTab === 'historial' ? colors.primary : colors.textMuted }]}>Historial</Text>
+        </PressableScale>
+      </View>
+
+      {subTab === 'armar' && <PresupuestoView router={router} onEmitted={() => setSubTab('historial')} />}
+      {subTab === 'historial' && <HistorialView queryClient={queryClient} initialSubTab="presupuesto" hideSubTabs={true} />}
+    </View>
   );
 }
 

@@ -15,7 +15,7 @@ import { pressScale } from '../theme/motion';
 import { usePresupuestoConfig } from '../hooks/usePresupuestoConfig';
 import { useTazas } from '../hooks/useTazas';
 
-export default function PresupuestoView({ router }: { router: any }) {
+export default function PresupuestoView({ router, onEmitted }: { router: any; onEmitted?: () => void }) {
   const { colors, formatUSD } = useTheme();
   const insets = useSafeAreaInsets();
   const { isDesktop } = useDeviceSize();
@@ -95,6 +95,7 @@ export default function PresupuestoView({ router }: { router: any }) {
       if (Platform.OS === 'web' && html) {
         await printHtml(html);
       }
+      onEmitted?.();
     } catch (e: any) {
       notify('Error', e.message ?? 'No se pudo emitir el presupuesto');
     } finally {
