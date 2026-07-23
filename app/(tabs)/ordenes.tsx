@@ -44,6 +44,10 @@ import ComprasView from '../../src/components/ComprasView';
 import ComprasHistorialView from '../../src/components/ComprasHistorialView';
 import AprobacionesView from '../../src/components/AprobacionesView';
 import DirectorioView from '../../src/components/DirectorioView';
+import { useComprasHistory } from '../../src/hooks/useComprasHistory';
+import { usePedidosHistory } from '../../src/hooks/usePedidosHistory';
+import PedidosHistorialView from '../../src/components/PedidosHistorialView';
+import PedidoStatusModal from '../../src/components/PedidoStatusModal';
 
 type Tab = 'ajuste' | 'presupuesto' | 'historial' | 'fallas' | 'compras' | 'aprobaciones' | 'directorio';
 
@@ -95,13 +99,13 @@ export default function Ordenes() {
         </ScrollView>
       </View>
 
-      {tab === 'ajuste' && <BorradorView router={router} isPrivileged={isPrivileged} />}
+      {tab === 'ajuste' && <AjustesTab router={router} isPrivileged={isPrivileged} queryClient={queryClient} />}
       {tab === 'aprobaciones' && isPrivileged && <AprobacionesView />}
       {tab === 'presupuesto' && <PresupuestoView router={router} />}
       {tab === 'compras' && isPrivileged && <ComprasTab router={router} />}
       {tab === 'directorio' && <DirectorioView />}
       {tab === 'fallas' && <FallasView />}
-      {tab === 'historial' && <HistorialView queryClient={queryClient} />}
+      {tab === 'historial' && <HistorialView queryClient={queryClient} initialSubTab="todo" />}
     </SafeAreaView>
   );
 }
@@ -135,9 +139,40 @@ function ComprasTab({ router }: { router: any }) {
   );
 }
 
+// ── Ajustes (armar ajuste + historial en sub-toggle) ─────────────────────────
+
+function AjustesTab({ router, isPrivileged, queryClient }: { router: any; isPrivileged: boolean; queryClient: any }) {
+  const { colors } = useTheme();
+  const [subTab, setSubTab] = useState<'armar' | 'historial'>('armar');
+
+  return (
+    <View style={styles.flex}>
+      <View style={[styles.subTabContainer, { backgroundColor: '#0A0A0A', borderColor: colors.border }]}>
+        <PressableScale
+          activeScale={pressScale.row}
+          style={[styles.subTabBtn, subTab === 'armar' && { backgroundColor: colors.surface, borderColor: '#333' }]}
+          onPress={() => setSubTab('armar')}
+        >
+          <Text style={[styles.subTabText, { color: subTab === 'armar' ? colors.primary : colors.textMuted }]}>Nuevo ajuste</Text>
+        </PressableScale>
+        <PressableScale
+          activeScale={pressScale.row}
+          style={[styles.subTabBtn, subTab === 'historial' && { backgroundColor: colors.surface, borderColor: '#333' }]}
+          onPress={() => setSubTab('historial')}
+        >
+          <Text style={[styles.subTabText, { color: subTab === 'historial' ? colors.primary : colors.textMuted }]}>Historial</Text>
+        </PressableScale>
+      </View>
+
+      {subTab === 'armar' && <BorradorView router={router} isPrivileged={isPrivileged} onEmitted={() => setSubTab('historial')} />}
+      {subTab === 'historial' && <HistorialView queryClient={queryClient} initialSubTab="ajuste" hideSubTabs={true} />}
+    </View>
+  );
+}
+
 // ── Borrador (draft order builder) ───────────────────────────────────────────
 
-function BorradorView({ router, isPrivileged }: { router: any; isPrivileged: boolean }) {
+function BorradorView({ router, isPrivileged, onEmitted }: { router: any; isPrivileged: boolean; onEmitted?: () => void }) {
   const { colors, formatUSD } = useTheme();
   const insets = useSafeAreaInsets();
   const { isDesktop } = useDeviceSize();
@@ -173,6 +208,7 @@ function BorradorView({ router, isPrivileged }: { router: any; isPrivileged: boo
       if (Platform.OS === 'web' && html) {
         await printHtml(html);
       }
+      onEmitted?.();
     } catch (e: any) {
       notify('Error', e.message ?? 'No se pudo emitir la orden');
     }
@@ -527,42 +563,56 @@ function BorradorView({ router, isPrivileged }: { router: any; isPrivileged: boo
 
 // ── Historial ─────────────────────────────────────────────────────────────────
 
-function HistorialView({ queryClient }: { queryClient: any }) {
+type SubTabHistorial = 'todo' | 'ajuste' | 'presupuesto' | 'compras' | 'pedidos';
+
+function HistorialView({
+  queryClient,
+  initialSubTab = 'todo',
+  hideSubTabs = false,
+}: {
+  queryClient: any;
+  initialSubTab?: SubTabHistorial;
+  hideSubTabs?: boolean;
+}) {
   const { colors } = useTheme();
-  // Solo seleccionamos el setter (referencia estable). Suscribirse al valor
-  // `scrollOffsetOrdenes` re-renderizaba el historial en cada frame de
-  // scroll (~60 fps). El valor solo se necesita al recuperar foco, así que
-  // se lee con getState() sin suscripción.
   const setScrollOffsetOrdenes = useInventarioStore(s => s.setScrollOffsetOrdenes);
   const scrollRef = useRef<ScrollView>(null);
 
   const router = useRouter();
-  const [subTab, setSubTab] = useState<'ajuste' | 'presupuesto'>('ajuste');
+  const [subTab, setSubTab] = useState<SubTabHistorial>(initialSubTab);
+
+  useEffect(() => {
+    setSubTab(initialSubTab);
+  }, [initialSubTab]);
+
   const [selectedOrden, setSelectedOrden] = useState<any | null>(null);
   const [editPresupuestoId, setEditPresupuestoId] = useState<number | null>(null);
+  const [selectedPedidoModal, setSelectedPedidoModal] = useState<any | null>(null);
   const [convertingId, setConvertingId] = useState<number | null>(null);
   const { data: userAuth } = useUserRole();
   const isAdmin = userAuth?.role === 'admin';
   const currentUserId = userAuth?.profile?.id;
   const allowedToOrder = canMakePedidos(userAuth);
 
-  // Realtime subscription to refresh lists automatically
+  // Realtime subscription to refresh all lists automatically
   useEffect(() => {
-    console.log('Suscrito a cambios en historial (Realtime)');
+    console.log('Suscrito a cambios en historial unificado (Realtime)');
     
     const channel = supabase
-      .channel('historial-changes-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'presupuestos' }, (payload) => {
-        console.log('Cambio detectado en presupuestos:', payload.eventType);
+      .channel('historial-all-changes-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'presupuestos' }, () => {
         queryClient.refetchQueries({ queryKey: ['presupuestos-history'], type: 'all' });
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ordenes_cambio' }, (payload) => {
-        console.log('Cambio detectado en ordenes_cambio:', payload.eventType);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ordenes_cambio' }, () => {
         queryClient.refetchQueries({ queryKey: ['ordenes-history'], type: 'all' });
       })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') console.log('Canal Realtime activo: historial-changes-sync');
-      });
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'compras_app' }, () => {
+        queryClient.refetchQueries({ queryKey: ['compras-history'], type: 'all' });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos_app' }, () => {
+        queryClient.refetchQueries({ queryKey: ['pedidos-history'], type: 'all' });
+      })
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
@@ -571,6 +621,8 @@ function HistorialView({ queryClient }: { queryClient: any }) {
   
   const { data: ordenes = [], isLoading: isLoadingOrdenes, refetch: refetchOrdenes } = useOrdenesHistory();
   const { data: presupuestosData, isLoading: isLoadingPresupuestos, refetch: refetchPresupuestos } = usePresupuestosHistory();
+  const { data: compras = [], isLoading: isLoadingCompras, refetch: refetchCompras } = useComprasHistory();
+  const { data: pedidos = [], isLoading: isLoadingPedidos, refetch: refetchPedidos } = usePedidosHistory();
   
   const presupuestos = presupuestosData?.pages.flat() || [];
 
@@ -578,17 +630,97 @@ function HistorialView({ queryClient }: { queryClient: any }) {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    if (subTab === 'ajuste') {
-      await refetchOrdenes();
-    } else {
-      await refetchPresupuestos();
-    }
+    await Promise.all([
+      refetchOrdenes(),
+      refetchPresupuestos(),
+      refetchCompras(),
+      refetchPedidos(),
+    ]);
     setRefreshing(false);
-  }, [subTab, refetchOrdenes, refetchPresupuestos]);
+  }, [refetchOrdenes, refetchPresupuestos, refetchCompras, refetchPedidos]);
 
-  
-  const isLoading = subTab === 'ajuste' ? isLoadingOrdenes : isLoadingPresupuestos;
+  const isLoading = subTab === 'todo'
+    ? (isLoadingOrdenes || isLoadingPresupuestos || isLoadingCompras || isLoadingPedidos)
+    : subTab === 'ajuste'
+    ? isLoadingOrdenes
+    : subTab === 'presupuesto'
+    ? isLoadingPresupuestos
+    : subTab === 'compras'
+    ? isLoadingCompras
+    : isLoadingPedidos;
+
   const listData = subTab === 'ajuste' ? ordenes : presupuestos;
+
+  // Build unified items feed for 'todo'
+  const unifiedList = React.useMemo(() => {
+    const ajustesMapped = ordenes.map(o => ({
+      id: `ajuste-${o.id}`,
+      originalId: o.id,
+      type: 'ajuste' as const,
+      typeLabel: 'Ajuste',
+      typeColor: colors.primary,
+      code: `OC-${String(o.id).padStart(4, '0')}`,
+      date: o.creado_en,
+      itemCount: o.item_count || 0,
+      creadoPorNombre: o.creado_por_nombre,
+      entityName: undefined,
+      nota: o.nota,
+      status: o.status || 'emitido',
+      rawItem: o,
+    }));
+
+    const presupuestosMapped = presupuestos.map((p: any) => ({
+      id: `presupuesto-${p.id}`,
+      originalId: p.id,
+      type: 'presupuesto' as const,
+      typeLabel: 'Presupuesto',
+      typeColor: '#8B5CF6',
+      code: `P-${String(p.id).padStart(4, '0')}`,
+      date: p.creado_en,
+      itemCount: p.items_count || p.item_count || 0,
+      creadoPorNombre: p.creado_por_nombre,
+      entityName: p.cliente_nombre,
+      nota: p.nota,
+      status: p.status || 'emitido',
+      rawItem: p,
+    }));
+
+    const comprasMapped = compras.map((c: any) => ({
+      id: `compra-${c.id}`,
+      originalId: c.id,
+      type: 'compra' as const,
+      typeLabel: 'Compra',
+      typeColor: '#10B981',
+      code: `COM-${String(c.id).padStart(4, '0')}`,
+      date: c.creado_en,
+      itemCount: c.item_count || 0,
+      creadoPorNombre: c.creado_por_nombre,
+      entityName: c.proveedor_nombre,
+      nota: c.nota,
+      status: c.status || 'emitido',
+      rawItem: c,
+    }));
+
+    const pedidosMapped = pedidos.map((pd: any) => ({
+      id: `pedido-${pd.id}`,
+      originalId: pd.id,
+      type: 'pedido' as const,
+      typeLabel: 'Pedido',
+      typeColor: '#F59E0B',
+      code: `PED-${String(pd.id).padStart(4, '0')}`,
+      date: pd.creado_en,
+      itemCount: pd.item_count || 0,
+      creadoPorNombre: pd.creado_por_nombre,
+      entityName: pd.cliente_nombre,
+      nota: pd.nota,
+      status: pd.status || 'emitido',
+      rawItem: pd,
+    }));
+
+    return [...ajustesMapped, ...presupuestosMapped, ...comprasMapped, ...pedidosMapped].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+  }, [ordenes, presupuestos, compras, pedidos, colors.primary]);
 
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<number | null>(null);
 
@@ -605,7 +737,8 @@ function HistorialView({ queryClient }: { queryClient: any }) {
     }, [])
   );
 
-  const handleViewPDF = async (o: any) => {
+  const handleViewPDF = async (o: any, forcedType?: string) => {
+    const isAjuste = forcedType ? forcedType === 'ajuste' : subTab === 'ajuste';
     if (o.pdf_url) {
       if (Platform.OS === 'web') {
         Linking.openURL(o.pdf_url);
@@ -613,7 +746,7 @@ function HistorialView({ queryClient }: { queryClient: any }) {
         setIsGeneratingPdf(o.id);
         try {
           let friendlyName = 'Documento.pdf';
-          if (subTab === 'ajuste') {
+          if (isAjuste) {
             friendlyName = `Ajuste_No_${o.id}.pdf`;
           } else {
             const { data: header } = await supabase
@@ -641,7 +774,7 @@ function HistorialView({ queryClient }: { queryClient: any }) {
     try {
       let html = '';
       let friendlyName = 'Documento.pdf';
-      if (subTab === 'ajuste') {
+      if (isAjuste) {
         const { data: items, error } = await supabase
           .from('ordenes_cambio_items')
           .select('*')
@@ -843,28 +976,171 @@ function HistorialView({ queryClient }: { queryClient: any }) {
   return (
     <View style={styles.flex}>
       {/* Sub-tabs for Historial */}
-      <View style={[styles.subTabContainer, { backgroundColor: '#0A0A0A', borderColor: colors.border }]}>
-        <PressableScale
-          style={[
-            styles.subTabBtn,
-            subTab === 'ajuste' && { backgroundColor: colors.surface, borderColor: '#333' },
-          ]}
-          onPress={() => setSubTab('ajuste')}
+      {!hideSubTabs && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 8, paddingHorizontal: 16, paddingVertical: 4 }}
+          style={{ marginBottom: 12, maxHeight: 46 }}
         >
-          <Text style={[styles.subTabText, { color: subTab === 'ajuste' ? colors.primary : colors.textMuted }]}>Ajustes</Text>
-        </PressableScale>
-        <PressableScale
-          style={[
-            styles.subTabBtn,
-            subTab === 'presupuesto' && { backgroundColor: colors.surface, borderColor: '#333' },
-          ]}
-          onPress={() => setSubTab('presupuesto')}
-        >
-          <Text style={[styles.subTabText, { color: subTab === 'presupuesto' ? colors.primary : colors.textMuted }]}>Presupuestos</Text>
-        </PressableScale>
-      </View>
+          {(['todo', 'ajuste', 'presupuesto', 'compras', 'pedidos'] as const).map(key => {
+            const labels: Record<string, string> = {
+              todo: 'Todo',
+              ajuste: 'Ajustes',
+              presupuesto: 'Presupuestos',
+              compras: 'Compras',
+              pedidos: 'Pedidos',
+            };
+            const active = subTab === key;
+            return (
+              <PressableScale
+                key={key}
+                activeScale={pressScale.row}
+                style={[
+                  styles.subTabBtn,
+                  {
+                    paddingHorizontal: 16,
+                    paddingVertical: 8,
+                    borderRadius: 12,
+                    backgroundColor: active ? colors.surface : 'transparent',
+                    borderColor: active ? colors.primary : colors.border,
+                  },
+                ]}
+                onPress={() => setSubTab(key)}
+              >
+                <Text style={[styles.subTabText, { color: active ? colors.primary : colors.textMuted }]}>
+                  {labels[key]}
+                </Text>
+              </PressableScale>
+            );
+          })}
+        </ScrollView>
+      )}
 
-      {listData.length === 0 ? (
+      {subTab === 'compras' ? (
+        <ComprasHistorialView />
+      ) : subTab === 'pedidos' ? (
+        <PedidosHistorialView />
+      ) : subTab === 'todo' ? (
+        unifiedList.length === 0 ? (
+          <View style={styles.center}>
+            <Feather name="inbox" size={32} color={colors.textDim} />
+            <Text style={[styles.emptyTitle, { color: colors.textMuted }]}>Sin historial registrado</Text>
+          </View>
+        ) : (
+          <ScrollView
+            ref={scrollRef}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            contentContainerStyle={styles.scroll}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={colors.primary}
+                colors={[colors.primary]}
+              />
+            }
+          >
+            {unifiedList.map(item => {
+              const dateStr = new Date(item.date).toLocaleString('es-VE', {
+                day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+              });
+
+              return (
+                <PressableScale
+                  key={item.id}
+                  style={[
+                    styles.histCard,
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                  ]}
+                  activeScale={pressScale.row}
+                  onPress={() => {
+                    if (item.type === 'ajuste') {
+                      setSelectedOrden(item.rawItem);
+                    } else if (item.type === 'presupuesto') {
+                      if (isAdmin || currentUserId === item.rawItem.creado_por) {
+                        setEditPresupuestoId(item.originalId);
+                      }
+                    } else if (item.type === 'pedido') {
+                      setSelectedPedidoModal(item.rawItem);
+                    }
+                  }}
+                >
+                  <View style={styles.histTop}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={[styles.histId, { color: colors.primary }]} numberOfLines={1}>
+                        {item.code}
+                      </Text>
+                      <View style={[styles.statusBadge, { backgroundColor: item.typeColor + '22', borderColor: item.typeColor + '55' }]}>
+                        <Text style={[styles.statusText, { color: item.typeColor }]} numberOfLines={1}>
+                          {item.typeLabel}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.histBadgeGroup}>
+                      {item.type === 'ajuste' && <BackendBadge resumen={(item.rawItem as any).backend_resumen} />}
+                      <View style={[
+                        styles.statusBadge,
+                        { backgroundColor: item.status === 'emitido' ? colors.success + '22' : colors.warning + '22',
+                          borderColor:     item.status === 'emitido' ? colors.success + '55' : colors.warning + '55' },
+                      ]}>
+                        <Text style={[styles.statusText, { color: item.status === 'emitido' ? colors.success : colors.warning }]} numberOfLines={1}>
+                          {item.status}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {item.entityName ? (
+                    <Text style={[styles.histClient, { color: colors.text }]} numberOfLines={1}>
+                      <Feather name={item.type === 'compra' ? "truck" : "user"} size={12} /> {item.entityName}
+                    </Text>
+                  ) : null}
+
+                  <Text style={[styles.histMeta, { color: colors.textMuted }]} numberOfLines={1}>
+                    {dateStr}
+                    {'  ·  '}{item.itemCount} ítem{item.itemCount !== 1 ? 's' : ''}
+                    {item.creadoPorNombre ? `  ·  ${item.creadoPorNombre}` : ''}
+                  </Text>
+
+                  {item.nota ? (
+                    <Text style={[styles.histNota, { color: colors.textMuted }]} numberOfLines={1}>
+                      {item.nota}
+                    </Text>
+                  ) : null}
+
+                  {(item.type === 'ajuste' || item.type === 'presupuesto') && (
+                    <View style={styles.histFooter}>
+                      <PressableScale
+                        style={[styles.pdfBtn, { borderColor: colors.primary }]}
+                        onPress={() => handleViewPDF(item.rawItem, item.type)}
+                        disabled={isGeneratingPdf !== null}
+                        dimmed={isGeneratingPdf === item.originalId}
+                      >
+                        {isGeneratingPdf === item.originalId ? (
+                          <ActivityIndicator size="small" color={colors.primary} />
+                        ) : (
+                          <>
+                            <Feather name="file-text" size={14} color={colors.primary} />
+                            <Text style={[styles.pdfBtnText, { color: colors.primary }]}>
+                              {Platform.OS === 'web'
+                                ? (item.rawItem.pdf_url ? 'Ver PDF' : 'Imprimir PDF')
+                                : 'Compartir PDF'}
+                            </Text>
+                          </>
+                        )}
+                      </PressableScale>
+                    </View>
+                  )}
+                </PressableScale>
+              );
+            })}
+            <View style={{ height: 150 }} />
+          </ScrollView>
+        )
+      ) : listData.length === 0 ? (
         <View style={styles.center}>
           <Feather name="inbox" size={32} color={colors.textDim} />
           <Text style={[styles.emptyTitle, { color: colors.textMuted }]}>Sin historial</Text>
@@ -1046,6 +1322,13 @@ function HistorialView({ queryClient }: { queryClient: any }) {
       <PresupuestoEditModal
         presupuestoId={editPresupuestoId}
         onClose={() => setEditPresupuestoId(null)}
+      />
+      <PedidoStatusModal
+        visible={selectedPedidoModal !== null}
+        pedidoId={selectedPedidoModal?.id ?? null}
+        initialCliente={selectedPedidoModal?.cliente_nombre}
+        initialItemCount={selectedPedidoModal?.item_count ?? 0}
+        onClose={() => setSelectedPedidoModal(null)}
       />
     </View>
   );
