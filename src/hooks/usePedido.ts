@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
+import { withSupabaseRetry } from '../lib/retry';
 
 // Un ítem de pedido es simple: código + descripción + cantidad. NO lleva
 // costo ni precio — el pedido usa el PRECIO MAESTRO del producto en Hybrid
@@ -149,30 +150,39 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
     // reencola con backend_intentos en 0 (fresh retry).
     if (editingPedidoId !== null) {
       try {
-        const { error: updateError } = await supabase
-          .from('pedidos_app')
-          .update({
-            cliente_codigo:      clienteCodigo,
-            cliente_nombre:      clienteNombre,
-            nota:                nota || null,
-            backend_status:      'pendiente',
-            backend_resultado:   null,
-            backend_intentos:    0,
-            backend_aplicado_en: null,
-            documento_hybrid:    null,
-          })
-          .eq('id', editingPedidoId);
+        const { error: updateError } = await withSupabaseRetry(
+          () =>
+            supabase
+              .from('pedidos_app')
+              .update({
+                cliente_codigo:      clienteCodigo,
+                cliente_nombre:      clienteNombre,
+                nota:                nota || null,
+                backend_status:      'pendiente',
+                backend_resultado:   null,
+                backend_intentos:    0,
+                backend_aplicado_en: null,
+                documento_hybrid:    null,
+              })
+              .eq('id', editingPedidoId),
+          { retries: 1 },
+        );
         if (updateError) throw updateError;
 
-        const { error: deleteItemsError } = await supabase
-          .from('pedidos_app_items')
-          .delete()
-          .eq('pedido_id', editingPedidoId);
+        const { error: deleteItemsError } = await withSupabaseRetry(
+          () =>
+            supabase
+              .from('pedidos_app_items')
+              .delete()
+              .eq('pedido_id', editingPedidoId),
+          { retries: 1 },
+        );
         if (deleteItemsError) throw deleteItemsError;
 
-        const { error: itemsError } = await supabase
-          .from('pedidos_app_items')
-          .insert(itemRows(editingPedidoId));
+        const { error: itemsError } = await withSupabaseRetry(
+          () => supabase.from('pedidos_app_items').insert(itemRows(editingPedidoId)),
+          { retries: 1 },
+        );
         if (itemsError) throw itemsError;
 
         set({ isLoading: false });
@@ -186,24 +196,29 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
     let createdPedidoId: number | null = null;
 
     try {
-      const { data: pedido, error: pedidoError } = await supabase
-        .from('pedidos_app')
-        .insert({
-          creado_por:     userId,
-          cliente_codigo: clienteCodigo,
-          cliente_nombre: clienteNombre,
-          nota:            nota || null,
-          status:          'emitido',
-        })
-        .select('id')
-        .single();
+      const { data: pedido, error: pedidoError } = await withSupabaseRetry(
+        () =>
+          supabase
+            .from('pedidos_app')
+            .insert({
+              creado_por:     userId,
+              cliente_codigo: clienteCodigo,
+              cliente_nombre: clienteNombre,
+              nota:            nota || null,
+              status:          'emitido',
+            })
+            .select('id')
+            .single(),
+        { retries: 1 },
+      );
 
       if (pedidoError || !pedido) throw pedidoError ?? new Error('No pedido id');
       createdPedidoId = pedido.id;
 
-      const { error: itemsError } = await supabase
-        .from('pedidos_app_items')
-        .insert(itemRows(pedido.id));
+      const { error: itemsError } = await withSupabaseRetry(
+        () => supabase.from('pedidos_app_items').insert(itemRows(pedido.id)),
+        { retries: 1 },
+      );
 
       if (itemsError) throw itemsError;
 

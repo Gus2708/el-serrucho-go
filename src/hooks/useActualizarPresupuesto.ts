@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { withSupabaseRetry } from '../lib/retry';
 
 /**
  * One editable budget line. Existing rows carry their `rowId`
@@ -40,10 +41,10 @@ async function actualizarPresupuesto({
 
   // 1. Delete lines the user removed.
   if (removedIds.length > 0) {
-    const { error } = await supabase
-      .from('presupuestos_detalle')
-      .delete()
-      .in('id', removedIds);
+    const { error } = await withSupabaseRetry(
+      () => supabase.from('presupuestos_detalle').delete().in('id', removedIds),
+      { retries: 1 },
+    );
     if (error) throw error;
   }
 
@@ -58,9 +59,10 @@ async function actualizarPresupuesto({
       cantidad: it.cantidad,
       precio_unitario: it.precio_unitario,
     }));
-    const { error } = await supabase
-      .from('presupuestos_detalle')
-      .upsert(rows, { onConflict: 'id' });
+    const { error } = await withSupabaseRetry(
+      () => supabase.from('presupuestos_detalle').upsert(rows, { onConflict: 'id' }),
+      { retries: 1 },
+    );
     if (error) throw error;
   }
 
@@ -74,23 +76,30 @@ async function actualizarPresupuesto({
       cantidad: it.cantidad,
       precio_unitario: it.precio_unitario,
     }));
-    const { error } = await supabase.from('presupuestos_detalle').insert(rows);
+    const { error } = await withSupabaseRetry(
+      () => supabase.from('presupuestos_detalle').insert(rows),
+      { retries: 1 },
+    );
     if (error) throw error;
   }
 
   // 4. Refresh header total + nota and clear pdf_url so the PDF regenerates
   //    from the updated data the next time it is requested.
-  const { error: headerErr } = await supabase
-    .from('presupuestos')
-    .update({ 
-      total_usd: totalUsd, 
-      nota: nota || null, 
-      pdf_url: null,
-      en_bs: enBs ?? false,
-      tasa_cambio: tasaCambio ?? null,
-      porcentaje_recargo: porcentajeRecargo ?? null
-    })
-    .eq('id', presupuestoId);
+  const { error: headerErr } = await withSupabaseRetry(
+    () =>
+      supabase
+        .from('presupuestos')
+        .update({
+          total_usd: totalUsd,
+          nota: nota || null,
+          pdf_url: null,
+          en_bs: enBs ?? false,
+          tasa_cambio: tasaCambio ?? null,
+          porcentaje_recargo: porcentajeRecargo ?? null
+        })
+        .eq('id', presupuestoId),
+    { retries: 1 },
+  );
   if (headerErr) throw headerErr;
 
   return { presupuestoId, totalUsd };

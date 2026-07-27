@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase, Producto } from '../lib/supabase';
 import { uploadPdfAndGetUrl } from '../lib/pdfStorage';
+import { withRetry, withSupabaseRetry } from '../lib/retry';
 import { Platform } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -129,8 +130,12 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
     let createdPresupuestoId: number | null = null;
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('No authenticado');
+      const user = await withRetry(async () => {
+        const { data, error } = await supabase.auth.getUser();
+        if (error) throw error;
+        if (!data.user) throw new Error('No authenticado');
+        return data.user;
+      });
 
       // Get creator's display name
       const { data: profileData } = await supabase
@@ -147,20 +152,24 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
       const total_usd = items.reduce((acc, item) => acc + (item.cantidad * getFinalPrice(item)), 0);
 
       // Insertar cabecera
-      const { data: presupuesto, error: cabeceraError } = await supabase
-        .from('presupuestos')
-        .insert({
-          creado_por: user.id,
-          cliente_id: cliente ? cliente.codigo_cliente : null,
-          total_usd,
-          status: 'emitido',
-          nota: nota || null,
-          en_bs: enBs,
-          tasa_cambio: tasaCambio,
-          porcentaje_recargo: porcentajeRecargo
-        })
-        .select()
-        .single();
+      const { data: presupuesto, error: cabeceraError } = await withSupabaseRetry(
+        () =>
+          supabase
+            .from('presupuestos')
+            .insert({
+              creado_por: user.id,
+              cliente_id: cliente ? cliente.codigo_cliente : null,
+              total_usd,
+              status: 'emitido',
+              nota: nota || null,
+              en_bs: enBs,
+              tasa_cambio: tasaCambio,
+              porcentaje_recargo: porcentajeRecargo
+            })
+            .select()
+            .single(),
+        { retries: 1 },
+      );
 
       if (cabeceraError) throw cabeceraError;
       createdPresupuestoId = presupuesto.id;
@@ -174,9 +183,10 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
         precio_unitario: getFinalPrice(item)
       }));
 
-      const { error: detalleError } = await supabase
-        .from('presupuestos_detalle')
-        .insert(detalles);
+      const { error: detalleError } = await withSupabaseRetry(
+        () => supabase.from('presupuestos_detalle').insert(detalles),
+        { retries: 1 },
+      );
 
       if (detalleError) throw detalleError;
 

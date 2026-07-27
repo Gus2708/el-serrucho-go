@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { uploadPdfAndGetUrl } from '../lib/pdfStorage';
+import { withSupabaseRetry } from '../lib/retry';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
@@ -52,31 +53,39 @@ export const useOrdenCambio = create<OrdenStore>()((set, get) => ({
 
     try {
       // 1. Create the change order header
-      const { data: orden, error: ordenError } = await supabase
-        .from('ordenes_cambio')
-        .insert({ creado_por: userId, nota: nota || null, status: 'borrador' })
-        .select('id')
-        .single();
+      const { data: orden, error: ordenError } = await withSupabaseRetry(
+        () =>
+          supabase
+            .from('ordenes_cambio')
+            .insert({ creado_por: userId, nota: nota || null, status: 'borrador' })
+            .select('id')
+            .single(),
+        { retries: 1 },
+      );
 
       if (ordenError || !orden) throw ordenError ?? new Error('No orden id');
       createdOrdenId = orden.id;
 
       // 2. Insert all items
-      const { error: itemsError } = await supabase
-        .from('ordenes_cambio_items')
-        .insert(
-          items.map(item => ({
-            orden_id:           orden.id,
-            codigo_producto:    item.codigo_producto,
-            descripcion:        item.descripcion,
-            existencia_actual:  item.existencia_actual,
-            nueva_existencia:   item.nueva_existencia,
-            precio_actual:      item.precio_actual ?? null,
-            nuevo_precio:       item.nuevo_precio ?? null,
-            costo:              item.costo ?? null,
-            nota:               item.nota || null,
-          }))
-        );
+      const { error: itemsError } = await withSupabaseRetry(
+        () =>
+          supabase
+            .from('ordenes_cambio_items')
+            .insert(
+              items.map(item => ({
+                orden_id:           orden.id,
+                codigo_producto:    item.codigo_producto,
+                descripcion:        item.descripcion,
+                existencia_actual:  item.existencia_actual,
+                nueva_existencia:   item.nueva_existencia,
+                precio_actual:      item.precio_actual ?? null,
+                nuevo_precio:       item.nuevo_precio ?? null,
+                costo:              item.costo ?? null,
+                nota:               item.nota || null,
+              }))
+            ),
+        { retries: 1 },
+      );
 
       if (itemsError) throw itemsError;
 
