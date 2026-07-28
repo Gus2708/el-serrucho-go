@@ -223,6 +223,14 @@ const SHARED_STYLES = `
     overflow: hidden;
   }
 
+  /* Keep the header on every page and never slice a product row across a
+     page break (a multi-line description could otherwise be cut in half). */
+  thead { display: table-header-group; }
+  tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
   thead th {
     background: var(--ink);
     color: var(--white);
@@ -332,17 +340,20 @@ const SHARED_STYLES = `
     border-top: 2px solid var(--ink);
     page-break-inside: avoid;
     break-inside: avoid;
+    -webkit-column-break-inside: avoid;
   }
 
+  /* Block (not flex-column): Chromium/WebKit print engines ignore
+     break-inside on flex containers, which lets the totals split across a page
+     break and slices the grand-total line in half. A block box honours it,
+     keeping the whole totals group together. */
   .total-section-multi {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 6px;
+    display: block;
     padding: var(--sp-4) 0 var(--sp-6);
     border-top: 2px solid var(--ink);
     page-break-inside: avoid;
     break-inside: avoid;
+    -webkit-column-break-inside: avoid;
   }
 
   .total-line {
@@ -350,6 +361,13 @@ const SHARED_STYLES = `
     justify-content: flex-end;
     align-items: center;
     gap: var(--sp-8);
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Reproduce the removed flex gap (6px) between stacked total rows. */
+  .total-line + .total-line {
+    margin-top: 6px;
   }
 
   .total-line-grand {
@@ -360,6 +378,8 @@ const SHARED_STYLES = `
     margin-top: 6px;
     padding-top: 6px;
     border-top: 1px solid var(--border);
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 
   .total-label {
