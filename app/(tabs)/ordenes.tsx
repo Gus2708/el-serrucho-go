@@ -42,6 +42,7 @@ import { PresupuestoEditModal } from '../../src/components/PresupuestoEditModal'
 import { DraftRestoreBanner } from '../../src/components/DraftRestoreBanner';
 import ComprasView from '../../src/components/ComprasView';
 import ComprasHistorialView from '../../src/components/ComprasHistorialView';
+import BorradoresView from '../../src/components/BorradoresView';
 import AprobacionesView from '../../src/components/AprobacionesView';
 import DirectorioView from '../../src/components/DirectorioView';
 import { useComprasHistory } from '../../src/hooks/useComprasHistory';
@@ -145,7 +146,7 @@ function PresupuestoTab({ router, queryClient }: { router: any; queryClient: any
 
 function ComprasTab({ router }: { router: any }) {
   const { colors } = useTheme();
-  const [subTab, setSubTab] = useState<'armar' | 'historial'>('armar');
+  const [subTab, setSubTab] = useState<'armar' | 'borradores' | 'historial'>('armar');
 
   return (
     <View style={styles.flex}>
@@ -154,17 +155,30 @@ function ComprasTab({ router }: { router: any }) {
           style={[styles.subTabBtn, subTab === 'armar' && { backgroundColor: colors.surface, borderColor: '#333' }]}
           onPress={() => setSubTab('armar')}
         >
-          <Text style={[styles.subTabText, { color: subTab === 'armar' ? colors.primary : colors.textMuted }]}>Nueva compra</Text>
+          <Text style={[styles.subTabText, { color: subTab === 'armar' ? colors.primary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>Nueva</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.subTabBtn, subTab === 'borradores' && { backgroundColor: colors.surface, borderColor: '#333' }]}
+          onPress={() => setSubTab('borradores')}
+        >
+          <Text style={[styles.subTabText, { color: subTab === 'borradores' ? colors.primary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>Borradores</Text>
         </Pressable>
         <Pressable
           style={[styles.subTabBtn, subTab === 'historial' && { backgroundColor: colors.surface, borderColor: '#333' }]}
           onPress={() => setSubTab('historial')}
         >
-          <Text style={[styles.subTabText, { color: subTab === 'historial' ? colors.primary : colors.textMuted }]}>Historial</Text>
+          <Text style={[styles.subTabText, { color: subTab === 'historial' ? colors.primary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>Historial</Text>
         </Pressable>
       </View>
 
-      {subTab === 'armar' && <ComprasView router={router} onEmitted={() => setSubTab('historial')} />}
+      {subTab === 'armar' && (
+        <ComprasView
+          router={router}
+          onEmitted={() => setSubTab('historial')}
+          onSavedDraft={() => setSubTab('borradores')}
+        />
+      )}
+      {subTab === 'borradores' && <BorradoresView tipo="compra" onResume={() => setSubTab('armar')} />}
       {subTab === 'historial' && <ComprasHistorialView onEditRetry={() => setSubTab('armar')} />}
     </View>
   );
