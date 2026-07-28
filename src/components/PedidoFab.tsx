@@ -26,6 +26,7 @@ import { usePedido } from '../hooks/usePedido';
 import { useUserRole, canMakePedidos } from '../hooks/useUserRole';
 import PedidosView from './PedidosView';
 import PedidosHistorialView from './PedidosHistorialView';
+import BorradoresView from './BorradoresView';
 
 const FAB_SIZE = 58;
 
@@ -121,7 +122,7 @@ export function PedidoFab(): React.JSX.Element | null {
 function PedidoModal({ visible, skipAnimation, onClose }: { visible: boolean; skipAnimation: boolean; onClose: () => void }): React.JSX.Element {
   const { colors } = useTheme();
   const router = useRouter();
-  const [subTab, setSubTab] = useState<'armar' | 'historial'>('armar');
+  const [subTab, setSubTab] = useState<'armar' | 'borradores' | 'historial'>('armar');
 
   return (
     <Modal visible={visible} animationType={skipAnimation ? 'none' : 'slide'} transparent={false} onRequestClose={onClose}>
@@ -142,20 +143,33 @@ function PedidoModal({ visible, skipAnimation, onClose }: { visible: boolean; sk
             style={[styles.subTabBtn, subTab === 'armar' && { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={() => setSubTab('armar')}
           >
-            <Text style={[styles.subTabText, { color: subTab === 'armar' ? colors.primary : colors.textMuted }]}>Nuevo pedido</Text>
+            <Text style={[styles.subTabText, { color: subTab === 'armar' ? colors.primary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>Nuevo</Text>
+          </PressableScale>
+          <PressableScale
+            activeScale={pressScale.row}
+            style={[styles.subTabBtn, subTab === 'borradores' && { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => setSubTab('borradores')}
+          >
+            <Text style={[styles.subTabText, { color: subTab === 'borradores' ? colors.primary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>Borradores</Text>
           </PressableScale>
           <PressableScale
             activeScale={pressScale.row}
             style={[styles.subTabBtn, subTab === 'historial' && { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={() => setSubTab('historial')}
           >
-            <Text style={[styles.subTabText, { color: subTab === 'historial' ? colors.primary : colors.textMuted }]}>Historial</Text>
+            <Text style={[styles.subTabText, { color: subTab === 'historial' ? colors.primary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>Historial</Text>
           </PressableScale>
         </View>
 
-        {subTab === 'armar'
-          ? <PedidosView router={router} onEmitted={() => setSubTab('historial')} />
-          : <PedidosHistorialView onEditRetry={() => setSubTab('armar')} />}
+        {subTab === 'armar' && (
+          <PedidosView
+            router={router}
+            onEmitted={() => setSubTab('historial')}
+            onSavedDraft={() => setSubTab('borradores')}
+          />
+        )}
+        {subTab === 'borradores' && <BorradoresView tipo="pedido" onResume={() => setSubTab('armar')} />}
+        {subTab === 'historial' && <PedidosHistorialView onEditRetry={() => setSubTab('armar')} />}
       </SafeAreaView>
     </Modal>
   );

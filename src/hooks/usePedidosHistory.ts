@@ -32,6 +32,7 @@ async function fetchPedidosHistory(): Promise<PedidoConItems[]> {
       id, creado_por, cliente_codigo, cliente_nombre, nota, status, creado_en,
       backend_status, backend_resultado, backend_aplicado_en, documento_hybrid
     `)
+    .eq('status', 'emitido')   // los borradores viven en su propia pestaña, no en el historial
     .order('creado_en', { ascending: false })
     .limit(50);
 
@@ -97,14 +98,18 @@ async function fetchPedidosHistory(): Promise<PedidoConItems[]> {
 export async function fetchPedidoItemsForEdit(pedidoId: number): Promise<PedidoDraftItem[]> {
   const { data, error } = await supabase
     .from('pedidos_app_items')
-    .select('codigo_producto, descripcion, cantidad')
+    .select('codigo_producto, descripcion, cantidad, precio')
     .eq('pedido_id', pedidoId);
 
   if (error) throw error;
 
+  // precio != null => el vendedor lo fijó a mano; se restaura como precio_unitario.
+  // precio_base_usd queda sin llenar a propósito: PedidosView lo trae fresco de
+  // productos, así el maestro que se compara es el de HOY y no uno viejo.
   return (data ?? []).map((it: any) => ({
     codigo_producto: it.codigo_producto,
     descripcion:     it.descripcion ?? '',
     cantidad:        Number(it.cantidad),
+    precio_unitario: it.precio === null || it.precio === undefined ? undefined : Number(it.precio),
   }));
 }

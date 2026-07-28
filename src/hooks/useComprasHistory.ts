@@ -32,6 +32,7 @@ async function fetchComprasHistory(): Promise<CompraConItems[]> {
       id, creado_por, proveedor_codigo, proveedor_nombre, nota, numero_documento, status, creado_en,
       backend_status, backend_resultado, backend_aplicado_en
     `)
+    .eq('status', 'emitido')   // los borradores viven en su propia pestaña, no en el historial
     .order('creado_en', { ascending: false })
     .limit(50);
 

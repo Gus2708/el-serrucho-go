@@ -13,6 +13,7 @@ import {
   Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scaleFont } from '../theme/responsive';
 import { useTheme } from '../theme/ThemeContext';
@@ -21,12 +22,14 @@ import { notify, confirm } from '../lib/notify';
 import { supabase, Producto } from '../lib/supabase';
 import { useProveedores, Proveedor } from '../hooks/useProveedores';
 import { useCompra, CompraDraftItem } from '../hooks/useCompra';
+import { borradoresQueryKey } from '../hooks/useBorradores';
 import { useProductos, normalizeSearchTerm } from '../hooks/useProductos';
 import { useUserRole, isPrivilegedRole } from '../hooks/useUserRole';
 import { PressableScale } from './PressableScale';
 import { pressScale } from '../theme/motion';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import RegistroProveedorModal from './RegistroProveedorModal';
+import GuardarBorradorModal from './GuardarBorradorModal';
 
 // Ficha de Inventario de HybridLite trunca la descripción a los 60 caracteres
 // (confirmado en compras.log 2026-07-17: "PUERTA MULTILOCK...QUINTE" != "...QUINTERO",
@@ -34,22 +37,26 @@ import RegistroProveedorModal from './RegistroProveedorModal';
 const DESCRIPCION_MAX = 60;
 
 interface ComprasViewProps {
-  router:     any;
-  onEmitted?: () => void;
+  router:        any;
+  onEmitted?:    () => void;
+  onSavedDraft?: () => void;   // navega a Borradores tras guardar la lista
 }
 
-export default function ComprasView({ router, onEmitted }: ComprasViewProps): React.JSX.Element {
+export default function ComprasView({ router, onEmitted, onSavedDraft }: ComprasViewProps): React.JSX.Element {
   const { colors, formatUSD } = useTheme();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
   const { isDesktop } = useDeviceSize();
   const {
     proveedorCodigo,
     proveedorNombre,
     items,
     nota,
+    titulo,
     numeroDocumento,
     isLoading,
     editingCompraId,
+    borradorId,
     setProveedor,
     addItem,
     removeItem,
@@ -57,6 +64,7 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
     setNota,
     setNumeroDocumento,
     clear,
+    saveDraft,
     submit,
   } = useCompra();
 
@@ -67,6 +75,7 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
   const [proveedorNuevoModalVisible, setProveedorNuevoModalVisible] = useState(false);
   const [productoModalVisible, setProductoModalVisible] = useState(false);
   const [productoNuevoModalVisible, setProductoNuevoModalVisible] = useState(false);
+  const [borradorModalVisible, setBorradorModalVisible] = useState(false);
 
   const total = items.reduce((sum, item) => sum + item.cantidad * item.costo, 0);
 
@@ -126,6 +135,22 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
     }
   }
 
+  // Guardar sin emitir: la lista queda como status='borrador' (invisible para
+  // el backend) y el armador se libera. Se retoma desde la pestaña Borradores.
+  async function handleSaveDraft(nombre: string): Promise<void> {
+    try {
+      const userId = await getUserId();
+      await saveDraft(userId, nombre);
+      setBorradorModalVisible(false);
+      clear();
+      await queryClient.invalidateQueries({ queryKey: borradoresQueryKey('compra') });
+      notify('Borrador guardado', `"${nombre.trim()}" quedó en Borradores. No se registró nada en Hybrid.`);
+      onSavedDraft?.();
+    } catch (e: any) {
+      notify('Error', e.message ?? 'No se pudo guardar el borrador.');
+    }
+  }
+
   function handleSubmit(): void {
     if (!isPrivileged) {
       notify('No autorizado', 'Solo un administrador o superempleado puede registrar compras.');
@@ -163,6 +188,23 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
               </Text>
               <Text style={[styles.infoBannerSub, { color: colors.textMuted }]}>
                 Corrige lo que causó el error y reintenta. No se creará una compra nueva.
+              </Text>
+            </View>
+            <PressableScale onPress={clear} hitSlop={8} activeScale={pressScale.icon}>
+              <Feather name="x" size={18} color={colors.textMuted} />
+            </PressableScale>
+          </View>
+        ) : null}
+
+        {borradorId !== null ? (
+          <View style={[styles.infoBanner, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+            <Feather name="bookmark" size={15} color={colors.textMuted} style={styles.infoBannerIcon} />
+            <View style={styles.infoBannerTextContainer}>
+              <Text style={[styles.infoBannerTitle, { color: colors.text }]} numberOfLines={1}>
+                Continuando borrador{titulo ? `: ${titulo}` : ''}
+              </Text>
+              <Text style={[styles.infoBannerSub, { color: colors.textMuted }]}>
+                Al guardar se actualiza esta misma lista. Al emitir, deja de ser borrador y se registra en Hybrid.
               </Text>
             </View>
             <PressableScale onPress={clear} hitSlop={8} activeScale={pressScale.icon}>
@@ -306,11 +348,18 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
             <Text style={[styles.submitCount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
               {items.length} ítem{items.length > 1 ? 's' : ''} · {formatUSD(total)}
             </Text>
-            <PressableScale onPress={() => confirm({ title: 'Limpiar compra', message: 'Se perderán los ítems agregados.', confirmText: 'Limpiar', destructive: true, onConfirm: clear })} style={{ marginTop: 4 }}>
-              <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
-                Limpiar compra
-              </Text>
-            </PressableScale>
+            <View style={styles.secondaryActions}>
+              <PressableScale onPress={() => setBorradorModalVisible(true)} hitSlop={6}>
+                <Text style={[styles.saveDraftText, { color: colors.primary }]} numberOfLines={1}>
+                  {borradorId !== null ? 'Actualizar borrador' : 'Guardar borrador'}
+                </Text>
+              </PressableScale>
+              <PressableScale onPress={() => confirm({ title: 'Limpiar compra', message: 'Se perderán los ítems agregados.', confirmText: 'Limpiar', destructive: true, onConfirm: clear })} hitSlop={6}>
+                <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1}>
+                  Limpiar
+                </Text>
+              </PressableScale>
+            </View>
           </View>
           <PressableScale
             style={[
@@ -365,6 +414,15 @@ export default function ComprasView({ router, onEmitted }: ComprasViewProps): Re
         existingCodes={items.map(i => i.codigo_producto)}
         onClose={() => setProductoNuevoModalVisible(false)}
         onAdd={addItem}
+      />
+      <GuardarBorradorModal
+        visible={borradorModalVisible}
+        defaultTitulo={titulo}
+        placeholder={proveedorNombre ? `Compra ${proveedorNombre}` : 'Ej: Reposición tornillería'}
+        itemCount={items.length}
+        isSaving={isLoading}
+        onClose={() => setBorradorModalVisible(false)}
+        onSave={handleSaveDraft}
       />
     </View>
   );
@@ -1294,7 +1352,9 @@ const styles = StyleSheet.create({
   },
   submitInfo:  { flex: 1, gap: 2 },
   submitCount: { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
-  clearText:   { fontSize: scaleFont(12), marginTop: 2, fontFamily: 'JetBrainsMono_400Regular' },
+  secondaryActions: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 },
+  saveDraftText: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold' },
+  clearText:   { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular' },
   submitBtn: {
     flexDirection:     'row',
     alignItems:        'center',
