@@ -79,6 +79,21 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
 
   const total = items.reduce((sum, item) => sum + item.cantidad * item.costo, 0);
 
+  // Lo último agregado se muestra de PRIMERO: el ítem recién añadido queda justo
+  // debajo de los botones de agregar y se edita sin scroll. Es solo
+  // presentación — el orden que se guarda sigue siendo el de agregado.
+  const itemsRecienteArriba = React.useMemo(() => [...items].reverse(), [items]);
+
+  // Al agregar un producto nuevo, subir para que se vea.
+  const scrollRef = React.useRef<ScrollView>(null);
+  const itemCountRef = React.useRef(items.length);
+  useEffect(() => {
+    if (items.length > itemCountRef.current) {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    }
+    itemCountRef.current = items.length;
+  }, [items.length]);
+
   function handleSelectProveedor(proveedor: Proveedor): void {
     setProveedor(proveedor.codigo, proveedor.nombre);
     setProveedorModalVisible(false);
@@ -177,7 +192,15 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
 
   return (
     <View style={styles.flex}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      {/* stickyHeaderIndices apunta al índice 1 — los hijos del ScrollView son
+          4 grupos fijos (nunca condicionales) para que el índice no se corra. */}
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        stickyHeaderIndices={[1]}
+      >
+        <View style={styles.headerGroup}>
 
         {editingCompraId !== null ? (
           <View style={[styles.infoBanner, { backgroundColor: colors.warning + '10', borderColor: colors.warning + '30' }]}>
@@ -248,30 +271,37 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
           <Feather name="chevron-right" size={18} color={colors.textDim} />
         </PressableScale>
 
-        {/* Agregar producto CTAs */}
-        <View style={styles.addProductRow}>
-          <PressableScale
-            style={[
-              styles.addProductBtn,
-              { borderColor: colors.primary, backgroundColor: colors.primaryFaded },
-            ]}
-            onPress={() => setProductoModalVisible(true)}
-          >
-            <Feather name="search" size={16} color={colors.primary} />
-            <Text style={[styles.addProductText, { color: colors.primary }]}>Buscar existente</Text>
-          </PressableScale>
-
-          <PressableScale
-            style={[
-              styles.addProductBtn,
-              { borderColor: colors.primary, backgroundColor: colors.primaryFaded },
-            ]}
-            onPress={() => setProductoNuevoModalVisible(true)}
-          >
-            <Feather name="plus" size={16} color={colors.primary} />
-            <Text style={[styles.addProductText, { color: colors.primary }]}>Producto nuevo</Text>
-          </PressableScale>
         </View>
+
+        {/* Agregar producto CTAs — quedan fijos arriba al hacer scroll, así se
+            puede seguir agregando sin volver al tope de la lista. */}
+        <View style={[styles.stickyAddGroup, { backgroundColor: colors.bg }]}>
+          <View style={styles.addProductRow}>
+            <PressableScale
+              style={[
+                styles.addProductBtn,
+                { borderColor: colors.primary, backgroundColor: colors.primaryFaded },
+              ]}
+              onPress={() => setProductoModalVisible(true)}
+            >
+              <Feather name="search" size={16} color={colors.primary} />
+              <Text style={[styles.addProductText, { color: colors.primary }]}>Buscar existente</Text>
+            </PressableScale>
+
+            <PressableScale
+              style={[
+                styles.addProductBtn,
+                { borderColor: colors.primary, backgroundColor: colors.primaryFaded },
+              ]}
+              onPress={() => setProductoNuevoModalVisible(true)}
+            >
+              <Feather name="plus" size={16} color={colors.primary} />
+              <Text style={[styles.addProductText, { color: colors.primary }]}>Producto nuevo</Text>
+            </PressableScale>
+          </View>
+        </View>
+
+        <View style={styles.bodyGroup}>
 
         {items.length === 0 ? (
           <View style={styles.empty}>
@@ -283,7 +313,7 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
           </View>
         ) : (
           <>
-            {items.map(item => (
+            {itemsRecienteArriba.map(item => (
               <CompraItemCard
                 key={item.codigo_producto}
                 item={item}
@@ -326,6 +356,8 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
             </View>
           </>
         )}
+
+        </View>
 
         <View style={{ height: 180 }} />
       </ScrollView>
@@ -444,6 +476,22 @@ function CompraItemCard({ item, onRemove, onUpdate }: CompraItemCardProps): Reac
 
   const subtotal = item.cantidad * item.costo;
   const decimalKeyboard = Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad';
+
+  // Estos valores pueden cambiar por fuera de la tarjeta: volver a agregar el
+  // mismo producto lo reemplaza con los valores frescos de la DB. Sin esto los
+  // inputs se quedan con lo viejo. Se compara el número para no pisar lo que el
+  // usuario está tecleando.
+  useEffect(() => {
+    setCantidadInput(prev => (parseFloat(prev) === item.cantidad ? prev : String(item.cantidad)));
+  }, [item.cantidad]);
+
+  useEffect(() => {
+    setCostoInput(prev => (parseFloat(prev) === item.costo ? prev : String(item.costo)));
+  }, [item.costo]);
+
+  useEffect(() => {
+    setPrecioInput(prev => (parseFloat(prev) === item.precio ? prev : String(item.precio)));
+  }, [item.precio]);
 
   // Margen IVA-aware: precio incluye IVA 16%, costo no. Misma fórmula que
   // getMarginPct en ProductRow. null hasta que haya costo y precio.
@@ -1140,7 +1188,11 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  scroll: { paddingTop: 12, paddingBottom: 24, gap: 12 },
+  scroll: { paddingBottom: 24 },
+
+  headerGroup:    { paddingTop: 12, gap: 12 },
+  stickyAddGroup: { paddingVertical: 12 },
+  bodyGroup:      { gap: 12 },
 
   infoBanner: {
     flexDirection:    'row',
@@ -1189,7 +1241,6 @@ const styles = StyleSheet.create({
     flexDirection:    'row',
     gap:              8,
     marginHorizontal: 16,
-    marginTop:        4,
   },
   addProductBtn: {
     flex:              1,

@@ -76,7 +76,12 @@ export const useCompra = create<CompraStore>()((set, get) => ({
     const { items } = get();
     const existing = items.find(i => i.codigo_producto === item.codigo_producto);
     if (existing) {
-      set({ items: items.map(i => i.codigo_producto === item.codigo_producto ? { ...existing, ...item } : i) });
+      // Va al final de la lista: la vista muestra los ítems del más reciente al
+      // más antiguo, así que lo último que se tocó queda arriba y a la vista.
+      set({ items: [
+        ...items.filter(i => i.codigo_producto !== item.codigo_producto),
+        { ...existing, ...item },
+      ] });
     } else {
       set({ items: [...items, item] });
     }

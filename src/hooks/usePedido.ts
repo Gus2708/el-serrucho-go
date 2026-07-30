@@ -118,8 +118,12 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
     const { items } = get();
     const existing = items.find(i => i.codigo_producto === item.codigo_producto);
     if (existing) {
-      set({ items: items.map(i => i.codigo_producto === item.codigo_producto
-        ? { ...existing, cantidad: existing.cantidad + item.cantidad } : i) });
+      // Va al final de la lista: la vista muestra los ítems del más reciente al
+      // más antiguo, así que lo último que se tocó queda arriba y a la vista.
+      set({ items: [
+        ...items.filter(i => i.codigo_producto !== item.codigo_producto),
+        { ...existing, cantidad: existing.cantidad + item.cantidad },
+      ] });
     } else {
       set({ items: [...items, item] });
     }

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -119,6 +119,22 @@ export default function PedidosView({ router, onEmitted, onSavedDraft }: Pedidos
     staleTime: 60_000,
   });
 
+  // Lo último agregado se muestra de PRIMERO: el ítem recién añadido queda justo
+  // debajo del botón "Agregar producto" y se edita sin scroll. Es solo
+  // presentación — el orden que se guarda (y que ve Hybrid) sigue siendo el de
+  // agregado, que es el del store.
+  const itemsRecienteArriba = React.useMemo(() => [...items].reverse(), [items]);
+
+  // Al volver del selector con ítems nuevos, subir para que se vean.
+  const scrollRef = React.useRef<ScrollView>(null);
+  const itemCountRef = React.useRef(items.length);
+  useEffect(() => {
+    if (items.length > itemCountRef.current) {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    }
+    itemCountRef.current = items.length;
+  }, [items.length]);
+
   const totalUnidades = items.reduce((sum, item) => sum + item.cantidad, 0);
   const totalBaseUsd = items.reduce((sum, item) => {
     const p = item.precio_unitario ?? item.precio_base_usd ?? 0;
@@ -228,7 +244,15 @@ export default function PedidosView({ router, onEmitted, onSavedDraft }: Pedidos
 
   return (
     <View style={styles.flex}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      {/* stickyHeaderIndices apunta al índice 1 — los hijos del ScrollView son
+          4 grupos fijos (nunca condicionales) para que el índice no se corra. */}
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        stickyHeaderIndices={[1]}
+      >
+        <View style={styles.headerGroup}>
 
         {!allowedToOrder ? (
           <View style={[styles.infoBanner, { backgroundColor: colors.danger + '10', borderColor: colors.danger + '30' }]}>
@@ -308,17 +332,24 @@ export default function PedidosView({ router, onEmitted, onSavedDraft }: Pedidos
           <Feather name="chevron-right" size={18} color={colors.textDim} />
         </PressableScale>
 
-        {/* Agregar producto */}
-        <PressableScale
-          style={[styles.addProductBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }]}
-          onPress={() => {
-            usePedido.getState().setModalOpen(true, true);
-            router.push('/seleccionar-productos?target=pedido');
-          }}
-        >
-          <Feather name="search" size={16} color={colors.primary} />
-          <Text style={[styles.addProductText, { color: colors.primary }]}>Agregar producto</Text>
-        </PressableScale>
+        </View>
+
+        {/* Agregar producto — queda fijo arriba al hacer scroll, así se puede
+            seguir agregando sin volver al tope de la lista. */}
+        <View style={[styles.stickyAddGroup, { backgroundColor: colors.bg }]}>
+          <PressableScale
+            style={[styles.addProductBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }]}
+            onPress={() => {
+              usePedido.getState().setModalOpen(true, true);
+              router.push('/seleccionar-productos?target=pedido');
+            }}
+          >
+            <Feather name="search" size={16} color={colors.primary} />
+            <Text style={[styles.addProductText, { color: colors.primary }]}>Agregar producto</Text>
+          </PressableScale>
+        </View>
+
+        <View style={styles.bodyGroup}>
 
         {items.length > 0 && (
           <View style={[styles.currencyToggleContainer, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}>
@@ -364,7 +395,7 @@ export default function PedidosView({ router, onEmitted, onSavedDraft }: Pedidos
           </View>
         ) : (
           <>
-            {items.map(item => (
+            {itemsRecienteArriba.map(item => (
               <PedidoItemCard
                 key={item.codigo_producto}
                 item={item}
@@ -391,6 +422,8 @@ export default function PedidosView({ router, onEmitted, onSavedDraft }: Pedidos
             </View>
           </>
         )}
+
+        </View>
 
         <View style={{ height: 180 }} />
       </ScrollView>
@@ -533,6 +566,13 @@ function PedidoItemCard({ item, enBs, bcv, markupPct, onRemove, onUpdate }: Pedi
   const [cantidadInput, setCantidadInput] = useState<string>(String(item.cantidad));
   const [precioInput, setPrecioInput] = useState<string | null>(null);   // null = espeja el store
   const decimalKeyboard = Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad';
+
+  // La cantidad puede cambiar por fuera de esta tarjeta: agregar otra vez el
+  // mismo producto la consolida y suma. Sin esto el input se queda con el valor
+  // viejo. Se compara el número para no pisar lo que el usuario está tecleando.
+  useEffect(() => {
+    setCantidadInput(prev => (parseFloat(prev) === item.cantidad ? prev : String(item.cantidad)));
+  }, [item.cantidad]);
 
   // precioUsd = lo que se va a cobrar; precioBaseUsd = el maestro de Hybrid.
   const precioBaseUsd = item.precio_base_usd;
@@ -896,7 +936,11 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  scroll: { paddingTop: 12, paddingBottom: 24, gap: 12 },
+  scroll: { paddingBottom: 24 },
+
+  headerGroup:    { paddingTop: 12, gap: 12 },
+  stickyAddGroup: { paddingVertical: 12 },
+  bodyGroup:      { gap: 12 },
 
   infoBanner: {
     flexDirection:    'row',
@@ -947,7 +991,6 @@ const styles = StyleSheet.create({
     justifyContent:    'center',
     gap:               8,
     marginHorizontal:  16,
-    marginTop:         4,
     paddingVertical:   14,
     borderRadius:      12,
     borderWidth:       1,
