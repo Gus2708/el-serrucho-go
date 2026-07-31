@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
+import { fetchExistencias, faltantePorNegativo } from './useExistencias';
 
 export interface CompraDraftItem {
   codigo_producto: string;
@@ -201,6 +202,18 @@ export const useCompra = create<CompraStore>()((set, get) => ({
 
     set({ isLoading: true });
 
+    // Se compensa acá y no al agregar el ítem: la existencia pudo cambiar
+    // mientras se armaba la lista, así que lo que vale es el saldo de este
+    // instante. Si falla la lectura se aborta — cargar de menos dejaría el
+    // stock mal sin que nadie se entere.
+    let itemsAEnviar: CompraDraftItem[];
+    try {
+      itemsAEnviar = await compensarExistenciasNegativas(items);
+    } catch {
+      set({ isLoading: false });
+      throw new Error('No se pudo leer la existencia actual de los productos. Revisa la conexión e intenta de nuevo.');
+    }
+
     // Dos casos usan la MISMA fila en vez de insertar una nueva: reintentar una
     // compra que falló (editingCompraId) y emitir un borrador guardado
     // (borradorId). En ambos se reemplazan los items y se reencola con
@@ -234,7 +247,7 @@ export const useCompra = create<CompraStore>()((set, get) => ({
 
         const { error: itemsError } = await supabase
           .from('compras_app_items')
-          .insert(buildItemRows(existingId, items));
+          .insert(buildItemRows(existingId, itemsAEnviar));
         if (itemsError) throw itemsError;
 
         set({ isLoading: false });
@@ -268,7 +281,7 @@ export const useCompra = create<CompraStore>()((set, get) => ({
       // 2. Insert all items
       const { error: itemsError } = await supabase
         .from('compras_app_items')
-        .insert(buildItemRows(compra.id, items));
+        .insert(buildItemRows(compra.id, itemsAEnviar));
 
       if (itemsError) throw itemsError;
 
@@ -289,6 +302,28 @@ export const useCompra = create<CompraStore>()((set, get) => ({
     }
   },
 }));
+
+/**
+ * Suma a cada ítem las unidades que le faltan para salir del negativo.
+ *
+ * Hybrid suma lo comprado al saldo existente, así que un producto en -3 al que
+ * se le compran 10 quedaría en 7. Enviando 13 el saldo final es 10: exactamente
+ * la cantidad que el usuario escribió. Los productos nuevos no se tocan (aún no
+ * existen en Hybrid, arrancan en cero).
+ */
+async function compensarExistenciasNegativas(items: CompraDraftItem[]): Promise<CompraDraftItem[]> {
+  const codigos = items.filter(item => !item.es_nuevo).map(item => item.codigo_producto);
+  if (codigos.length === 0) return items;
+
+  const existencias = await fetchExistencias(codigos);
+
+  return items.map(item => {
+    if (item.es_nuevo) return item;
+    const faltante = faltantePorNegativo(existencias[item.codigo_producto]);
+    if (faltante === 0) return item;
+    return { ...item, cantidad: item.cantidad + faltante };
+  });
+}
 
 function buildItemRows(compraId: number, items: CompraDraftItem[]): Record<string, unknown>[] {
   return items.map(item => ({

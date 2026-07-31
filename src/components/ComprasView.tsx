@@ -24,6 +24,7 @@ import { useProveedores, Proveedor } from '../hooks/useProveedores';
 import { useCompra, CompraDraftItem } from '../hooks/useCompra';
 import { borradoresQueryKey } from '../hooks/useBorradores';
 import { useProductos, normalizeSearchTerm } from '../hooks/useProductos';
+import { useExistencias, faltantePorNegativo } from '../hooks/useExistencias';
 import { useUserRole, isPrivilegedRole } from '../hooks/useUserRole';
 import { PressableScale } from './PressableScale';
 import { pressScale } from '../theme/motion';
@@ -77,7 +78,22 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
   const [productoNuevoModalVisible, setProductoNuevoModalVisible] = useState(false);
   const [borradorModalVisible, setBorradorModalVisible] = useState(false);
 
-  const total = items.reduce((sum, item) => sum + item.cantidad * item.costo, 0);
+  // Existencia fresca de los ítems ya existentes: los que están en negativo se
+  // cargan con unidades extra al emitir (ver compensarExistenciasNegativas en
+  // useCompra), así que el armador muestra y cobra esas unidades reales.
+  const codigosExistentes = React.useMemo(
+    () => items.filter(item => !item.es_nuevo).map(item => item.codigo_producto),
+    [items],
+  );
+  const { data: existencias } = useExistencias(codigosExistentes);
+
+  function faltanteDe(item: CompraDraftItem): number {
+    if (item.es_nuevo) return 0;
+    return faltantePorNegativo(existencias?.[item.codigo_producto]);
+  }
+
+  const total = items.reduce((sum, item) => sum + (item.cantidad + faltanteDe(item)) * item.costo, 0);
+  const itemsCompensados = items.filter(item => faltanteDe(item) > 0).length;
 
   // Lo último agregado se muestra de PRIMERO: el ítem recién añadido queda justo
   // debajo de los botones de agregar y se edita sin scroll. Es solo
@@ -178,11 +194,14 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
       return;
     }
     const isEditing = editingCompraId !== null;
+    const avisoNegativos = itemsCompensados > 0
+      ? `\n\n${itemsCompensados} ítem${itemsCompensados > 1 ? 's están' : ' está'} en negativo: se cargarán las unidades faltantes además de lo comprado, para que el stock quede en la cantidad que escribiste.`
+      : '';
     confirm({
       title:       isEditing ? 'Reintentar compra' : 'Emitir compra',
-      message:     isEditing
+      message:     (isEditing
         ? `Se reencolará C-${String(editingCompraId).padStart(4, '0')} a ${proveedorNombre} con ${items.length} ítem${items.length > 1 ? 's' : ''}.`
-        : `Se registrará una compra a ${proveedorNombre} con ${items.length} ítem${items.length > 1 ? 's' : ''}.`,
+        : `Se registrará una compra a ${proveedorNombre} con ${items.length} ítem${items.length > 1 ? 's' : ''}.`) + avisoNegativos,
       confirmText: isEditing ? 'Reintentar' : 'Emitir',
       onConfirm:   performSubmit,
     });
@@ -317,6 +336,7 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
               <CompraItemCard
                 key={item.codigo_producto}
                 item={item}
+                existencia={item.es_nuevo ? null : existencias?.[item.codigo_producto] ?? null}
                 onRemove={() => removeItem(item.codigo_producto)}
                 onUpdate={updates => updateItem(item.codigo_producto, updates)}
               />
@@ -463,18 +483,23 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
 // ── Item card ─────────────────────────────────────────────────────────────────
 
 interface CompraItemCardProps {
-  item:     CompraDraftItem;
-  onRemove: () => void;
-  onUpdate: (updates: Partial<CompraDraftItem>) => void;
+  item:       CompraDraftItem;
+  existencia: number | null;   // saldo actual; null para productos nuevos o aún sin cargar
+  onRemove:   () => void;
+  onUpdate:   (updates: Partial<CompraDraftItem>) => void;
 }
 
-function CompraItemCard({ item, onRemove, onUpdate }: CompraItemCardProps): React.JSX.Element {
+function CompraItemCard({ item, existencia, onRemove, onUpdate }: CompraItemCardProps): React.JSX.Element {
   const { colors, formatUSD } = useTheme();
   const [cantidadInput, setCantidadInput] = useState<string>(String(item.cantidad));
   const [costoInput, setCostoInput] = useState<string>(String(item.costo));
   const [precioInput, setPrecioInput] = useState<string>(String(item.precio));
 
-  const subtotal = item.cantidad * item.costo;
+  // Producto en negativo: al emitir se cargan también las unidades faltantes
+  // para que el saldo final sea la cantidad escrita, no cantidad + negativo.
+  const faltante = faltantePorNegativo(existencia);
+  const cantidadACargar = item.cantidad + faltante;
+  const subtotal = cantidadACargar * item.costo;
   const decimalKeyboard = Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad';
 
   // Estos valores pueden cambiar por fuera de la tarjeta: volver a agregar el
@@ -604,6 +629,15 @@ function CompraItemCard({ item, onRemove, onUpdate }: CompraItemCardProps): Reac
           />
         </View>
       </View>
+
+      {faltante > 0 ? (
+        <View style={[styles.negativoAviso, { backgroundColor: colors.warning + '14', borderColor: colors.warning + '30' }]}>
+          <Feather name="corner-down-right" size={12} color={colors.warning} />
+          <Text style={[styles.negativoAvisoText, { color: colors.warning }]}>
+            En {existencia} · se cargarán {cantidadACargar} para que quede en {item.cantidad}
+          </Text>
+        </View>
+      ) : null}
 
       <View style={styles.subtotalRow}>
         {margin !== null ? (
@@ -1352,6 +1386,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   marginText:    { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_700Bold' },
+  negativoAviso: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               6,
+    marginTop:         8,
+    borderRadius:      8,
+    borderWidth:       0.5,
+    paddingVertical:   5,
+    paddingHorizontal: 8,
+  },
+  negativoAvisoText: { flex: 1, fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_500Medium' },
   subtotalRight: { flexDirection: 'row', alignItems: 'baseline' },
   subtotalLabel: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular' },
   subtotalValue: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
