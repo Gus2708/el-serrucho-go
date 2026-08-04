@@ -68,7 +68,7 @@ never render it. The backend already converts VES → USD using
 
 ---
 
-## Navigation — 6 Tabs in a Floating Pill
+## Navigation — 7 Tabs in a Floating Pill
 
 `app/(tabs)/_layout.tsx` mounts a custom `FloatingTabBar` (gold circle on
 active tab, no labels, sits ~18px above the bottom).
@@ -81,6 +81,7 @@ active tab, no labels, sits ~18px above the bottom).
 | 4 | Alertas | `app/(tabs)/alertas.tsx` | Stock alerts + Gemini anomaly cards |
 | 5 | Reportes | `app/(tabs)/reportes.tsx` | Bar chart + donut + top productos · **admin only** |
 | 6 | Órdenes | `app/(tabs)/ordenes.tsx` | Draft change orders + history + PDF export |
+| 7 | Créditos | `app/(tabs)/creditos.tsx` | Cuentas por cobrar · detalle en `app/credito/[id].tsx` · todos leen, solo `is_privileged()` escribe |
 
 The **Reportes** tab is hidden for non-admin users (filtered in
 `FloatingTabBar.tsx` via `useUserRole()`).
@@ -126,7 +127,31 @@ profiles               (id PK = auth.users.id, role: 'admin' | 'superempleado' |
                        -- empleado = solo ajustes, requieren aprobación (RPCs aprobar_orden/rechazar_orden)
 comandos_remotos       (id PK, comando, executed, created_at)
                        -- queue for cloud → local sync triggering
+
+-- CRÉDITOS (cuentas por cobrar) — migraciones 041/042
+creditos_cuenta        (id PK, nombre, cliente_codigo, documento_id, telefono,
+                        nota, estado: activa|cerrada, creado_por, creado_en,
+                        cerrado_por, cerrado_en)
+                       -- `nombre` es SNAPSHOT deliberado, NO un join: ventas.rif_cliente
+                       -- matchea >1 fila de clientes (RIF 11246149 existe como
+                       -- '11246149' y 'V11246149') y resolverlo en vivo duplicaría cuentas.
+                       -- Único parcial sobre lower(btrim(nombre)) WHERE estado='activa'.
+creditos_movimiento    (id PK, cuenta_id FK, tipo: cargo|abono, monto_usd numeric(14,2) > 0,
+                        fecha, concepto, origen: factura|libre|abono,
+                        venta_documento, venta_id_unico, metodo, referencia,
+                        reversa_de_id, anulado_por_id, corrige_a_id,
+                        motivo_anulacion, creado_por, creado_en)
+                       -- APPEND-ONLY. Ver docs/CREDITOS.md
 ```
+
+> **REGLA DE ORO DE CRÉDITOS**: el saldo **nunca se almacena, se deriva**
+> (`Σ cargos vivos − Σ abonos vivos`). Los movimientos son inmutables: corregir
+> es *anular + insertar*, no un UPDATE. Cuatro guardianes en la DB lo garantizan
+> (anti-mutación, anti-borrado, factura única viva, integridad de reversa), y
+> **toda escritura pasa por RPC `SECURITY DEFINER` con gate `is_privileged()`** —
+> las tablas no tienen policies de INSERT/UPDATE/DELETE, así que ni un admin con
+> la anon key escribe directo. `monto_usd` es SIEMPRE positivo: la dirección la
+> da `tipo`, nunca el signo.
 
 Row counts (snapshot): productos 7,212 · ventas 25,480 · ventas_detalle 53,046 ·
 clientes 2,678 · profiles 2.
@@ -147,6 +172,11 @@ vw_top_productos            -- top 20 by revenue (30 days)
 vw_velocidad_productos      -- rapido/lento/sin_movimiento (DonutChart)
 vw_alertas_stock            -- sin_stock | stock_negativo | margen_negativo | stock_muerto
 vw_ticket_promedio          -- AVG total_neto current month
+vw_creditos_saldo           -- cuenta + total_cargos/abonos + saldo DERIVADO
+vw_creditos_movimientos     -- historial con autor, flag `vivo`, rastro de anulación
+vw_creditos_resumen         -- KPI "en la calle" (total por cobrar / a favor)
+vw_ventas_credito_disponibles -- facturas aún no cargadas + beneficiario SUGERIDO
+                              -- (LATERAL con LIMIT 1 mata el duplicado del join por RIF)
 ```
 
 > **`vw_alertas_stock` margen_negativo rule** uses `costo > precio_venta / 1.16`
