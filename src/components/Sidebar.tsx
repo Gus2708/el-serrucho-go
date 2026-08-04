@@ -15,7 +15,6 @@ const logo = require('../assets/img/EL SERRUCHO go.png');
 const TABS: { name: string; route: string; icon: keyof typeof Feather.glyphMap; label: string }[] = [
   { name: 'index',      route: '/',            icon: 'home',         label: 'Inicio'     },
   { name: 'ventas',     route: '/ventas',      icon: 'shopping-bag', label: 'Ventas'     },
-  { name: 'creditos',   route: '/creditos',    icon: 'credit-card',  label: 'Créditos'   },
   { name: 'inventario', route: '/inventario',  icon: 'package',      label: 'Inventario' },
   { name: 'notificaciones', route: '/notificaciones', icon: 'bell',   label: 'Notificaciones' },
   { name: 'reportes',   route: '/reportes',    icon: 'bar-chart',    label: 'Reportes'   },

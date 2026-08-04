@@ -18,15 +18,14 @@ import { spring } from '../theme/motion';
 const TABS: { name: string; icon: keyof typeof Feather.glyphMap; label: string }[] = [
   { name: 'index',          icon: 'home',         label: 'Inicio'         },
   { name: 'ventas',         icon: 'shopping-bag', label: 'Ventas'         },
-  { name: 'creditos',       icon: 'credit-card',  label: 'Créditos'       },
   { name: 'inventario',     icon: 'package',      label: 'Inventario'     },
   { name: 'notificaciones', icon: 'bell',         label: 'Notificaciones' },
   { name: 'reportes',       icon: 'bar-chart',    label: 'Reportes'       },
   { name: 'ordenes',        icon: 'file-text',    label: 'Órdenes'        },
 ];
 
-const PAD = 6;      // horizontal padding inside the pill
-const CIRCLE = 40;  // active indicator diameter — reducido levemente para que quepan 7 tabs
+const PAD = 8;      // horizontal padding inside the pill
+const CIRCLE = 44;  // active indicator diameter
 const BAR_H = 60;
 
 export function FloatingTabBar({ state, navigation }: BottomTabBarProps): React.ReactElement {
@@ -139,7 +138,7 @@ function TabButton({ icon, label, active, activeColor, inactiveColor, onPress }:
       accessibilityState={{ selected: active }}
     >
       <Animated.View style={iconStyle}>
-        <Feather name={icon} size={19} color={active ? activeColor : inactiveColor} />
+        <Feather name={icon} size={20} color={active ? activeColor : inactiveColor} />
       </Animated.View>
     </Pressable>
   );
@@ -149,8 +148,8 @@ const styles = StyleSheet.create({
   pill: {
     position:       'absolute',
     alignSelf:      'center',
-    width:          '94%',
-    maxWidth:       396, // +36px vs. 6 tabs para que 7 iconos respiren sin achicar el pill visualmente
+    width:          '92%',
+    maxWidth:       360,
     height:         BAR_H,
     borderRadius:   999,
     borderWidth:    0.5,

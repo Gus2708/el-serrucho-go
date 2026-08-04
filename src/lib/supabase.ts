@@ -271,43 +271,6 @@ export type TopProductoRow = {
   ganancia:          number;
 };
 
-export type CreditoEstado = 'activa' | 'cerrada';
-export type CreditoTipo   = 'cargo' | 'abono';
-export type CreditoOrigen = 'factura' | 'libre' | 'abono';
-
-/** Fila de vw_creditos_saldo — el saldo se DERIVA, nunca se almacena. */
-export type CreditoCuenta = {
-  id: number; nombre: string; cliente_codigo: string | null; documento_id: string | null;
-  telefono: string | null; nota: string | null; estado: CreditoEstado;
-  creado_por: string; creado_en: string;
-  total_cargos: number; total_abonos: number; saldo: number; num_movimientos: number;
-  ultimo_abono_en: string | null; ultimo_cargo_en: string | null; ultima_actividad_en: string | null;
-};
-
-/** Fila de vw_creditos_movimientos. `vivo` = suma al saldo. */
-export type CreditoMovimiento = {
-  id: number; cuenta_id: number; tipo: CreditoTipo; monto_usd: number; fecha: string;
-  concepto: string; origen: CreditoOrigen; venta_documento: string | null;
-  metodo: string | null; referencia: string | null;
-  reversa_de_id: number | null; anulado_por_id: number | null; corrige_a_id: number | null;
-  motivo_anulacion: string | null; creado_por: string; creado_en: string; vivo: boolean;
-  autor_nombre: string | null; autor_email: string | null;
-  anulado_en: string | null; anulado_por_nombre: string | null;
-  corregido_por_id: number | null; corregido_monto: number | null;
-};
-
-export type CreditoResumen = {
-  total_por_cobrar: number; total_a_favor: number;
-  cuentas_con_deuda: number; cuentas_activas: number; mayor_saldo: number;
-};
-
-export type VentaCreditoDisponible = {
-  id: number; documento: string; id_unico: number; fecha_emision: string; created_at: string;
-  total_usd: number; metodo_pago: string | null; rif_cliente: string | null;
-  sugerido_codigo: string | null; sugerido_nombre: string | null; sugerido_telefono: string | null;
-  es_cliente_natural: boolean;
-};
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**

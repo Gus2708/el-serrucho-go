@@ -84,15 +84,6 @@ export function useRealtimeSync() {
           queryClient.invalidateQueries({ queryKey: ['ordenes-history'] });
           queryClient.invalidateQueries({ queryKey: ['orden-cambio-detalle'] });
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'creditos_movimiento' }, () => {
-          // Sin debounce a propósito: los créditos se registran de a uno (un abono,
-          // un cargo), nunca en lote como el sync del widget. Que dos personas en el
-          // mostrador vean el mismo saldo AL INSTANTE vale más que ahorrar un refetch.
-          queryClient.invalidateQueries({ queryKey: ['creditos'] });
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'creditos_cuenta' }, () => {
-          queryClient.invalidateQueries({ queryKey: ['creditos'] });
-        })
         .subscribe();
 
       // ── Canal 2: NOTIFICACIONES (aislado para que Realtime no lo pierda) ──────
