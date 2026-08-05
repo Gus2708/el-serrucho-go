@@ -27,6 +27,7 @@ import { useTazas } from '../hooks/useTazas';
 import { usePresupuestoConfig } from '../hooks/usePresupuestoConfig';
 import { useUserRole, canMakePedidos } from '../hooks/useUserRole';
 import { PressableScale } from './PressableScale';
+import { FadeIn } from './FadeIn';
 import { pressScale } from '../theme/motion';
 import RegistroClienteModal from './RegistroClienteModal';
 import PedidoStatusModal from './PedidoStatusModal';
@@ -425,7 +426,11 @@ export default function PedidosView({ router, onEmitted, onSavedDraft }: Pedidos
 
         </View>
 
-        <View style={{ height: 180 }} />
+        {/* Despeja la barra flotante: alto real (~122) + su offset inferior.
+            Con 180 la última tarjeta quedaba tapada al llegar al final.
+            Siempre se renderiza —aunque mida 40— porque stickyHeaderIndices
+            cuenta los hijos del ScrollView y no puede correrse el índice. */}
+        <View style={{ height: items.length > 0 ? 220 : 40 }} />
       </ScrollView>
 
       {/* Submit bar */}
@@ -442,56 +447,75 @@ export default function PedidosView({ router, onEmitted, onSavedDraft }: Pedidos
             isDesktop && styles.submitBarWeb,
           ]}
         >
-          <View style={styles.submitInfo}>
-            <Text style={[styles.submitCount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
-              {items.length} ítem{items.length > 1 ? 's' : ''} · {totalUnidades} und
-            </Text>
-            {totalBaseUsd > 0 && (
-              enBs && bcv > 0 ? (
-                <>
-                  <Text style={[styles.submitTotalBs, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
-                    Bs. {totalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <View style={styles.submitTopRow}>
+            <View style={styles.submitInfo}>
+              {/* adjustsFontSizeToFit con piso alto: en pantallas de 320px esta
+                  línea no entra y preferimos encogerla un punto antes que cortarla. */}
+              <Text
+                style={[styles.submitCount, { color: colors.text }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                {items.length} ítem{items.length > 1 ? 's' : ''} · {totalUnidades} und
+              </Text>
+              {totalBaseUsd > 0 && (
+                enBs && bcv > 0 ? (
+                  <>
+                    <Text style={[styles.submitTotalBs, { color: colors.primary }]} numberOfLines={1}>
+                      Bs. {totalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </Text>
+                    <Text style={[styles.submitSubRef, { color: colors.textMuted }]} numberOfLines={1}>
+                      Base: {formatUSD(totalBaseUsd)} · +{markupPct}%
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={[styles.submitTotalUsd, { color: colors.primary }]} numberOfLines={1}>
+                    Est: {formatUSD(totalBaseUsd)}
                   </Text>
-                  <Text style={[styles.submitSubRef, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
-                    Base: {formatUSD(totalBaseUsd)} · +{markupPct}% ({formatUSD(totalMarkupUsd)})
+                )
+              )}
+            </View>
+
+            <PressableScale
+              style={[styles.submitBtn, { backgroundColor: colors.primary }]}
+              dimmed={!canSubmit}
+              onPress={handleSubmit}
+              disabled={!canSubmit}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={colors.onPrimary} />
+              ) : (
+                <>
+                  <Feather name={editingPedidoId !== null ? 'rotate-cw' : 'send'} size={16} color={colors.onPrimary} />
+                  <Text style={[styles.submitBtnText, { color: colors.onPrimary }]} numberOfLines={1}>
+                    {editingPedidoId !== null ? 'Reintentar' : 'Emitir'}
                   </Text>
                 </>
-              ) : (
-                <Text style={[styles.submitTotalUsd, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
-                  Est: {formatUSD(totalBaseUsd)}
-                </Text>
-              )
-            )}
-            <View style={styles.secondaryActions}>
-              <PressableScale onPress={() => setBorradorModalVisible(true)} hitSlop={6}>
-                <Text style={[styles.saveDraftText, { color: colors.primary }]} numberOfLines={1}>
-                  {borradorId !== null ? 'Actualizar borrador' : 'Guardar borrador'}
-                </Text>
-              </PressableScale>
-              <PressableScale onPress={() => confirm({ title: 'Limpiar pedido', message: 'Se perderán los ítems agregados.', confirmText: 'Limpiar', destructive: true, onConfirm: clear })} hitSlop={6}>
-                <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1}>
-                  Limpiar
-                </Text>
-              </PressableScale>
-            </View>
+              )}
+            </PressableScale>
           </View>
-          <PressableScale
-            style={[styles.submitBtn, { backgroundColor: colors.primary }]}
-            dimmed={!canSubmit}
-            onPress={handleSubmit}
-            disabled={!canSubmit}
-          >
-            {isLoading ? (
-              <ActivityIndicator color={colors.onPrimary} />
-            ) : (
-              <>
-                <Feather name={editingPedidoId !== null ? 'rotate-cw' : 'send'} size={16} color={colors.onPrimary} />
-                <Text style={[styles.submitBtnText, { color: colors.onPrimary }]} numberOfLines={1} adjustsFontSizeToFit>
-                  {editingPedidoId !== null ? 'Reintentar pedido' : 'Emitir pedido'}
-                </Text>
-              </>
-            )}
-          </PressableScale>
+
+          {/* Acciones secundarias en su propia fila: apretadas junto al botón se
+              cortaban contra los totales (captura del usuario 2026-07-28). */}
+          <View style={[styles.secondaryActions, { borderTopColor: colors.border }]}>
+            <PressableScale onPress={() => setBorradorModalVisible(true)} hitSlop={10} style={styles.secondaryBtn}>
+              <Feather name="bookmark" size={12} color={colors.primary} />
+              <Text style={[styles.saveDraftText, { color: colors.primary }]} numberOfLines={1}>
+                {borradorId !== null ? 'Actualizar borrador' : 'Guardar borrador'}
+              </Text>
+            </PressableScale>
+            <PressableScale
+              onPress={() => confirm({ title: 'Limpiar pedido', message: 'Se perderán los ítems agregados.', confirmText: 'Limpiar', destructive: true, onConfirm: clear })}
+              hitSlop={10}
+              style={styles.secondaryBtn}
+            >
+              <Feather name="trash-2" size={12} color={colors.danger} />
+              <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1}>
+                Limpiar
+              </Text>
+            </PressableScale>
+          </View>
         </View>
       )}
 
@@ -565,6 +589,7 @@ function PedidoItemCard({ item, enBs, bcv, markupPct, onRemove, onUpdate }: Pedi
   const { colors, formatUSD } = useTheme();
   const [cantidadInput, setCantidadInput] = useState<string>(String(item.cantidad));
   const [precioInput, setPrecioInput] = useState<string | null>(null);   // null = espeja el store
+  const [precioFocused, setPrecioFocused] = useState<boolean>(false);
   const decimalKeyboard = Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad';
 
   // La cantidad puede cambiar por fuera de esta tarjeta: agregar otra vez el
@@ -685,15 +710,18 @@ function PedidoItemCard({ item, enBs, bcv, markupPct, onRemove, onUpdate }: Pedi
 
         <View style={styles.precioControls}>
           {esManual ? (
-            <PressableScale
-              onPress={resetPrecio}
-              hitSlop={8}
-              activeScale={pressScale.icon}
-              accessibilityLabel="Volver al precio maestro"
-              style={[styles.resetPrecioBtn, { borderColor: colors.warning + '40', backgroundColor: colors.warning + '15' }]}
-            >
-              <Feather name="rotate-ccw" size={12} color={colors.warning} />
-            </PressableScale>
+            <FadeIn translateY={0}>
+              <PressableScale
+                onPress={resetPrecio}
+                hitSlop={10}
+                activeScale={pressScale.icon}
+                accessibilityRole="button"
+                accessibilityLabel="Volver al precio maestro"
+                style={[styles.resetPrecioBtn, { borderColor: colors.warning + '40', backgroundColor: colors.warning + '15' }]}
+              >
+                <Feather name="rotate-ccw" size={13} color={colors.warning} />
+              </PressableScale>
+            </FadeIn>
           ) : null}
 
           <View
@@ -701,20 +729,24 @@ function PedidoItemCard({ item, enBs, bcv, markupPct, onRemove, onUpdate }: Pedi
               styles.precioField,
               {
                 backgroundColor: colors.surfaceAlt,
-                borderColor:     esManual ? colors.warning + '60' : colors.border,
+                borderColor:     precioFocused ? colors.primary
+                                 : esManual    ? colors.warning + '66'
+                                 : colors.border,
               },
             ]}
           >
-            <Text style={[styles.precioCurrency, { color: colors.textDim }]}>$</Text>
+            <Text style={[styles.precioCurrency, { color: esManual ? colors.warning : colors.textDim }]}>$</Text>
             <TextInput
               style={[styles.precioInput, { color: esManual ? colors.warning : colors.text }]}
               keyboardType={decimalKeyboard}
               value={precioInput ?? (precioUsd > 0 ? String(precioUsd) : '')}
               onChangeText={handlePrecioChange}
-              onBlur={() => setPrecioInput(null)}
+              onFocus={() => setPrecioFocused(true)}
+              onBlur={() => { setPrecioFocused(false); setPrecioInput(null); }}
               selectTextOnFocus
               placeholder="0.00"
               placeholderTextColor={colors.textDim}
+              accessibilityLabel={`Precio unitario de ${item.descripcion}`}
             />
           </View>
         </View>
@@ -1075,13 +1107,17 @@ const styles = StyleSheet.create({
     bottom:            100,
     left:              16,
     right:             16,
-    flexDirection:     'row',
-    alignItems:        'center',
-    justifyContent:    'space-between',
     borderRadius:      16,
     borderWidth:       0.5,
-    padding:           16,
-    gap:               12,
+    paddingHorizontal: 16,
+    paddingTop:        14,
+    paddingBottom:     4,
+  },
+  submitTopRow: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+    gap:            12,
   },
   submitBarWeb: {
     position:         'relative',
@@ -1092,18 +1128,35 @@ const styles = StyleSheet.create({
     marginBottom:     16,
     marginTop:        8,
   },
-  submitInfo:  { flex: 1, gap: 2 },
+  submitInfo:  { flex: 1, minWidth: 0, gap: 2 },
   submitCount: { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
-  secondaryActions: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 },
+  secondaryActions: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+    borderTopWidth: 0.5,
+    marginTop:      12,
+  },
+  // 44px de alto: el mínimo táctil del proyecto, y separa las dos acciones
+  // lo suficiente para que "Limpiar" (destructiva) no se toque por error.
+  secondaryBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    gap:             6,
+    height:          44,
+    paddingRight:    4,
+  },
   saveDraftText: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold' },
-  clearText:   { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular' },
+  clearText:   { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold' },
   submitBtn: {
     flexDirection:     'row',
     alignItems:        'center',
+    justifyContent:    'center',
     gap:               8,
     borderRadius:      12,
-    paddingVertical:   12,
-    paddingHorizontal: 20,
+    height:            48,
+    paddingHorizontal: 18,
+    minWidth:          112,
   },
   submitBtnText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
 
@@ -1211,44 +1264,54 @@ const styles = StyleSheet.create({
     flexDirection:  'row',
     alignItems:     'center',
     justifyContent: 'space-between',
-    marginTop:      8,
+    marginTop:      10,
     gap:            8,
   },
-  precioLabelGroup: { flex: 1, gap: 2 },
+  precioLabelGroup: { flex: 1, minWidth: 0, gap: 2 },
   precioBaseHint:   { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_400Regular' },
   precioControls:   { flexDirection: 'row', alignItems: 'center', gap: 6 },
   resetPrecioBtn: {
-    width:          30,
-    height:         34,
+    width:          36,
+    height:         36,
     borderRadius:   8,
     borderWidth:    1,
     alignItems:     'center',
     justifyContent: 'center',
   },
+  // Ancho FIJO a propósito: sin él, el TextInput impone su ancho intrínseco,
+  // el campo se estira hasta media tarjeta y el '$' queda huérfano en la otra
+  // punta (lo que se veía en la captura del 2026-07-28). Mismo tamaño que el
+  // campo de precio de PresupuestoView, para que ambos armadores se sientan igual.
   precioField: {
+    width:             116,
+    height:            36,
     flexDirection:     'row',
     alignItems:        'center',
-    gap:               2,
+    gap:               4,
     borderWidth:       1,
     borderRadius:      8,
-    paddingHorizontal: 8,
-    height:            34,
-    minWidth:          96,
+    paddingHorizontal: 10,
   },
-  precioCurrency: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_400Regular' },
+  precioCurrency: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
+  // Sin textAlign: 'right' — el número va pegado al '$', que es lo que lo hace
+  // leer como un solo token ("$14") en vez de dos cosas sueltas.
   precioInput: {
     flex:               1,
-    fontSize:           scaleFont(14),
+    minWidth:           0,
+    height:             36,
+    fontSize:           scaleFont(15),
     fontFamily:         'JetBrainsMono_700Bold',
-    textAlign:          'right',
     paddingVertical:    0,
+    paddingHorizontal:  2,
+    textAlignVertical:  'center',
     includeFontPadding: false,
     fontVariant:        ['tabular-nums'],
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}),
   } as any,
   precioAviso: {
     fontSize:   scaleFont(10),
     fontFamily: 'JetBrainsMono_700Bold',
-    marginTop:  4,
+    marginTop:  6,
     textAlign:  'right',
   },
   subtotalVal: {
