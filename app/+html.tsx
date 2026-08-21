@@ -20,6 +20,21 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="theme-color" content="#010100" />
         <meta name="description" content="Dashboard administrativo ferretería El Serrucho" />
         
+        {/* Open Graph / social preview */}
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="El Serrucho GO" />
+        <meta property="og:url" content="https://el-serrucho-go.vercel.app" />
+        <meta property="og:title" content="El Serrucho GO - Real-Time Inventory &amp; Sales Analytics" />
+        <meta property="og:description" content="Mobile + PWA analytics dashboard in daily use at a hardware store. Built with Expo, React Native, TypeScript and Supabase." />
+        <meta property="og:image" content="https://el-serrucho-go.vercel.app/og.png" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:image:alt" content="El Serrucho GO - Mobile + PWA analytics dashboard in daily use at a hardware store. Built with Expo, React Native, TypeScript and Supabase." />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="El Serrucho GO - Real-Time Inventory &amp; Sales Analytics" />
+        <meta name="twitter:description" content="Mobile + PWA analytics dashboard in daily use at a hardware store. Built with Expo, React Native, TypeScript and Supabase." />
+        <meta name="twitter:image" content="https://el-serrucho-go.vercel.app/og.png" />
+
         <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
