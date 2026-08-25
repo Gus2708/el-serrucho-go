@@ -29,7 +29,7 @@ The gold (#F5B200) is the saw blade from the physical store's logo — it carrie
 
 1. **Speed over polish** — every interaction is mid-task; transitions earn their time or they don't exist.
 2. **State always visible** — sync status, stock levels, and margin signals must be readable at a glance without tapping into anything.
-3. **Density without clutter** — 7,200 products in a list; information must be compact but scannable. No cards where a row will do.
+3. **Density without clutter** — 7,650 products in catalog; information must be compact but scannable. No cards where a row will do.
 4. **Gold is a signal, not decoration** — primary color marks only: current action, active state, call to action. Nowhere else.
 5. **Fail visibly, recover fast** — errors and warnings must interrupt enough to be noticed, recover in one tap.
 

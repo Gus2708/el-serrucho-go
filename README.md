@@ -78,7 +78,7 @@ It ships as an **Android app (EAS)** and as an **installable PWA** (Vercel) that
 │   │   ├── _layout.tsx           # FloatingTabBar (mobile) / Sidebar (desktop web)
 │   │   ├── index.tsx             # Dashboard — KPI cards, sparklines, recent sales
 │   │   ├── ventas.tsx            # Real-time sales viewer & detail sheet
-│   │   ├── inventario.tsx        # Virtualized inventory (7k+ products)
+│   │   ├── inventario.tsx        # Virtualized inventory (7,650 products)
 │   │   ├── notificaciones.tsx    # Attention queue, help requests & Zelle spoof alerts
 │   │   ├── reportes.tsx          # Admin financial charts & product velocity
 │   │   └── ordenes.tsx           # Órdenes hub — 7 sub-tabs (see below)
