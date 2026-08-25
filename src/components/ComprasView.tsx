@@ -25,6 +25,7 @@ import { useCompra, CompraDraftItem } from '../hooks/useCompra';
 import { borradoresQueryKey } from '../hooks/useBorradores';
 import { useProductos, normalizeSearchTerm } from '../hooks/useProductos';
 import { useExistencias, faltantePorNegativo } from '../hooks/useExistencias';
+import { useColisionesCodigo, describirColision, ColisionCodigo } from '../hooks/useColisionesCodigo';
 import { useUserRole, isPrivilegedRole } from '../hooks/useUserRole';
 import { PressableScale } from './PressableScale';
 import { pressScale } from '../theme/motion';
@@ -86,6 +87,15 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
     [items],
   );
   const { data: existencias } = useExistencias(codigosExistentes);
+
+  // Códigos que HybridLite resolvería a OTRO producto (el número es el código de
+  // barras de un tercero). Se revisan también los productos nuevos: darle de alta
+  // un código ya usado como barras ajeno arrastra el mismo choque.
+  const codigosDeItems = React.useMemo(
+    () => items.map(item => item.codigo_producto),
+    [items],
+  );
+  const { data: colisiones } = useColisionesCodigo(codigosDeItems);
 
   function faltanteDe(item: CompraDraftItem): number {
     if (item.es_nuevo) return 0;
@@ -191,6 +201,19 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
     const problema = primerItemInvalido();
     if (problema) {
       notify('Falta información', problema);
+      return;
+    }
+    // Emitir un ítem colisionado deja un documento permanente en el kardex con
+    // el producto equivocado, así que se corta acá. submit() lo vuelve a chequear
+    // por si el aviso todavía no había cargado.
+    const itemChocado = items.find(item => colisiones?.[item.codigo_producto]);
+    const choque = itemChocado ? colisiones?.[itemChocado.codigo_producto] : undefined;
+    if (itemChocado && choque) {
+      notify('Código en conflicto', describirColision(
+        itemChocado.codigo_producto,
+        itemChocado.descripcion,
+        choque,
+      ));
       return;
     }
     const isEditing = editingCompraId !== null;
@@ -337,6 +360,7 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
                 key={item.codigo_producto}
                 item={item}
                 existencia={item.es_nuevo ? null : existencias?.[item.codigo_producto] ?? null}
+                colision={colisiones?.[item.codigo_producto] ?? null}
                 onRemove={() => removeItem(item.codigo_producto)}
                 onUpdate={updates => updateItem(item.codigo_producto, updates)}
               />
@@ -484,12 +508,13 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
 
 interface CompraItemCardProps {
   item:       CompraDraftItem;
-  existencia: number | null;   // saldo actual; null para productos nuevos o aún sin cargar
+  existencia: number | null;          // saldo actual; null para productos nuevos o aún sin cargar
+  colision:   ColisionCodigo | null;  // producto que HybridLite cargaría en su lugar
   onRemove:   () => void;
   onUpdate:   (updates: Partial<CompraDraftItem>) => void;
 }
 
-function CompraItemCard({ item, existencia, onRemove, onUpdate }: CompraItemCardProps): React.JSX.Element {
+function CompraItemCard({ item, existencia, colision, onRemove, onUpdate }: CompraItemCardProps): React.JSX.Element {
   const { colors, formatUSD } = useTheme();
   const [cantidadInput, setCantidadInput] = useState<string>(String(item.cantidad));
   const [costoInput, setCostoInput] = useState<string>(String(item.costo));
@@ -635,6 +660,15 @@ function CompraItemCard({ item, existencia, onRemove, onUpdate }: CompraItemCard
           <Feather name="corner-down-right" size={12} color={colors.warning} />
           <Text style={[styles.negativoAvisoText, { color: colors.warning }]}>
             En {existencia} · se cargarán {cantidadACargar} para que quede en {item.cantidad}
+          </Text>
+        </View>
+      ) : null}
+
+      {colision ? (
+        <View style={[styles.negativoAviso, { backgroundColor: colors.danger + '14', borderColor: colors.danger + '30' }]}>
+          <Feather name="alert-triangle" size={12} color={colors.danger} />
+          <Text style={[styles.negativoAvisoText, { color: colors.danger }]}>
+            Código en conflicto · Hybrid cargaría {colision.codigoInterceptor} · {colision.descripcion}
           </Text>
         </View>
       ) : null}

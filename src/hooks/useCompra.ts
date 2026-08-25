@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { fetchExistencias, faltantePorNegativo } from './useExistencias';
+import { fetchColisionesCodigo, describirColision, ColisionesMap } from './useColisionesCodigo';
 
 export interface CompraDraftItem {
   codigo_producto: string;
@@ -201,6 +202,28 @@ export const useCompra = create<CompraStore>()((set, get) => ({
     if (items.length === 0) throw new Error('Agrega al menos un producto antes de emitir la compra.');
 
     set({ isLoading: true });
+
+    // Guarda dura contra el choque de códigos: emitir un ítem colisionado
+    // registra un documento PERMANENTE en el kardex con el producto equivocado.
+    // Va acá y no solo en la UI porque la vista puede emitir con el aviso aún
+    // sin cargar. Si falla la lectura se aborta: no se emite a ciegas.
+    let colisiones: ColisionesMap;
+    try {
+      colisiones = await fetchColisionesCodigo(items.map(item => item.codigo_producto));
+    } catch {
+      set({ isLoading: false });
+      throw new Error('No se pudo verificar los códigos de los productos. Revisa la conexión e intenta de nuevo.');
+    }
+
+    const itemChocado = items.find(item => colisiones[item.codigo_producto]);
+    if (itemChocado) {
+      set({ isLoading: false });
+      throw new Error(describirColision(
+        itemChocado.codigo_producto,
+        itemChocado.descripcion,
+        colisiones[itemChocado.codigo_producto],
+      ));
+    }
 
     // Se compensa acá y no al agregar el ítem: la existencia pudo cambiar
     // mientras se armaba la lista, así que lo que vale es el saldo de este
