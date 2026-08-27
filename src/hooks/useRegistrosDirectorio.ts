@@ -1,5 +1,6 @@
 import { useQuery, UseQueryResult } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
 
 export type DirectorioTipo = 'cliente' | 'proveedor';
 
@@ -27,7 +28,49 @@ export interface RegistroDirectorio {
 export function useRegistrosDirectorio(tipo: DirectorioTipo, search: string = ''): UseQueryResult<RegistroDirectorio[], Error> {
   return useQuery({
     queryKey:  ['registros', tipo, search],
-    queryFn:   () => (tipo === 'cliente' ? fetchDirectorioClientes(search) : fetchDirectorioProveedores(search)),
+    queryFn:   () => {
+      if (isDemoActive()) {
+        if (tipo === 'cliente') {
+          return [
+            {
+              id: 'dir-cli-1',
+              codigo: 'CLI-0001',
+              nombre: 'CONSTRUCTORA DEL VALLE C.A.',
+              rif: 'J-30948271-0',
+              telefono: '0414-1234567',
+              direccion: 'Av. Las Delicias, Maracay',
+              backend_status: 'oficial' as DirectorioBackendStatus,
+              isOficial: true,
+            },
+            {
+              id: 'dir-cli-2',
+              codigo: 'CLI-0002',
+              nombre: 'FERRETERIA Y SUMINISTROS LOS LLANOS',
+              rif: 'J-40192834-5',
+              telefono: '0424-7654321',
+              direccion: 'Calle Miranda, San Juan',
+              backend_status: 'oficial' as DirectorioBackendStatus,
+              isOficial: true,
+            },
+          ];
+        } else {
+          return [
+            {
+              id: 'dir-prov-1',
+              codigo: 'PROV-0001',
+              nombre: 'DISTRIBUIDORA FERRETERA NACIONAL C.A.',
+              rif: 'J-00192847-1',
+              telefono: '0212-9876543',
+              contacto: 'Carlos Mendoza',
+              email: 'ventas@ferreteranacional.com',
+              backend_status: 'oficial' as DirectorioBackendStatus,
+              isOficial: true,
+            },
+          ];
+        }
+      }
+      return tipo === 'cliente' ? fetchDirectorioClientes(search) : fetchDirectorioProveedores(search);
+    },
     staleTime: 30_000,
   });
 }

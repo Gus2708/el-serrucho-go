@@ -1,6 +1,7 @@
 import { useQuery, UseQueryResult } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { CompraDraftItem } from './useCompra';
+import { isDemoActive } from '../demo/useDemoStore';
 
 export interface CompraConItems {
   id:                  number;
@@ -26,6 +27,24 @@ export function useComprasHistory(): UseQueryResult<CompraConItems[], Error> {
 }
 
 async function fetchComprasHistory(): Promise<CompraConItems[]> {
+  if (isDemoActive()) {
+    return [
+      {
+        id:                  201,
+        proveedor_codigo:    'PROV-001',
+        proveedor_nombre:    'DISTRIBUIDORA FERRETERA NACIONAL C.A.',
+        nota:                'Reposición de cemento y electrodos Lincoln',
+        numero_documento:    'FAC-PROV-9921',
+        status:              'emitido',
+        creado_en:           new Date(Date.now() - 240 * 60_000).toISOString(),
+        item_count:          8,
+        backend_status:      'completado',
+        backend_resultado:   'Aplicado correctamente en HybridLite',
+        backend_aplicado_en: new Date().toISOString(),
+        creado_por_nombre:   'Reclutador Demo',
+      },
+    ];
+  }
   const { data, error } = await supabase
     .from('compras_app')
     .select(`

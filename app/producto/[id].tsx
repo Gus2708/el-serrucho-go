@@ -27,6 +27,8 @@ import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
 import { useTazas } from '../../src/hooks/useTazas';
 import { usePresupuestoConfig } from '../../src/hooks/usePresupuestoConfig';
 import { BarcodeScannerModal } from '../../src/components/BarcodeScannerModal';
+import { isDemoActive } from '../../src/demo/useDemoStore';
+import { demoProductos, demoVentas } from '../../src/demo/demoData';
 
 export default function ProductoDetail() {
   const { colors, tokens, formatUSD } = useTheme();
@@ -61,6 +63,10 @@ export default function ProductoDetail() {
     queryKey: ['venta-hoy-single', selectedVentaId],
     queryFn: async () => {
       if (!selectedVentaId) return null;
+      if (isDemoActive()) {
+        const v = demoVentas.find(item => item.id === selectedVentaId);
+        if (v) return v;
+      }
       const { data, error } = await supabase
         .from('vw_ventas_usd')
         .select('*')
@@ -629,6 +635,16 @@ export default function ProductoDetail() {
                     setErrorMsg(null);
                     setIsSaving(true);
 
+                    if (isDemoActive()) {
+                      producto.existencia = finalQty;
+                      queryClient.setQueryData(['producto', id], { ...producto, existencia: finalQty });
+                      queryClient.invalidateQueries({ queryKey: ['productos'] });
+                      setIsSaving(false);
+                      notify('Modo Demo', `Ajuste simulado: nueva existencia ${finalQty} ${producto.unidad}`);
+                      closeSheet();
+                      return;
+                    }
+
                     try {
                       const { data: { user } } = await supabase.auth.getUser();
                       if (!user) throw new Error('Usuario no autenticado');
@@ -967,6 +983,17 @@ export default function ProductoDetail() {
                     setErrorMsg(null);
                     setIsSavingPrice(true);
 
+                    if (isDemoActive()) {
+                      producto.precio_venta = finalPrice;
+                      producto.costo = finalCost;
+                      queryClient.setQueryData(['producto', id], { ...producto, precio_venta: finalPrice, costo: finalCost });
+                      queryClient.invalidateQueries({ queryKey: ['productos'] });
+                      setIsSavingPrice(false);
+                      notify('Modo Demo', 'Precios actualizados en memoria.');
+                      closeSheet();
+                      return;
+                    }
+
                     try {
                       const { data: { user } } = await supabase.auth.getUser();
                       if (!user) throw new Error('Usuario no autenticado');
@@ -1210,6 +1237,17 @@ export default function ProductoDetail() {
 
                   setErrorMsg(null);
                   setIsSavingEdit(true);
+
+                  if (isDemoActive()) {
+                    if (descChanged) producto.descripcion = descTrim;
+                    if (refChanged) producto.referencia = refTrim;
+                    queryClient.setQueryData(['producto', id], { ...producto, descripcion: descTrim, referencia: refTrim });
+                    queryClient.invalidateQueries({ queryKey: ['productos'] });
+                    setIsSavingEdit(false);
+                    notify('Modo Demo', 'Datos del producto actualizados en memoria.');
+                    closeSheet();
+                    return;
+                  }
 
                   try {
                     const { data: { user } } = await supabase.auth.getUser();
@@ -1557,6 +1595,11 @@ function HistorialMovimientos({
 // ── Data fetcher ────────────────────────────────────────────────────────────
 
 async function fetchProducto(id: string): Promise<Producto> {
+  if (isDemoActive()) {
+    const p = demoProductos.find(item => item.codigo_interno === id);
+    if (p) return p;
+    return demoProductos[0];
+  }
   const { data, error } = await supabase
     .from('productos')
     .select('*')

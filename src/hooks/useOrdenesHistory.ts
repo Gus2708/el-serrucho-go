@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase, OrdenCambio } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
+import { demoOrdenes } from '../demo/demoData';
 
 export interface BackendResumen {
   pendientes:         number;
@@ -26,6 +28,9 @@ export function useOrdenesHistory() {
 }
 
 async function fetchOrdenes(): Promise<OrdenConItems[]> {
+  if (isDemoActive()) {
+    return demoOrdenes as OrdenConItems[];
+  }
   const { data, error } = await supabase
     .from('ordenes_cambio')
     .select(`

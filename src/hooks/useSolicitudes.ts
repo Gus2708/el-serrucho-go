@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase, SolicitudAyuda } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
+import { demoSolicitudes } from '../demo/demoData';
 
 /**
  * Consulta la lista de solicitudes de ayuda pendientes o resueltas pero no enviadas.
@@ -9,6 +11,9 @@ export function useSolicitudes() {
   return useQuery({
     queryKey: ['solicitudes-pendientes'],
     queryFn: async () => {
+      if (isDemoActive()) {
+        return demoSolicitudes;
+      }
       const { data, error } = await supabase
         .from('solicitudes_ayuda')
         .select('*')

@@ -2,6 +2,8 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { Presupuesto, PresupuestoDetalle } from '../lib/supabase';
 import { PedidoDraftItem } from './usePedido';
+import { isDemoActive } from '../demo/useDemoStore';
+import { demoPresupuestos } from '../demo/demoData';
 
 const PAGE_SIZE = 20;
 
@@ -15,6 +17,17 @@ export function usePresupuestosHistory(search?: string) {
   return useInfiniteQuery({
     queryKey: ['presupuestos-history', search],
     queryFn: async ({ pageParam = 0 }) => {
+      if (isDemoActive()) {
+        let list = [...demoPresupuestos];
+        const trimmed = search?.trim().toLowerCase();
+        if (trimmed) {
+          list = list.filter(p => 
+            p.nota?.toLowerCase().includes(trimmed) || 
+            p.cliente_nombre?.toLowerCase().includes(trimmed)
+          );
+        }
+        return list as PresupuestoHistoryRow[];
+      }
       const from = pageParam as number;
       const to = from + PAGE_SIZE - 1;
 

@@ -19,6 +19,8 @@ export default function Root({ children }: PropsWithChildren) {
         {/* PWA Primary Meta Tags */}
         <meta name="theme-color" content="#010100" />
         <meta name="description" content="Dashboard administrativo ferretería El Serrucho" />
+        <meta httpEquiv="X-Content-Type-Options" content="nosniff" />
+        <meta name="referrer" content="strict-origin-when-cross-origin" />
         
         {/* Open Graph / social preview */}
         <meta property="og:type" content="website" />

@@ -36,11 +36,16 @@ function notifyKicked() {
  *  3. Suscribe Realtime al propio row de profiles: si `allowed_sid` cambia y
  *     ya no coincide con nuestro sid → signOut + alerta.
  */
+import { isDemoActive, DEMO_USER_ID } from '../demo/useDemoStore';
+
 export function useSessionEnforcer(session: Session | null) {
   const claimedSidRef = useRef<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
+    if (isDemoActive() || session?.user?.id === DEMO_USER_ID) {
+      return;
+    }
     if (!session?.user || !session.access_token) {
       claimedSidRef.current = null;
       return;

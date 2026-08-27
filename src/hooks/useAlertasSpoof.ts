@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, AlertaZelleSpoof } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
+import { demoAlertasSpoof } from '../demo/demoData';
 
 const PAGE_SIZE = 100;
 
@@ -12,6 +14,9 @@ export function useAlertasSpoof() {
   return useQuery({
     queryKey: ['alertas-spoof'],
     queryFn: async (): Promise<AlertaZelleSpoof[]> => {
+      if (isDemoActive()) {
+        return demoAlertasSpoof;
+      }
       const { data, error } = await supabase
         .from('alertas_zelle_spoof')
         .select('*')
@@ -29,6 +34,9 @@ export function useAlertasSpoofCount() {
   return useQuery({
     queryKey: ['alertas-spoof-count'],
     queryFn: async (): Promise<number> => {
+      if (isDemoActive()) {
+        return demoAlertasSpoof.filter(a => !a.revisado).length;
+      }
       const { count, error } = await supabase
         .from('alertas_zelle_spoof')
         .select('*', { count: 'exact', head: true })
@@ -47,6 +55,11 @@ export function useRevisarAlertaSpoof() {
 
   return useMutation({
     mutationFn: async (id: string): Promise<void> => {
+      if (isDemoActive()) {
+        const found = demoAlertasSpoof.find(a => a.id === id);
+        if (found) (found as any).revisado = true;
+        return;
+      }
       const { data: { session } } = await supabase.auth.getSession();
       const { error } = await supabase
         .from('alertas_zelle_spoof')

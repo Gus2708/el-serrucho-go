@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { PresupuestoItem } from './usePresupuestoStore';
+import { isDemoActive } from '../demo/useDemoStore';
 
 /**
  * Resuelve una solicitud de ayuda del bot: guarda los productos elegidos y la marca 'resuelto'.
@@ -24,6 +25,10 @@ export function useResolverSolicitud() {
       items: PresupuestoItem[];
     }) => {
       if (items.length === 0) throw new Error('Elige al menos un producto');
+
+      if (isDemoActive()) {
+        return;
+      }
 
       // 1. Reclamar la solicitud (solo si sigue 'pendiente') — evita doble resolución.
       const { data: updated, error: updError } = await supabase

@@ -498,7 +498,7 @@ function buildPdfDocument(opts: PdfDocumentOptions): string {
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-${opts.title ? `<title>${opts.title}</title>` : ''}
+${opts.title ? `<title>${escHtml(opts.title)}</title>` : ''}
 <style>${SHARED_STYLES}</style>
 </head>
 <body>
@@ -509,7 +509,7 @@ ${opts.title ? `<title>${opts.title}</title>` : ''}
         <span class="brand-name">EL SERRUCHO</span>
         <span class="brand-accent"></span>
       </div>
-      <div class="doc-badge">${opts.docBadge}</div>
+      <div class="doc-badge">${escHtml(opts.docBadge)}</div>
     </div>
 
     <div class="meta-grid">
@@ -521,9 +521,9 @@ ${opts.title ? `<title>${opts.title}</title>` : ''}
     ${opts.tableHtml}
 
     <div class="footer">
-      <span class="footer-left">${opts.footerLeft}</span>
+      <span class="footer-left">${escHtml(opts.footerLeft)}</span>
       <span class="footer-dot"></span>
-      <span class="footer-right">${opts.footerRight}</span>
+      <span class="footer-right">${escHtml(opts.footerRight)}</span>
     </div>
 
   </div>
@@ -576,7 +576,7 @@ export function buildPdfHtml(items: DraftItem[], nota: string, orderId: number, 
       ${creadoPor ? `
       <div class="meta-card">
         <span class="meta-label">Creado por</span>
-        <span class="meta-value">${creadoPor}</span>
+        <span class="meta-value">${escHtml(creadoPor)}</span>
       </div>` : `
       <div class="meta-card">
         <span class="meta-label">Tipo de Documento</span>
@@ -586,7 +586,7 @@ export function buildPdfHtml(items: DraftItem[], nota: string, orderId: number, 
   const noteHtml = nota ? `
     <div class="note-box">
       <strong>Observaciones</strong>
-      ${nota}
+      ${escHtml(nota)}
     </div>` : '';
 
   const tableHtml = `
@@ -682,11 +682,11 @@ export function buildPresupuestoPdfHtml(
     ? `
       <div class="meta-card" style="flex:1.2;">
         <span class="meta-label">Cliente</span>
-        <span class="meta-value">${cliente.nombre}</span>
+        <span class="meta-value">${escHtml(cliente.nombre ?? '')}</span>
         <span class="meta-label" style="margin-top:4px;">RIF / CI</span>
-        <span class="meta-value">${cliente.rif}</span>
-        ${cliente.telefono ? `<span class="meta-label" style="margin-top:4px;">Teléfono</span><span class="meta-value">${cliente.telefono}</span>` : ''}
-        ${cliente.direccion ? `<span class="meta-label" style="margin-top:4px;">Dirección</span><span class="meta-value">${cliente.direccion}</span>` : ''}
+        <span class="meta-value">${escHtml(cliente.rif ?? '')}</span>
+        ${cliente.telefono ? `<span class="meta-label" style="margin-top:4px;">Teléfono</span><span class="meta-value">${escHtml(cliente.telefono)}</span>` : ''}
+        ${cliente.direccion ? `<span class="meta-label" style="margin-top:4px;">Dirección</span><span class="meta-value">${escHtml(cliente.direccion)}</span>` : ''}
       </div>`
     : `
       <div class="meta-card" style="flex:1.2;">
@@ -699,14 +699,14 @@ export function buildPresupuestoPdfHtml(
       <div class="meta-card">
         <span class="meta-label">Fecha de Emisión</span>
         <span class="meta-value">${now}</span>
-        ${creadoPor ? `<span class="meta-label" style="margin-top:4px;">Creado por</span><span class="meta-value">${creadoPor}</span>` : ''}
+        ${creadoPor ? `<span class="meta-label" style="margin-top:4px;">Creado por</span><span class="meta-value">${escHtml(creadoPor)}</span>` : ''}
         ${enBs && tasaCambio ? `<span class="meta-label" style="margin-top:4px;">Tasa BCV</span><span class="meta-value">${tasaCambio.toFixed(2)} Bs/$</span>` : ''}
       </div>`;
 
   const noteHtml = nota ? `
     <div class="note-box">
       <strong>Observaciones</strong>
-      ${nota}
+      ${escHtml(nota)}
     </div>` : '';
 
   let tableHtml = '';
@@ -810,7 +810,7 @@ export function buildVentaPdfHtml(
   const metaCards = `
       <div class="meta-card" style="flex:1.2;">
         <span class="meta-label">Cliente</span>
-        <span class="meta-value">${venta.nombre_cliente || 'Cliente Casual'}</span>
+        <span class="meta-value">${escHtml(venta.nombre_cliente || 'Cliente Casual')}</span>
       </div>
       <div class="meta-card">
         <span class="meta-label">Fecha y Hora</span>
@@ -818,7 +818,7 @@ export function buildVentaPdfHtml(
       </div>
       <div class="meta-card">
         <span class="meta-label">Método de Pago</span>
-        <span class="meta-value">${venta.metodo_pago || 'No especificado'}</span>
+        <span class="meta-value">${escHtml(venta.metodo_pago || 'No especificado')}</span>
       </div>`;
 
   const tableHtml = `
@@ -850,11 +850,12 @@ export function buildVentaPdfHtml(
       </div>
     </div>`;
 
-  const title = `Recibo_Venta_${venta.documento || `#${venta.venta_id || venta.id}`}`;
+  const rawDoc = String(venta.documento || `#${venta.venta_id || venta.id}`);
+  const title = `Recibo_Venta_${rawDoc}`;
 
   return buildPdfDocument({
     title,
-    docBadge:    `RECIBO DE VENTA ${venta.documento || `#${venta.venta_id || venta.id}`}`,
+    docBadge:    `RECIBO DE VENTA ${rawDoc}`,
     metaCards,
     noteHtml:    '',
     tableHtml,

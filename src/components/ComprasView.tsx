@@ -1226,10 +1226,10 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
             <PressableScale
               style={[
                 styles.formSubmitBtn,
-                { backgroundColor: Boolean(existingProductInDb) ? colors.textDim : colors.primary },
+                { backgroundColor: existingProductInDb ? colors.textDim : colors.primary },
               ]}
               onPress={handleAdd}
-              disabled={Boolean(existingProductInDb)}
+              disabled={!!existingProductInDb}
             >
               <Feather name="plus" size={16} color={colors.onPrimary} />
               <Text style={[styles.formSubmitText, { color: colors.onPrimary }]}>Agregar a la compra</Text>

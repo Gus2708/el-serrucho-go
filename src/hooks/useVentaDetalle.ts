@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase, VentaDetalleUSD } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
+import { getDemoVentaDetalle } from '../demo/demoData';
 
 export function useVentaDetalle(ventaId: number | null) {
   return useQuery({
@@ -10,6 +12,9 @@ export function useVentaDetalle(ventaId: number | null) {
 }
 
 async function fetchVentaDetalle(ventaId: number): Promise<VentaDetalleUSD[]> {
+  if (isDemoActive()) {
+    return getDemoVentaDetalle(ventaId);
+  }
   const { data, error } = await supabase
     .from('vw_ventas_detalle_usd')
     .select('*')

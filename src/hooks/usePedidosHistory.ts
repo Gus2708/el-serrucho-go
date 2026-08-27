@@ -1,6 +1,7 @@
 import { useQuery, UseQueryResult } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { PedidoDraftItem } from './usePedido';
+import { isDemoActive } from '../demo/useDemoStore';
 
 export interface PedidoConItems {
   id:                  number;
@@ -26,6 +27,24 @@ export function usePedidosHistory(): UseQueryResult<PedidoConItems[], Error> {
 }
 
 async function fetchPedidosHistory(): Promise<PedidoConItems[]> {
+  if (isDemoActive()) {
+    return [
+      {
+        id:                  101,
+        cliente_codigo:      'CLI-001',
+        cliente_nombre:      'CONSTRUCTORA DEL VALLE C.A.',
+        nota:                'Pedido urgente: 50 sacos de cemento y 10 tubos PVC',
+        status:              'emitido',
+        creado_en:           new Date(Date.now() - 90 * 60_000).toISOString(),
+        item_count:          2,
+        backend_status:      'completado',
+        backend_resultado:   'Generado Pedido #PED-2026-045 en HybridLite',
+        backend_aplicado_en: new Date().toISOString(),
+        documento_hybrid:    'PED-2026-045',
+        creado_por_nombre:   'Reclutador Demo',
+      },
+    ];
+  }
   const { data, error } = await supabase
     .from('pedidos_app')
     .select(`

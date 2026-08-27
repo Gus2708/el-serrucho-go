@@ -1,5 +1,6 @@
 import { useMutation, UseMutationResult, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
 
 // Registro de un cliente nuevo → cola `registro_clientes_app`. El backend lo da de alta
 // en HybridLite (write-back) y devuelve `codigo_cliente_hybrid`. Ver
@@ -23,6 +24,9 @@ function limpiar(valor: string | null): string | null {
 }
 
 async function insertRegistroCliente(input: RegistroClienteInput): Promise<RegistroClienteResult> {
+  if (isDemoActive()) {
+    return { id: 999 };
+  }
   const { data: auth } = await supabase.auth.getUser();
   const userId = auth.user?.id;
   if (!userId) throw new Error('No autenticado.');

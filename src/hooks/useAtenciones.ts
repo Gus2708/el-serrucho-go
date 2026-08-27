@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase, AtencionPendiente } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
+import { demoAtenciones } from '../demo/demoData';
 
 /**
  * Consulta la lista de clientes pendientes de atención (ordenados por el más antiguo primero).
@@ -8,6 +10,9 @@ export function useAtenciones() {
   return useQuery({
     queryKey: ['atenciones-pendientes'],
     queryFn: async () => {
+      if (isDemoActive()) {
+        return demoAtenciones;
+      }
       const { data, error } = await supabase
         .from('atenciones_pendientes')
         .select('id, telefono, nombre, motivo, creado_en, status, atendido_en, atendido_por')
@@ -28,6 +33,9 @@ export function useAtencionesCount() {
   return useQuery({
     queryKey: ['atenciones-count'],
     queryFn: async () => {
+      if (isDemoActive()) {
+        return demoAtenciones.length;
+      }
       const { count, error } = await supabase
         .from('atenciones_pendientes')
         .select('*', { count: 'exact', head: true })

@@ -57,11 +57,34 @@ export function isPlaceholder(p: Producto): boolean {
   return /^[.\s]+$/.test(desc) || desc.length <= 2;
 }
 
+import { isDemoActive } from '../demo/useDemoStore';
+import { demoProductos } from '../demo/demoData';
+
 async function fetchProductos(
   search: string,
   filter: StockFilter,
   offset: number,
 ): Promise<Producto[]> {
+  if (isDemoActive()) {
+    let list = [...demoProductos];
+    const trimmed = normalizeSearchTerm(search).trim();
+    if (trimmed) {
+      const clean = trimmed.replace(/\*/g, '').toUpperCase();
+      list = list.filter(p =>
+        normalizeSearchTerm(p.descripcion).includes(clean) ||
+        normalizeSearchTerm(p.codigo_interno).includes(clean) ||
+        normalizeSearchTerm(p.codigo_barras).includes(clean)
+      );
+    }
+    if (filter === 'sin_stock') {
+      list = list.filter(p => p.existencia <= 0);
+    } else if (filter === 'stock_bajo') {
+      list = list.filter(p => p.existencia > 0 && p.existencia <= 5);
+    } else if (filter === 'margen_negativo') {
+      list = list.filter(p => p.costo > p.precio_venta / 1.16);
+    }
+    return list.slice(offset, offset + PAGE_SIZE);
+  }
   // margen_negativo usa una vista dedicada en la BD (IVA-aware, server-side).
   // El resto usa productos_view.
   const fromTable =

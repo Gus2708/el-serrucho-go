@@ -1,5 +1,6 @@
 import { useMutation, UseMutationResult, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
 
 // Registro de un proveedor nuevo → cola `registro_proveedores_app`. Escritura restringida a
 // privilegiados por RLS (modelo Compras). El backend lo da de alta en HybridLite (write-back)
@@ -24,6 +25,9 @@ function limpiar(valor: string | null): string | null {
 }
 
 async function insertRegistroProveedor(input: RegistroProveedorInput): Promise<RegistroProveedorResult> {
+  if (isDemoActive()) {
+    return { id: 999 };
+  }
   const { data: auth } = await supabase.auth.getUser();
   const userId = auth.user?.id;
   if (!userId) throw new Error('No autenticado.');

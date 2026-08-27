@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
 
 export interface PresupuestoConfig {
   markup_porcentaje: number;
@@ -14,6 +15,9 @@ export function usePresupuestoConfig() {
 }
 
 async function fetchPresupuestoConfig(): Promise<PresupuestoConfig> {
+  if (isDemoActive()) {
+    return { markup_porcentaje: 30 };
+  }
   const { data, error } = await supabase
     .from('presupuesto_config')
     .select('markup_porcentaje')

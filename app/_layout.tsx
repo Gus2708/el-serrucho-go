@@ -74,12 +74,14 @@ const persistOptions = {
 
 import { useUserRole } from '../src/hooks/useUserRole';
 import { usePWAInstallStore } from '../src/hooks/usePWAInstall';
+import { useDemoStore, DEMO_SESSION } from '../src/demo/useDemoStore';
 
 function AuthGuard({ session, ready }: { session: Session | null; ready: boolean }) {
   const [hardTimeout, setHardTimeout] = useState(false);
   const segments = useSegments();
   const router   = useRouter();
   const { colors } = useTheme();
+  const isDemoMode = useDemoStore(s => s.isDemoMode);
   const { data: roleData, isLoading: roleLoading, isError: roleError } = useUserRole(session?.user?.id);
 
   useEffect(() => {
@@ -100,6 +102,13 @@ function AuthGuard({ session, ready }: { session: Session | null; ready: boolean
     const isRoot = segs.length === 0;
     // Expo Router can sometimes represent index as [''] or []
     const isIndex = segs.length === 1 && segs[0] === '';
+
+    if (isDemoMode) {
+      if (inAuth || isRoot || isIndex) {
+        router.replace('/(tabs)');
+      }
+      return;
+    }
 
     if (!session) {
       // Case 1: No session -> Mandar a login si no está ahí
@@ -142,7 +151,7 @@ function AuthGuard({ session, ready }: { session: Session | null; ready: boolean
         }
       }
     }
-  }, [session, ready, segments, roleData, roleLoading, roleError, hardTimeout]);
+  }, [session, ready, segments, roleData, roleLoading, roleError, hardTimeout, isDemoMode]);
 
   // Pantalla de carga mientras se decide el destino
   // El hardTimeout asegura que si el rol tarda más de 3s, pasamos igual
@@ -247,11 +256,14 @@ function UpdateToast() {
 }
 
 export default function RootLayout() {
+  const isDemoMode = useDemoStore(s => s.isDemoMode);
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [failsafeActive, setFailsafeActive] = useState(false);
   const { width: windowWidth } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && windowWidth >= 768;
+
+  const activeSession = isDemoMode ? DEMO_SESSION : session;
 
   // PWA life-cycle and event capturing
   useEffect(() => {
@@ -356,7 +368,7 @@ export default function RootLayout() {
 
   // Single-device login: reclama allowed_sid, escucha cambios y firma fuera
   // si otro dispositivo se queda con la sesión.
-  useSessionEnforcer(session);
+  useSessionEnforcer(activeSession);
 
   // La app está lista si:
   // 1. Auth está listo Y las fuentes están listas.
@@ -425,7 +437,7 @@ export default function RootLayout() {
           <RealtimeInitializer>
             <ThemeProvider>
               <>
-                <AuthGuard session={session} ready={isAppReady} />
+                <AuthGuard session={activeSession} ready={isAppReady} />
                 <UpdateToast />
               </>
             </ThemeProvider>

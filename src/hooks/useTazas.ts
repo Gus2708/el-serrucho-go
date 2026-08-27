@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
+import { demoTasa } from '../demo/demoData';
 
 export interface Tasa {
   bcv_usd:        number;
@@ -26,6 +28,9 @@ export function useTazas() {
 }
 
 async function fetchTazaActual(): Promise<Tasa | null> {
+  if (isDemoActive()) {
+    return demoTasa;
+  }
   const { data, error } = await supabase
     .from('tazas')
     .select('*')

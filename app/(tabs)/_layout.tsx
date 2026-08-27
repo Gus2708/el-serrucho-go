@@ -3,6 +3,7 @@ import { Tabs } from 'expo-router';
 import { FloatingTabBar } from '../../src/components/FloatingTabBar';
 import { Sidebar } from '../../src/components/Sidebar';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
+import { DemoBanner } from '../../src/components/DemoBanner';
 
 export default function TabLayout() {
   const { isDesktop } = useDeviceSize();
@@ -28,6 +29,7 @@ export default function TabLayout() {
 
       {/* Content pane: fills the full remaining viewport width on desktop */}
       <View style={{ flex: 1, minWidth: 0 }}>
+        <DemoBanner />
         {tabs}
       </View>
     </View>

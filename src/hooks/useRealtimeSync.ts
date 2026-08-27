@@ -17,10 +17,13 @@ import { playNotificationSound, showLocalNotification, playSecurityAlertSound } 
  *     resto — es la notificación más crítica del sistema (seguridad, no conveniencia) y
  *     no puede arriesgarse a perderse por compartir canal con otras 3 suscripciones.
  */
+import { isDemoActive } from '../demo/useDemoStore';
+
 export function useRealtimeSync() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
+    if (isDemoActive()) return;
     let dataChannel: ReturnType<typeof supabase.channel> | null = null;
     let notifChannel: ReturnType<typeof supabase.channel> | null = null;
     let seguridadChannel: ReturnType<typeof supabase.channel> | null = null;

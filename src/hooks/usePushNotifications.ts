@@ -139,8 +139,11 @@ async function subscribeNative(): Promise<void> {
  * - Web/PWA: subscribes via Web Push (VAPID) only if permission is already granted.
  * - Native Android: requests permission via expo-notifications and registers FCM token.
  */
+import { isDemoActive } from '../demo/useDemoStore';
+
 export function usePushNotifications(): void {
   useEffect(() => {
+    if (isDemoActive()) return;
     if (Platform.OS === 'web') {
       subscribeWeb().catch((e) => console.warn('[push] web subscribe failed:', e));
 

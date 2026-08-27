@@ -1,5 +1,7 @@
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import { supabase, ProfitSummaryRow, ProfitDailyRow, ProfitHourlyRow, getDateDaysAgo } from '../lib/supabase';
+import { supabase, ProfitSummaryRow, ProfitDailyRow, ProfitHourlyRow, getDateDaysAgo, getLocalDateStr } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
+import { demoProfitSummary, getDemoDaily, demoProfitHourlyHoy, demoProfitHourlyAyer } from '../demo/demoData';
 
 export interface ProfitMonthlyRow {
   mes:          string;   // 'YYYY-MM'
@@ -21,6 +23,9 @@ export function useProfitSummary() {
 }
 
 async function fetchProfitSummary(): Promise<ProfitSummaryRow> {
+  if (isDemoActive()) {
+    return demoProfitSummary;
+  }
   const { data, error } = await supabase
     .from('vw_dashboard_stats')
     .select('*')
@@ -64,6 +69,9 @@ export function useProfitDaily(days: 7 | 30 | 90 = 30, enabled: boolean = true) 
 }
 
 async function fetchProfitDaily(days: number): Promise<ProfitDailyRow[]> {
+  if (isDemoActive()) {
+    return getDemoDaily(days);
+  }
   const { data, error } = await supabase
     .from('vw_profit_daily')
     .select('*')
@@ -118,6 +126,9 @@ export function useProfitHourly(dateStr: string, enabled: boolean = true) {
 }
 
 async function fetchProfitHourly(dateStr: string): Promise<ProfitHourlyRow[]> {
+  if (isDemoActive()) {
+    return dateStr === getLocalDateStr() ? demoProfitHourlyHoy : demoProfitHourlyAyer;
+  }
   const { data, error } = await supabase
     .from('vw_profit_hourly')
     .select('*')

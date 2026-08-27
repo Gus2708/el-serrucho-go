@@ -104,3 +104,10 @@ Thumbs.db
 
 # Firebase Admin SDK credentials
 *-firebase-adminsdk-*.json
+
+# Scratch & temporary artifacts
+scratch/
+.atl/
+task.md
+chats*/
+chats_*.json

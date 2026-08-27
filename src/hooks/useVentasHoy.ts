@@ -1,5 +1,7 @@
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { supabase, getLocalDateStr, getDateDaysAgo } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
+import { demoVentas } from '../demo/demoData';
 
 export type VentasPeriod = 'hoy' | 'ayer' | 'semana' | 'mes' | 'todo';
 
@@ -51,6 +53,24 @@ export function useVentasInfinite(period: VentasPeriod, search?: string) {
 async function fetchVentas(period: VentasPeriod, from: number, to: number, search?: string): Promise<VentaHoy[]> {
   const today     = getLocalDateStr();
   const yesterday = getDateDaysAgo(1);
+
+  if (isDemoActive()) {
+    let list = [...demoVentas];
+    if (period === 'hoy') {
+      list = list.filter(v => v.fecha_emision === today);
+    } else if (period === 'ayer') {
+      list = list.filter(v => v.fecha_emision === yesterday);
+    }
+    const trimmed = search?.trim().toLowerCase();
+    if (trimmed) {
+      list = list.filter(v => 
+        (v.nombre_cliente && v.nombre_cliente.toLowerCase().includes(trimmed)) ||
+        (v.documento && v.documento.toLowerCase().includes(trimmed)) ||
+        (v.rif_cliente && v.rif_cliente.toLowerCase().includes(trimmed))
+      );
+    }
+    return list.slice(from, to + 1);
+  }
 
   let query = supabase
     .from('vw_ventas_usd')

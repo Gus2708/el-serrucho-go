@@ -7,6 +7,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { buildPresupuestoPdfHtml, getPresupuestoFilename } from '../utils/pdfGenerator';
+import { isDemoActive } from '../demo/useDemoStore';
 
 export type Cliente = {
   codigo_cliente: string;
@@ -121,6 +122,10 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
   reset: () => set({ cliente: null, items: [], nota: '', enBs: false, tasaCambio: null, porcentajeRecargo: null }),
 
   submit: async () => {
+    if (isDemoActive()) {
+      get().reset();
+      return { presupuestoId: 503 };
+    }
     const { cliente, items, nota, enBs, tasaCambio, porcentajeRecargo } = get();
 
     if (items.length === 0) {

@@ -54,11 +54,56 @@ export function useMovimientosProducto(codigoProducto: string): UseQueryResult<M
   });
 }
 
+import { isDemoActive } from '../demo/useDemoStore';
+
 /**
  * Obtiene las ventas y los ajustes de stock del producto, los unifica y ordena.
  */
 async function fetchMovimientos(codigoProducto: string): Promise<MovimientoProducto[]> {
   if (!codigoProducto) return [];
+
+  if (isDemoActive()) {
+    return [
+      {
+        id:              `demo-mov-1-${codigoProducto}`,
+        tipo:            'venta',
+        cantidad:        -5,
+        referencia:      'FAC-001248',
+        fechaFormateada: formatIsoDateToLocal(new Date().toISOString()),
+        timestamp:       Date.now() - 3600000,
+        ventaId:         1001,
+      },
+      {
+        id:              `demo-mov-2-${codigoProducto}`,
+        tipo:            'ingreso',
+        cantidad:        50,
+        referencia:      'FAC-PROV-9921',
+        nota:            'Recepción de orden de compra',
+        fechaFormateada: formatIsoDateToLocal(new Date(Date.now() - 86400000).toISOString()),
+        timestamp:       Date.now() - 86400000,
+        backend_status:  'completado',
+      },
+      {
+        id:              `demo-mov-3-${codigoProducto}`,
+        tipo:            'venta',
+        cantidad:        -12,
+        referencia:      'FAC-001242',
+        fechaFormateada: formatIsoDateToLocal(new Date(Date.now() - 172800000).toISOString()),
+        timestamp:       Date.now() - 172800000,
+        ventaId:         1007,
+      },
+      {
+        id:              `demo-mov-4-${codigoProducto}`,
+        tipo:            'ajuste',
+        cantidad:        2,
+        referencia:      'ORD-301',
+        nota:            'Ajuste por conteo físico',
+        fechaFormateada: formatIsoDateToLocal(new Date(Date.now() - 259200000).toISOString()),
+        timestamp:       Date.now() - 259200000,
+        backend_status:  'completado',
+      },
+    ];
+  }
 
   // 1. Obtener ventas del producto (últimas 50)
   const { data: salesData, error: salesError } = await supabase

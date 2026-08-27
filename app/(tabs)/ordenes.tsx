@@ -34,6 +34,7 @@ import { useUserRole, isPrivilegedRole, canMakePedidos } from '../../src/hooks/u
 import { usePedido } from '../../src/hooks/usePedido';
 import { supabase } from '../../src/lib/supabase';
 import { buildPdfHtml, buildPresupuestoPdfHtml, printHtml, getPresupuestoFilename } from '../../src/utils/pdfGenerator';
+import { getSafeUrlOrNull } from '../../src/utils/safeUrl';
 import PresupuestoView from '../../src/components/PresupuestoView';
 import FallasView from '../../src/components/FallasView';
 import { usePresupuestosHistory, fetchPresupuestoItemsForPedido } from '../../src/hooks/usePresupuestosHistory';
@@ -784,9 +785,10 @@ function HistorialView({
 
   const handleViewPDF = async (o: any, forcedType?: string) => {
     const isAjuste = forcedType ? forcedType === 'ajuste' : subTab === 'ajuste';
-    if (o.pdf_url) {
+    const safeUrl = getSafeUrlOrNull(o.pdf_url);
+    if (safeUrl) {
       if (Platform.OS === 'web') {
-        Linking.openURL(o.pdf_url);
+        Linking.openURL(safeUrl);
       } else {
         setIsGeneratingPdf(o.id);
         try {

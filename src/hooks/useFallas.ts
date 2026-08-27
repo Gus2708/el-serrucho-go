@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
 
 export interface FallaNegocio {
   id: string;
@@ -20,6 +21,22 @@ export function useFallas() {
   const { data: fallas = [], isLoading, error } = useQuery({
     queryKey: ['fallas-negocio'],
     queryFn: async () => {
+      if (isDemoActive()) {
+        return [
+          {
+            id: 'demo-falla-1',
+            texto: 'Brocas 1/4 para concreto agotadas por alta demanda',
+            codigo_producto: 'HERR-001',
+            creado_por: 'demo-user-id',
+            pedido: true,
+            creado_en: new Date().toISOString(),
+            perfil: {
+              display_name: 'Demostración',
+            },
+          },
+        ];
+      }
+
       // Fetch fallas
       const { data: fallasData, error: fallasError } = await supabase
         .from('fallas_negocio')
@@ -50,6 +67,8 @@ export function useFallas() {
 
   // Realtime subscription
   useEffect(() => {
+    if (isDemoActive()) return;
+
     const channel = supabase
       .channel('fallas-sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fallas_negocio' }, () => {
@@ -64,6 +83,7 @@ export function useFallas() {
 
   const addFallaMutation = useMutation({
     mutationFn: async ({ texto, codigo_producto, creado_por }: { texto: string; codigo_producto?: string; creado_por: string }) => {
+      if (isDemoActive()) return;
       const { error } = await supabase
         .from('fallas_negocio')
         .insert({ texto, codigo_producto: codigo_producto || null, creado_por });
@@ -73,6 +93,7 @@ export function useFallas() {
 
   const togglePedidoMutation = useMutation({
     mutationFn: async ({ id, currentStatus }: { id: string; currentStatus: boolean }) => {
+      if (isDemoActive()) return;
       const { error } = await supabase
         .from('fallas_negocio')
         .update({ pedido: !currentStatus })
@@ -83,6 +104,7 @@ export function useFallas() {
 
   const deleteFallaMutation = useMutation({
     mutationFn: async (id: string) => {
+      if (isDemoActive()) return;
       const { error } = await supabase
         .from('fallas_negocio')
         .delete()

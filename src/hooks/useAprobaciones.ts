@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { BackendResumen, OrdenConItems } from './useOrdenesHistory';
+import { isDemoActive } from '../demo/useDemoStore';
 
 // ── Bandeja de aprobaciones ───────────────────────────────────────────────────
 // Ajustes creados por empleados normales que quedaron en espera. Solo admin y
@@ -16,6 +17,7 @@ export function useAprobaciones() {
 }
 
 async function fetchAprobacionesPendientes(): Promise<OrdenConItems[]> {
+  if (isDemoActive()) return [];
   const { data, error } = await supabase
     .from('ordenes_cambio')
     .select(`
@@ -99,6 +101,7 @@ export function useAprobarOrden() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (ordenId: number) => {
+      if (isDemoActive()) return;
       const { error } = await supabase.rpc('aprobar_orden', { p_orden: ordenId });
       if (error) throw new Error(error.message);
     },
@@ -110,6 +113,7 @@ export function useRechazarOrden() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ ordenId, motivo }: { ordenId: number; motivo?: string }) => {
+      if (isDemoActive()) return;
       const { error } = await supabase.rpc('rechazar_orden', {
         p_orden: ordenId,
         p_motivo: motivo ?? null,

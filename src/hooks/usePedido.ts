@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { withSupabaseRetry } from '../lib/retry';
+import { isDemoActive } from '../demo/useDemoStore';
 
 // Ítem de pedido. `precio_base_usd` es el precio maestro del producto en Hybrid
 // (referencia, USD con IVA) y `precio_unitario` es lo que se va a cobrar: cuando
@@ -199,6 +200,10 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
   // hasta que el usuario la retome y la emita. Solo exige ítems: el cliente es
   // opcional a propósito, se puede armar la lista antes de saber a quién va.
   saveDraft: async (userId: string, titulo: string) => {
+    if (isDemoActive()) {
+      get().clear();
+      return { pedidoId: 999 };
+    }
     const { clienteCodigo, clienteNombre, items, nota, borradorId } = get();
 
     if (items.length === 0) throw new Error('Agrega al menos un producto antes de guardar el borrador.');
@@ -263,6 +268,10 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
   },
 
   submit: async (userId: string) => {
+    if (isDemoActive()) {
+      get().clear();
+      return { pedidoId: 999 };
+    }
     const { clienteCodigo, clienteNombre, items, nota, editingPedidoId, borradorId, presupuestoOrigenId } = get();
 
     if (!clienteCodigo) throw new Error('Selecciona un cliente antes de emitir el pedido.');

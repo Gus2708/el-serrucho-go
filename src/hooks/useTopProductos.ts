@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase, TopProductoRow } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
+import { demoTopProductos } from '../demo/demoData';
 
 export function useTopProductos(
   orderBy: 'unidades_vendidas' | 'ganancia' | 'ingreso' = 'unidades_vendidas',
@@ -13,6 +15,9 @@ export function useTopProductos(
 }
 
 async function fetchTopProductos(orderBy: string, days: number): Promise<TopProductoRow[]> {
+  if (isDemoActive()) {
+    return [...demoTopProductos].sort((a, b) => (b[orderBy as keyof TopProductoRow] as number || 0) - (a[orderBy as keyof TopProductoRow] as number || 0));
+  }
   const { data, error } = await supabase
     .rpc('get_top_productos', { days_ago: days });
 

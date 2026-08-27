@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { fetchExistencias, faltantePorNegativo } from './useExistencias';
 import { fetchColisionesCodigo, describirColision, ColisionesMap } from './useColisionesCodigo';
+import { isDemoActive } from '../demo/useDemoStore';
 
 export interface CompraDraftItem {
   codigo_producto: string;
@@ -136,6 +137,10 @@ export const useCompra = create<CompraStore>()((set, get) => ({
   // en Hybrid hasta que el usuario la retome y la emita. Solo exige ítems: el
   // proveedor es opcional a propósito, se puede cotizar antes de decidirlo.
   saveDraft: async (userId: string, titulo: string) => {
+    if (isDemoActive()) {
+      get().clear();
+      return { compraId: 888 };
+    }
     const { proveedorCodigo, proveedorNombre, items, nota, numeroDocumento, borradorId } = get();
 
     if (items.length === 0) throw new Error('Agrega al menos un producto antes de guardar el borrador.');
@@ -196,6 +201,10 @@ export const useCompra = create<CompraStore>()((set, get) => ({
   },
 
   submit: async (userId: string) => {
+    if (isDemoActive()) {
+      get().clear();
+      return { compraId: 888 };
+    }
     const { proveedorCodigo, proveedorNombre, items, nota, numeroDocumento, editingCompraId, borradorId } = get();
 
     if (!proveedorCodigo) throw new Error('Selecciona un proveedor antes de emitir la compra.');

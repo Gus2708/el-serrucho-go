@@ -6,6 +6,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
 import { buildPdfHtml, DraftItem } from '../utils/pdfGenerator';
+import { isDemoActive } from '../demo/useDemoStore';
 
 interface OrdenStore {
   items:     DraftItem[];
@@ -46,8 +47,12 @@ export const useOrdenCambio = create<OrdenStore>()((set, get) => ({
 
       clear: () => set({ items: [], nota: '' }),
       submit: async (userId: string) => {
-    const { items, nota } = get();
-    set({ isLoading: true });
+        if (isDemoActive()) {
+          get().clear();
+          return { orderId: 777 };
+        }
+        const { items, nota } = get();
+        set({ isLoading: true });
 
     let createdOrdenId: number | null = null;
 
