@@ -25,6 +25,7 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { useProfitSummary, useProfitDaily, useProfitHourly } from '../../src/hooks/useProfitSummary';
 import { useUserRole } from '../../src/hooks/useUserRole';
+import { useDeviceSize } from '../../src/hooks/useDeviceSize';
 import { usePWAInstallStore } from '../../src/hooks/usePWAInstall';
 import { SyncBadge } from '../../src/components/SyncBadge';
 import { SparklineChart } from '../../src/components/SparklineChart';
@@ -151,10 +152,9 @@ export default function Index() {
   // scroll (~60 fps), reconstruyendo los charts SVG. El valor solo se necesita
   // al recuperar foco, así que se lee con getState() sin suscripción.
   const setScrollOffsetDashboard = useInventarioStore(s => s.setScrollOffsetDashboard);
-  const { width: screenW } = useWindowDimensions();
-  const isDesktop = screenW >= 768;
-  // BigCard outer width: on desktop it fills the content column minus margins
-  const BIG_CARD_OUTER_W = screenW - 16 * 2;
+  const { isDesktop, width: deviceWidth } = useDeviceSize();
+  // BigCard outer width: fills container width minus margins
+  const BIG_CARD_OUTER_W = deviceWidth - 16 * 2;
 
   const [refreshing, setRefreshing] = useState(false);
   const [userName,   setUserName]   = useState('');

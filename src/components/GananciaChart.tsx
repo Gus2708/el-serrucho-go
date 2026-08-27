@@ -3,15 +3,13 @@ import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { BarChart } from 'react-native-gifted-charts';
 import { useTheme } from '../theme/ThemeContext';
+import { useDeviceSize } from '../hooks/useDeviceSize';
 import type { ProfitDailyRow } from '../lib/supabase';
 
 interface Props {
   data:  ProfitDailyRow[];
   mode?: 'ganancia' | 'ingreso' | 'items';
 }
-
-const SCREEN_W = Dimensions.get('window').width;
-const CHART_W  = SCREEN_W - 32;
 
 const DAYS_ES   = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 const MONTHS_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -57,6 +55,8 @@ function formatBarDate(iso: string, totalPoints: number): string {
 
 function GananciaChartBase({ data, mode = 'ganancia' }: Props) {
   const { colors } = useTheme();
+  const { width: devWidth } = useDeviceSize();
+  const chartW = Math.max(260, devWidth - 32);
 
   // Toda la agregación (slice, peak, promedio, barData) se computa una sola vez
   // por cambio de datos/modo. El dashboard re-renderiza con frecuencia y, sin
@@ -141,7 +141,7 @@ function GananciaChartBase({ data, mode = 'ganancia' }: Props) {
 
       <BarChart
         data={barData}
-        width={CHART_W - 80}
+        width={chartW - 80}
         height={140}
         barWidth={20}
         spacing={10}
