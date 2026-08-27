@@ -3,11 +3,13 @@ import { Tabs } from 'expo-router';
 import { FloatingTabBar } from '../../src/components/FloatingTabBar';
 import { Sidebar } from '../../src/components/Sidebar';
 import { useDeviceSize } from '../../src/hooks/useDeviceSize';
+import { useDemoStore } from '../../src/demo/useDemoStore';
 import { DemoBanner } from '../../src/components/DemoBanner';
 
 export default function TabLayout() {
   const { isDesktop } = useDeviceSize();
-  const useWebSidebar = Platform.OS === 'web' && isDesktop;
+  const isDemoMode = useDemoStore((s) => s.isDemoMode);
+  const useWebSidebar = Platform.OS === 'web' && isDesktop && !isDemoMode;
 
   const tabs = (
     <Tabs

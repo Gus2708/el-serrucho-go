@@ -456,6 +456,34 @@ export default function RootLayout() {
   );
 
   if (Platform.OS === 'web') {
+    // Si estamos en un monitor/pantalla de PC y es un reclutador (modo demo o pantalla de login):
+    // Forzamos la vista mobile centrada donde la app luce con su diseño y proporciones ideales
+    const isRecruiterOnPc = isDesktop && (isDemoMode || !session);
+
+    if (isRecruiterOnPc) {
+      return (
+        <View style={{
+          flex: 1,
+          backgroundColor: '#000000',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <View style={{
+            width: '100%',
+            maxWidth: 480,
+            height: '100%',
+            backgroundColor: '#010100',
+            borderLeftWidth: 1,
+            borderRightWidth: 1,
+            borderColor: '#1e1e1e',
+            overflow: 'hidden',
+          }}>
+            {inner}
+          </View>
+        </View>
+      );
+    }
+
     // Desktop: full viewport with dark background so the area beyond
     // CONTENT_MAX_WIDTH does not flash white
     if (isDesktop) {
