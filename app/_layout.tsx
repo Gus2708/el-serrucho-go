@@ -335,11 +335,19 @@ export default function RootLayout() {
 
     // ── INICIALIZACIÓN AUTH ──
     supabase.auth.getSession()
-      .then(({ data }) => {
-        setSession(data.session);
+      .then(({ data, error }) => {
+        if (error) {
+          // Token expirado o revocado en el backend: limpiar storage local
+          supabase.auth.signOut().catch(() => {});
+          setSession(null);
+        } else {
+          setSession(data.session);
+        }
       })
       .catch((err) => {
-        console.error('Supabase initialization error:', err);
+        console.warn('Supabase initialization error (clearing dead session):', err?.message || err);
+        supabase.auth.signOut().catch(() => {});
+        setSession(null);
       })
       .finally(() => {
         setAuthReady(true);

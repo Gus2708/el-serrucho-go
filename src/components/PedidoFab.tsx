@@ -50,8 +50,6 @@ export function PedidoFab(): React.JSX.Element | null {
   const setModalOpen = usePedido(s => s.setModalOpen);
   const draftCount = usePedido(s => s.items.length);
 
-  if (!allowedToOrder) return null;
-
   // Entrada: pop de escala + opacidad al montar (nada desde scale 0).
   const enter = useSharedValue(reduced ? 1 : 0);
   useEffect(() => {
@@ -79,6 +77,8 @@ export function PedidoFab(): React.JSX.Element | null {
   const badgeStyle = useAnimatedStyle(() => ({ transform: [{ scale: badgePop.value }] }));
 
   const bottom = (Platform.OS === 'web' ? 94 : insets.bottom + 94);
+
+  if (!allowedToOrder) return null;
 
   return (
     <>
