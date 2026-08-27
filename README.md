@@ -6,6 +6,8 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 ![PWA](https://img.shields.io/badge/PWA-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)
 
+[English](README.md) · [Español](README.es.md)
+
 **El Serrucho GO** is a premium mobile dashboard for real-time inventory management and sales analytics for *Ferretería El Serrucho*. Built with a focus on performance, design quality, and robust data synchronization with an on-premise POS system.
 
 It ships as an **Android app (EAS)** and as an **installable PWA** (Vercel) that shares the same codebase via `react-native-web`.
@@ -14,7 +16,9 @@ It ships as an **Android app (EAS)** and as an **installable PWA** (Vercel) that
 
 ## Table of Contents
 
+- [Recruiter Demo Mode](#recruiter-demo-mode-zero-trust-sandbox)
 - [Key Features](#key-features)
+- [Security & Hardening](#security--hardening)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
 - [Database Architecture](#database-architecture--writeback-pipeline)
@@ -24,9 +28,21 @@ It ships as an **Android app (EAS)** and as an **installable PWA** (Vercel) that
 
 ---
 
+## Recruiter Demo Mode (Zero-Trust Sandbox)
+
+For evaluation and portfolio demonstration without requiring active credentials or touching production data:
+- **1-Click Instant Access**: Tap **"Entrar en Modo Demo"** on the login screen.
+- **Zero-Trust Client Sandbox**: All mutations (quotes, inventory adjustments, purchase orders, client/supplier directory, and stock movements) are simulated in-memory using Zustand and TanStack Query.
+- **Complete Network Isolation**: Zero write requests reach the Supabase backend during demo sessions.
+- **Realistic Dataset**: Features authentic hardware store catalog (7,650 virtual items), 24h interactive sparkline charts, daily sales bars, quotes, and audit logs.
+- **Clean Exit**: Exiting demo mode clears all in-memory caches, reset queries, and restores the pristine auth state.
+
+---
+
 ## Key Features
 | Feature | Description |
 |---|---|
+| **Recruiter Demo Mode** | Zero-trust in-memory sandbox allowing full app exploration with realistic data |
 | **Real-time Analytics** | Daily sales trends, profit summaries, and top-selling product rankings |
 | **Hybrid Writeback Engine** | Bi-directional synchronization bridging Supabase with local POS (HybridLite) via Python hardware automation (`SendInput`) |
 | **Role Approval Gates** | Three-tier security model (Admin, Super-employee, Employee) with approval workflows for stock adjustments and purchase queues |
@@ -42,6 +58,18 @@ It ships as an **Android app (EAS)** and as an **installable PWA** (Vercel) that
 | **Responsive UI** | `scaleFont` dynamic scaling, plus a desktop sidebar layout on wide web viewports |
 | **PDF Export** | Professional report generation for invoices, change orders, quotes, and inventory lists |
 | **Engram Persistent Memory** | AI Agent session context and architectural memory persistence via Engram MCP server |
+
+---
+
+## Security & Hardening
+
+El Serrucho GO enforces strict security best practices audited through a comprehensive double-pass methodology and TDD:
+- **XSS-Safe PDF Generation**: All document templates (`pdfGenerator.ts`) escape user and client inputs via `escHtml()`, preventing script injection across receipt, quote, and adjustment printing.
+- **HTTP Defense-in-Depth**: Production Vercel headers enforce `X-Frame-Options: DENY` (anti-clickjacking), `X-Content-Type-Options: nosniff` (MIME sniffing protection), strict `Referrer-Policy`, HSTS, and granular `Permissions-Policy`.
+- **Safe Protocol Execution**: External URLs are strictly checked via `isSafeHttpUrl()` / `getSafeUrlOrNull()`, blocking dangerous pseudo-protocols (`javascript:`, `data:`) from executing in browser contexts.
+- **Storage Path Traversal Protection**: Bucket file uploads are sanitized via `sanitizeStorageFileName()`, stripping directory traversal (`../`) and non-whitelisted characters.
+- **Brute Force Protection**: Client-side rate limiting (`rateLimit.ts`) enforces lockouts after repeated failed logins with generic error feedback to prevent account enumeration.
+- **PostgreSQL Row-Level Security (RLS)**: Fine-grained RLS policies on all tables, paired with `SECURITY DEFINER` RPCs for privileged actions.
 
 ---
 
@@ -220,7 +248,7 @@ npm start
 | `npm run build:apk` | EAS Android preview build |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint over `.ts` / `.tsx` |
-| `npm test` | Jest suite (`pdfStorage`, `pdfGenerator`, `retry`) |
+| `npm test` | Jest suite (8 suites, 46 tests: security, demo, pdfStorage, pdfGenerator, retry, rateLimit, safeUrl) |
 
 ---
 
@@ -228,6 +256,7 @@ npm start
 
 - **Server-state first**: React Query handles all data fetching — caching, background sync, and debounced realtime revalidation (1.5s).
 - **Hardware-Isolated Writeback**: Local backend operates an isolated instance of HybridLite using Win32 `SendInput` and hardware mutex locks (`Local\SerruchoBotMouseLock`).
+- **Zero-Trust Client Sandbox**: Recruiter Demo Mode intercepts all writes in memory without sending network mutations to the live DB.
 - **Role Approval Gate**: Employees queue stock edits as `espera_aprobacion`; Admins/Super-employees approve via SECURITY DEFINER RPCs (`aprobar_orden`).
 - **Single Active Session**: `useSessionEnforcer` pins a session id on `profiles.allowed_sid`; a newer login evicts the older device to `(auth)/kicked`.
 - **PWA Cold-Start Resilience**: the first Supabase request after the app resumes from background can fail with a transient `Failed to fetch`; `withSupabaseRetry` in `src/lib/retry.ts` wraps document-emission flows.
@@ -239,7 +268,12 @@ npm start
 
 ## Changelog
 
-### v2.5 (Current)
+### v2.6 (Current)
+- **Recruiter Demo Mode**: 1-click exploration from login screen with realistic simulated sales trends, sparklines, catalog items, and zero network writes (Zustand + TanStack sandbox).
+- **Double-Pass Security Hardening & TDD**: Complete resolution of XSS in PDF templates (`escHtml`), storage path traversal prevention (`sanitizeStorageFileName`), safe protocol URL validation (`safeUrl.ts`), brute force rate limiting on login (`rateLimit.ts`), and strict HTTP headers (`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, HSTS).
+- **Expanded Test Suite**: 8 suites and 46 unit tests passing across all security vectors, demo state, and storage logic.
+
+### v2.5
 - **Créditos split out**: the accounts-receivable ledger moved to its own app; only migrations 041–043 and `docs/CREDITOS.md` remain here as schema source of truth.
 - **Drafts & Manual Pricing**: purchases and orders can be parked and resumed (`borradores`, migration 039); per-item manual price override for orders (migration 040).
 - **Purchase Stock Compensation**: emitting a purchase now compensates pre-existing negative stock instead of stacking onto it.
