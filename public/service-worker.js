@@ -3,7 +3,7 @@
 // Strategy: Offline-First App Shell + Network-First Data
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const STATIC_CACHE  = `serrucho-static-${CACHE_VERSION}`;
 const DATA_CACHE    = `serrucho-data-${CACHE_VERSION}`;
 const FONT_CACHE    = `serrucho-fonts-${CACHE_VERSION}`;
