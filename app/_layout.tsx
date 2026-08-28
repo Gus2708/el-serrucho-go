@@ -16,6 +16,7 @@ import { supabase } from '../src/lib/supabase';
 import { clearRoleCache } from '../src/hooks/useUserRole';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
 import { elSerrucho } from '../src/theme/brands/el-serrucho';
+import { MOBILE_FRAME_WIDTH, FRAMED_BODY_CLASS, FRAME_WIDTH_CSS_VAR } from '../src/theme/layout';
 import * as Font from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { ActivityIndicator, Platform, View, useWindowDimensions, Text, Pressable } from 'react-native';
@@ -266,6 +267,22 @@ export default function RootLayout() {
 
   const activeSession = isDemoMode ? DEMO_SESSION : session;
 
+  // Marco mobile forzado en escritorio: modo demo o pantalla de login.
+  const isRecruiterOnPc = Platform.OS === 'web' && isDesktop && (isDemoMode || !session);
+
+  // Los Modal de React Native se montan en un portal colgado de <body>, fuera
+  // del marco. Marcamos el body para que el CSS de +html.tsx los recorte.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+
+    document.documentElement.style.setProperty(FRAME_WIDTH_CSS_VAR, `${MOBILE_FRAME_WIDTH}px`);
+    document.body.classList.toggle(FRAMED_BODY_CLASS, isRecruiterOnPc);
+
+    return () => {
+      document.body.classList.remove(FRAMED_BODY_CLASS);
+    };
+  }, [isRecruiterOnPc]);
+
   // PWA life-cycle and event capturing
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -457,10 +474,8 @@ export default function RootLayout() {
   );
 
   if (Platform.OS === 'web') {
-    // Si estamos en un monitor/pantalla de PC y es un reclutador (modo demo o pantalla de login):
-    // Forzamos la vista mobile centrada donde la app luce con su diseño y proporciones ideales
-    const isRecruiterOnPc = isDesktop && (isDemoMode || !session);
-
+    // Forzamos la vista mobile centrada, donde la app luce con sus proporciones
+    // ideales, para quien la abre desde un monitor de PC.
     if (isRecruiterOnPc) {
       return (
         <View style={{
@@ -471,7 +486,7 @@ export default function RootLayout() {
         }}>
           <View style={{
             width: '100%',
-            maxWidth: 480,
+            maxWidth: MOBILE_FRAME_WIDTH,
             height: '100%',
             backgroundColor: elSerrucho.colors.bg,
             borderLeftWidth: 1,

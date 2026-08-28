@@ -1,8 +1,8 @@
 import { useWindowDimensions } from 'react-native';
 import { useDemoStore } from '../demo/useDemoStore';
+import { MOBILE_FRAME_WIDTH } from '../theme/layout';
 
 const DESKTOP_BREAKPOINT = 768;
-const MOBILE_MAX_WIDTH = 480;
 
 export function useDeviceSize() {
   const { width, height } = useWindowDimensions();
@@ -10,7 +10,7 @@ export function useDeviceSize() {
 
   if (isDemoMode) {
     return {
-      width: Math.min(width, MOBILE_MAX_WIDTH),
+      width: Math.min(width, MOBILE_FRAME_WIDTH),
       height,
       isDesktop: false,
     };

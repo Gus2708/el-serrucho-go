@@ -95,6 +95,19 @@ body {
   -webkit-user-select: none !important;
 }
 
+/* Los Modal de React Native se montan en un portal colgado de <body>, así que
+   quedan fuera del marco mobile que la app fuerza en escritorio y se estiraban
+   a todo el ancho de la pantalla. Mientras ese marco está activo, el overlay
+   del modal se recorta al mismo ancho y se centra igual que el marco.
+   La clase la pone app/_layout.tsx. Se engancha en aria-modal y no en
+   role="dialog" porque React Native Web recién pone el role cuando termina la
+   animación de apertura, y hasta entonces el modal se vería a pantalla completa. */
+body.app-framed [aria-modal="true"] {
+  max-width: var(--app-frame-width, 480px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
 /* iOS standalone: fill entire screen including safe areas */
 @supports (padding: env(safe-area-inset-top)) {
   #root {
