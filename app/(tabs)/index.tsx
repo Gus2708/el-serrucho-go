@@ -153,7 +153,7 @@ export default function Index() {
   const setScrollOffsetDashboard = useInventarioStore(s => s.setScrollOffsetDashboard);
   const { isDesktop, width: deviceWidth } = useDeviceSize();
   // BigCard outer width: fills container width minus margins
-  const BIG_CARD_OUTER_W = deviceWidth - 16 * 2;
+  const BIG_CARD_OUTER_W = Math.max(260, deviceWidth - 16 * 2);
 
   const [refreshing, setRefreshing] = useState(false);
   const [userName,   setUserName]   = useState('');

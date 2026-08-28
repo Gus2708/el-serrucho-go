@@ -42,6 +42,7 @@ interface ChartModel {
 }
 
 const SCREEN_W     = Dimensions.get('window').width;
+const MIN_CHART_W  = 260;   // piso: un ancho 0 o negativo produce <svg width="-32"> y el navegador lo rechaza
 const TOP_PAD      = 14;        // padding superior — espacio para el peak label
 const BOTTOM_PAD   = 18;        // padding inferior — espacio para los time ticks (10pt)
 const LABEL_W      = 64;        // ancho del peak badge (con espacio para "$X,XXX.XX")
@@ -249,7 +250,7 @@ function buildModel(
 
 function SparklineChartBase({ data, width, height = 70, viewMode }: Props) {
   const { colors, formatUSD } = useTheme();
-  const w = width ?? SCREEN_W - 32;
+  const w = Math.max(MIN_CHART_W, width ?? SCREEN_W - 32);
 
   // ── Detección de Día No Laborable (Domingo) ──
   const isNonWorking = useMemo(() => {
