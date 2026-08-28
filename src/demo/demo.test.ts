@@ -11,6 +11,11 @@ import {
   demoAtenciones,
   demoSolicitudes,
   demoAlertasSpoof,
+  demoPagosZelle,
+  demoProveedores,
+  demoUsuarios,
+  getDemoOrdenItems,
+  demoOrdenes,
 } from './demoData';
 
 describe('Demo Mode Infrastructure', () => {
@@ -103,5 +108,22 @@ describe('Demo Mode Infrastructure', () => {
     useDemoStore.getState().enableDemo();
     expect(isDemoActive()).toBe(true);
     expect(useDemoStore.getState().isDemoMode).toBe(true);
+  });
+
+  it('exposes a valid UUID as the demo user id', () => {
+    expect(DEMO_USER_ID).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  });
+
+  it('provides fallback data for every screen that used to hit Supabase', () => {
+    expect(demoPagosZelle.length).toBeGreaterThan(0);
+    expect(demoProveedores.length).toBeGreaterThan(0);
+    expect(demoUsuarios.length).toBeGreaterThan(0);
+  });
+
+  it('returns items for each demo order and an empty list for unknown ones', () => {
+    for (const orden of demoOrdenes) {
+      expect(getDemoOrdenItems(orden.id).length).toBe(orden.item_count);
+    }
+    expect(getDemoOrdenItems(-1)).toEqual([]);
   });
 });

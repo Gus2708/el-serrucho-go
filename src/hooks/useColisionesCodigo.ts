@@ -1,6 +1,7 @@
 import { useQuery, UseQueryResult } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { withSupabaseRetry } from '../lib/retry';
+import { isDemoActive } from '../demo/useDemoStore';
 
 /**
  * Producto que HybridLite cargaría en lugar del que se pidió.
@@ -51,6 +52,8 @@ export function useColisionesCodigo(codigos: string[]): UseQueryResult<Colisione
 }
 
 export async function fetchColisionesCodigo(codigos: string[]): Promise<ColisionesMap> {
+  if (isDemoActive()) return {};
+
   const claves = [...new Set(codigos)].filter(codigo => codigo.trim().length > 0);
   const colisiones: ColisionesMap = {};
 

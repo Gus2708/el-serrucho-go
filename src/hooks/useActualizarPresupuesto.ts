@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { withSupabaseRetry } from '../lib/retry';
+import { isDemoActive } from '../demo/useDemoStore';
 
 /**
  * One editable budget line. Existing rows carry their `rowId`
@@ -38,6 +39,8 @@ async function actualizarPresupuesto({
   }
 
   const totalUsd = items.reduce((acc, it) => acc + it.cantidad * it.precio_unitario, 0);
+
+  if (isDemoActive()) return { presupuestoId, totalUsd };
 
   // 1. Delete lines the user removed.
   if (removedIds.length > 0) {

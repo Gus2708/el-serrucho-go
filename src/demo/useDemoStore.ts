@@ -3,7 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import type { Profile } from '../lib/supabase';
 
 const DEMO_STORAGE_KEY = 'serrucho_demo_mode';
-export const DEMO_USER_ID = '00000000-0000-0000-0000-00000000demo';
+export const DEMO_USER_ID = '00000000-0000-4000-8000-000000000dec';
 
 export const DEMO_PROFILE: Profile = {
   id: DEMO_USER_ID,
@@ -37,8 +37,8 @@ export const DEMO_SESSION: Session = {
 function getInitialDemoState(): boolean {
   if (typeof window !== 'undefined') {
     try {
-      const search = window.location?.search ?? '';
-      if (search.includes('demo=1') || search.includes('demo=true')) {
+      const demoParam = new URLSearchParams(window.location?.search ?? '').get('demo');
+      if (demoParam === '1' || demoParam === 'true') {
         localStorage?.setItem(DEMO_STORAGE_KEY, 'true');
         return true;
       }

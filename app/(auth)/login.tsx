@@ -35,7 +35,9 @@ export default function Login() {
 
   function handleEnterDemo() {
     enableDemo();
-    queryClient.invalidateQueries();
+    // clear() y no invalidate(): la cache persistida puede traer datos reales
+    // de una sesión anterior y alcanzaría a pintarse antes del refetch demo.
+    queryClient.clear();
     router.replace('/(tabs)');
   }
 

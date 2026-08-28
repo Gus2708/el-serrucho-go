@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
+import { getDemoOrdenItems } from '../demo/demoData';
 
 export type BackendStatus =
   | 'pendiente'
@@ -34,7 +36,7 @@ export function useOrdenCambioDetalle(ordenId: number | null) {
   // Realtime subscription: refresca el detalle y el historial cuando el
   // backend local reporta avance en ordenes_cambio_items.
   useEffect(() => {
-    if (!ordenId) return;
+    if (!ordenId || isDemoActive()) return;
 
     const channel = supabase
       .channel(`orden-items-${ordenId}`)
@@ -68,6 +70,8 @@ export function useOrdenCambioDetalle(ordenId: number | null) {
 }
 
 async function fetchOrdenCambioDetalle(ordenId: number): Promise<OrdenCambioItem[]> {
+  if (isDemoActive()) return getDemoOrdenItems(ordenId);
+
   const { data, error } = await supabase
     .from('ordenes_cambio_items')
     .select('*')
@@ -99,6 +103,8 @@ export function useReencolarItem(ordenId: number | null) {
 
   return useMutation({
     mutationFn: async (itemId: number) => {
+      if (isDemoActive()) return [];
+
       const { data, error } = await supabase
         .from('ordenes_cambio_items')
         .update({ backend_status: 'pendiente', backend_intentos: 0, backend_resultado: null })

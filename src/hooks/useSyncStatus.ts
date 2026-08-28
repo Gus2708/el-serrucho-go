@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { Platform } from 'react-native';
+import { isDemoActive } from '../demo/useDemoStore';
 
 const WIDGET_URL = process.env.EXPO_PUBLIC_WIDGET_API_URL || 'http://192.168.1.143:5000';
 
@@ -37,6 +38,10 @@ export function useSyncStatus() {
 
   const { mutate: triggerSync, isPending: isMutationPending } = useMutation({
     mutationFn: async (mode: SyncMode = 'sync_all') => {
+      if (isDemoActive()) {
+        return { via: 'demo' as const, queued: false };
+      }
+
       // On web, skip the local widget (mixed-content blocked over HTTPS)
       // and go straight to the cloud queue
       if (Platform.OS !== 'web') {
@@ -81,8 +86,9 @@ export function useSyncStatus() {
   });
 
   const forceResetSync = async () => {
+    if (isDemoActive()) return;
     if (!data?.activeCommand?.id) return;
-    
+
     const { error } = await supabase
       .from('comandos_remotos')
       .update({ status: 'error_local' })
@@ -107,6 +113,13 @@ export function useSyncStatus() {
 }
 
 async function fetchSyncStatus(): Promise<SyncStatusResult> {
+  // Demo: el widget local no existe, así que se simula una sincronización
+  // reciente. Sin esto el badge del dashboard arranca en rojo "Offline".
+  if (isDemoActive()) {
+    const lastSync = new Date(Date.now() - 4 * 60_000);
+    return { lastSync, minutesAgo: 4, activeCommand: null };
+  }
+
   // Narrow select: only the timestamp column is needed.
   // Do NOT widen this to select('*') — this query runs every 3–30 seconds.
   // 1. Obtener última actualización de productos

@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase, Profile, UserRole, NotifPrefs } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
+import { demoUsuarios } from '../demo/demoData';
 
 // ── Gestión de usuarios (solo admin) ──────────────────────────────────────────
 // Lista todos los perfiles y permite al admin cambiar rol / activación.
@@ -15,6 +17,8 @@ export function useUsuarios() {
 }
 
 async function fetchUsuarios(): Promise<Profile[]> {
+  if (isDemoActive()) return demoUsuarios;
+
   const { data, error } = await supabase
     .from('profiles')
     .select('id, role, email, display_name, is_active, notif_prefs, updated_at')
@@ -39,6 +43,8 @@ export function useUpdateUsuario() {
       is_active?: boolean;
       notif_prefs?: NotifPrefs;
     }) => {
+      if (isDemoActive()) return [{ id }];
+
       const updates: Record<string, unknown> = {};
       if (role !== undefined) updates.role = role;
       if (is_active !== undefined) updates.is_active = is_active;

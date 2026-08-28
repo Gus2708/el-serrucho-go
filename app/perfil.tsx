@@ -23,6 +23,7 @@ import { usePresupuestoConfig } from '../src/hooks/usePresupuestoConfig';
 import { usePWAInstallStore } from '../src/hooks/usePWAInstall';
 import { PressableScale } from '../src/components/PressableScale';
 import { pressScale } from '../src/theme/motion';
+import { isDemoActive, useDemoStore, DEMO_PROFILE } from '../src/demo/useDemoStore';
 
 function PWAProfileControl() {
   const { colors } = useTheme();
@@ -114,6 +115,17 @@ export default function Perfil() {
   async function fetchProfile() {
     setLoading(true);
     try {
+      if (isDemoActive()) {
+        setProfile({
+          id:           DEMO_PROFILE.id,
+          email:        DEMO_PROFILE.email ?? '',
+          display_name: DEMO_PROFILE.display_name ?? '',
+          role:         DEMO_PROFILE.role,
+        });
+        setNewName(DEMO_PROFILE.display_name ?? '');
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.replace('/(auth)/login');
@@ -150,12 +162,14 @@ export default function Perfil() {
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ display_name: newName.trim() })
-        .eq('id', profile.id);
+      if (!isDemoActive()) {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ display_name: newName.trim() })
+          .eq('id', profile.id);
 
-      if (error) throw error;
+        if (error) throw error;
+      }
       
       setProfile({ ...profile, display_name: newName.trim() });
       setIsEditing(false);
@@ -167,6 +181,13 @@ export default function Perfil() {
   }
 
   async function performLogout() {
+    if (isDemoActive()) {
+      useDemoStore.getState().disableDemo();
+      queryClient.clear();
+      router.replace('/(auth)/login');
+      return;
+    }
+
     try {
       // Liberamos el allowed_sid en la base de datos para que otros
       // dispositivos puedan iniciar sesión.

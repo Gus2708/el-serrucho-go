@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, PagoZelle } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
+import { demoPagosZelle } from '../demo/demoData';
 
 const PAGE_SIZE = 100;
 
@@ -14,6 +16,8 @@ export function usePagosZelle() {
   return useQuery({
     queryKey: ['pagos-zelle'],
     queryFn: async (): Promise<PagoZelle[]> => {
+      if (isDemoActive()) return demoPagosZelle;
+
       const { data, error } = await supabase
         .from('pagos_zelle')
         .select('*')
@@ -33,6 +37,12 @@ export function useConciliarPago() {
 
   return useMutation({
     mutationFn: async ({ id, conciliado }: { id: string; conciliado: boolean }): Promise<void> => {
+      if (isDemoActive()) {
+        const pago = demoPagosZelle.find(p => p.id === id);
+        if (pago) pago.conciliado = conciliado;
+        return;
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       const { error } = await supabase
         .from('pagos_zelle')

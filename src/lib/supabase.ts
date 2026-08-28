@@ -273,25 +273,6 @@ export type TopProductoRow = {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Retorna la fecha local en formato YYYY-MM-DD sin depender de UTC.
- */
-export function getLocalDateStr(): string {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-/**
- * Retorna la fecha local restando días en formato YYYY-MM-DD.
- */
-export function getDateDaysAgo(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
+// Definidos en ./dates (sin dependencias de React Native) y re-exportados aquí
+// para no romper los imports existentes.
+export { getLocalDateStr, getDateDaysAgo } from './dates';

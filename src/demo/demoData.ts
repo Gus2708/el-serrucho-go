@@ -1,5 +1,7 @@
+import { getDateDaysAgo, getLocalDateStr } from '../lib/dates';
 import type {
   Producto,
+  Profile,
   ProfitSummaryRow,
   ProfitDailyRow,
   ProfitHourlyRow,
@@ -7,28 +9,15 @@ import type {
   AtencionPendiente,
   SolicitudAyuda,
   AlertaZelleSpoof,
+  PagoZelle,
   VentaDetalleUSD,
 } from '../lib/supabase';
 import type { VentaHoy } from '../hooks/useVentasHoy';
 import type { Tasa } from '../hooks/useTazas';
+import type { OrdenCambioItem } from '../hooks/useOrdenCambioDetalle';
+import type { Proveedor } from '../hooks/useProveedores';
 import type { VelocidadCounts } from '../components/DonutChart';
-
-export function getLocalDateStr(): string {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-export function getDateDaysAgo(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
+import { DEMO_PROFILE, DEMO_USER_ID } from './useDemoStore';
 
 // ── Tasa de Cambio ─────────────────────────────────────────────────────────────
 export const demoTasa: Tasa = {
@@ -796,7 +785,7 @@ export const demoAlertasSpoof: AlertaZelleSpoof[] = [
 export const demoPresupuestos = [
   {
     id:                 501,
-    creado_por:         '00000000-0000-0000-0000-00000000demo',
+    creado_por:         DEMO_USER_ID,
     cliente_id:         'cli-01',
     total_usd:          1450.00,
     status:             'emitido' as const,
@@ -810,7 +799,7 @@ export const demoPresupuestos = [
   },
   {
     id:                 502,
-    creado_por:         '00000000-0000-0000-0000-00000000demo',
+    creado_por:         DEMO_USER_ID,
     cliente_id:         'cli-02',
     total_usd:          320.00,
     status:             'borrador' as const,
@@ -828,13 +817,13 @@ export const demoPresupuestos = [
 export const demoOrdenes = [
   {
     id:                 301,
-    creado_por:         '00000000-0000-0000-0000-00000000demo',
+    creado_por:         DEMO_USER_ID,
     nota:               'Ajuste por conteo físico de fin de mes (Cemento y Electrodos)',
     status:             'emitido' as const,
     pdf_url:            null,
     creado_en:          new Date(Date.now() - 120 * 60_000).toISOString(),
     aprobacion_estado:  'aprobado' as const,
-    aprobado_por:       '00000000-0000-0000-0000-00000000demo',
+    aprobado_por:       DEMO_USER_ID,
     aprobado_en:        new Date().toISOString(),
     rechazo_motivo:     null,
     item_count:         3,
@@ -842,7 +831,7 @@ export const demoOrdenes = [
   },
   {
     id:                 302,
-    creado_por:         '00000000-0000-0000-0000-00000000demo',
+    creado_por:         DEMO_USER_ID,
     nota:               'Merma por daño de embalaje en transporte',
     status:             'emitido' as const,
     pdf_url:            null,
@@ -856,3 +845,162 @@ export const demoOrdenes = [
   },
 ];
 
+
+// ── Ítems de las órdenes de ajuste (detalle del historial) ─────────────────────
+export const demoOrdenItems: Record<number, OrdenCambioItem[]> = {
+  301: [
+    {
+      id:                  9001,
+      orden_id:            301,
+      codigo_producto:     'CONS-001',
+      descripcion:         'CEMENTO GRIS TIPO I 42.5KG',
+      existencia_actual:   120,
+      nueva_existencia:    118,
+      delta:               -2,
+      nota:                'Faltante detectado en conteo físico',
+      backend_status:      'completado',
+      backend_resultado:   'Aplicado correctamente en HybridLite',
+      backend_intentos:    1,
+      backend_aplicado_en: new Date(Date.now() - 110 * 60_000).toISOString(),
+      precio_actual:       8.50,
+      nuevo_precio:        null,
+      costo:               6.10,
+    },
+    {
+      id:                  9002,
+      orden_id:            301,
+      codigo_producto:     'SOLD-002',
+      descripcion:         'ELECTRODO LINCOLN 6013 1/8"',
+      existencia_actual:   45,
+      nueva_existencia:    48,
+      delta:               3,
+      nota:                'Sobrante hallado en depósito',
+      backend_status:      'completado',
+      backend_resultado:   'Aplicado correctamente en HybridLite',
+      backend_intentos:    1,
+      backend_aplicado_en: new Date(Date.now() - 110 * 60_000).toISOString(),
+      precio_actual:       12.90,
+      nuevo_precio:        null,
+      costo:               9.40,
+    },
+    {
+      id:                  9003,
+      orden_id:            301,
+      codigo_producto:     'HERR-001',
+      descripcion:         'JUEGO DE BROCAS PARA CONCRETO 5PZ',
+      existencia_actual:   8,
+      nueva_existencia:    7,
+      delta:               -1,
+      nota:                null,
+      backend_status:      'completado',
+      backend_resultado:   'Aplicado correctamente en HybridLite',
+      backend_intentos:    1,
+      backend_aplicado_en: new Date(Date.now() - 110 * 60_000).toISOString(),
+      precio_actual:       15.75,
+      nuevo_precio:        null,
+      costo:               11.20,
+    },
+  ],
+  302: [
+    {
+      id:                  9004,
+      orden_id:            302,
+      codigo_producto:     'PLOM-003',
+      descripcion:         'TUBO PVC 1/2" X 6M',
+      existencia_actual:   60,
+      nueva_existencia:    56,
+      delta:               -4,
+      nota:                'Embalaje dañado en transporte',
+      backend_status:      'espera_aprobacion',
+      backend_resultado:   null,
+      backend_intentos:    0,
+      backend_aplicado_en: null,
+      precio_actual:       4.20,
+      nuevo_precio:        null,
+      costo:               2.95,
+    },
+  ],
+};
+
+export function getDemoOrdenItems(ordenId: number): OrdenCambioItem[] {
+  return demoOrdenItems[ordenId] ?? [];
+}
+
+// ── Proveedores (selector de Compras) ─────────────────────────────────────────
+export const demoProveedores: Proveedor[] = [
+  { codigo: 'PROV-0001', nombre: 'DISTRIBUIDORA FERRETERA NACIONAL C.A.', rif: 'J-00192847-1', telefono: '0212-9876543' },
+  { codigo: 'PROV-0002', nombre: 'ACEROS Y PERFILES DEL CENTRO C.A.',    rif: 'J-31049283-7', telefono: '0243-2334455' },
+  { codigo: 'PROV-0003', nombre: 'IMPORTADORA HERRAMIENTAS PRO',         rif: 'J-40928374-2', telefono: '0414-5566778' },
+];
+
+// ── Usuarios (pantalla de administración de roles) ────────────────────────────
+export const demoUsuarios: Profile[] = [
+  DEMO_PROFILE,
+  {
+    id:           '00000000-0000-0000-0000-0000000000a1',
+    role:         'superempleado',
+    email:        'encargado@elserrucho.com',
+    display_name: 'Encargado de Piso',
+    is_active:    true,
+    notif_prefs:  { bots: true, zelle: true, pedidos: true },
+    updated_at:   new Date(Date.now() - 3 * 86400000).toISOString(),
+  },
+  {
+    id:           '00000000-0000-0000-0000-0000000000a2',
+    role:         'empleado',
+    email:        'mostrador@elserrucho.com',
+    display_name: 'Vendedor de Mostrador',
+    is_active:    true,
+    notif_prefs:  { bots: false, zelle: false, pedidos: true },
+    updated_at:   new Date(Date.now() - 9 * 86400000).toISOString(),
+  },
+];
+
+// ── Pagos Zelle detectados por el bot de correo ───────────────────────────────
+export const demoPagosZelle: PagoZelle[] = [
+  {
+    id:             'demo-pago-1',
+    message_id:     'demo-msg-1',
+    monto:          145.00,
+    remitente:      'MARIA GONZALEZ',
+    banco:          'Bank of America',
+    asunto:         'You received $145.00 from MARIA GONZALEZ',
+    cuerpo_snippet: 'MARIA GONZALEZ sent you $145.00 with Zelle',
+    raw_parse_ok:   true,
+    estado:         'recibido',
+    recibido_en:    new Date(Date.now() - 25 * 60_000).toISOString(),
+    procesado_en:   new Date(Date.now() - 24 * 60_000).toISOString(),
+    conciliado:     false,
+    conciliado_por: null,
+  },
+  {
+    id:             'demo-pago-2',
+    message_id:     'demo-msg-2',
+    monto:          82.50,
+    remitente:      'JOSE RAMIREZ',
+    banco:          'Chase',
+    asunto:         'You received $82.50 from JOSE RAMIREZ',
+    cuerpo_snippet: 'JOSE RAMIREZ sent you $82.50 with Zelle',
+    raw_parse_ok:   true,
+    estado:         'recibido',
+    recibido_en:    new Date(Date.now() - 180 * 60_000).toISOString(),
+    procesado_en:   new Date(Date.now() - 179 * 60_000).toISOString(),
+    conciliado:     true,
+    conciliado_por: DEMO_USER_ID,
+  },
+  {
+    id:             'demo-pago-3',
+    message_id:     'demo-msg-3',
+    monto:          null,
+    remitente:      null,
+    banco:          null,
+    asunto:         'Zelle payment notification',
+    cuerpo_snippet: 'No se pudo extraer el monto automáticamente',
+    raw_parse_ok:   false,
+    estado:         'en_revision',
+    recibido_en:    new Date(Date.now() - 400 * 60_000).toISOString(),
+    procesado_en:   new Date(Date.now() - 399 * 60_000).toISOString(),
+    conciliado:     false,
+    conciliado_por: null,
+  },
+];

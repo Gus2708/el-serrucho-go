@@ -1,6 +1,8 @@
 import { useQuery, UseQueryResult } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { withSupabaseRetry } from '../lib/retry';
+import { isDemoActive } from '../demo/useDemoStore';
+import { demoProductos } from '../demo/demoData';
 
 /** Existencia actual por codigo_interno. Códigos sin fila quedan fuera del mapa. */
 export type ExistenciasMap = Record<string, number>;
@@ -35,6 +37,14 @@ export function useExistencias(codigos: string[]): UseQueryResult<ExistenciasMap
 export async function fetchExistencias(codigos: string[]): Promise<ExistenciasMap> {
   const claves = [...new Set(codigos)];
   const existencias: ExistenciasMap = {};
+
+  if (isDemoActive()) {
+    for (const clave of claves) {
+      const producto = demoProductos.find(p => p.codigo_interno === clave);
+      existencias[clave] = producto ? Number(producto.existencia) || 0 : 0;
+    }
+    return existencias;
+  }
 
   for (let i = 0; i < claves.length; i += CHUNK_SIZE) {
     const tanda = claves.slice(i, i + CHUNK_SIZE);

@@ -1,5 +1,7 @@
 import { useQuery, UseQueryResult } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
+import { demoProveedores } from '../demo/demoData';
 
 export interface Proveedor {
   codigo:   string;
@@ -17,6 +19,8 @@ export function useProveedores(): UseQueryResult<Proveedor[], Error> {
 }
 
 async function fetchProveedores(): Promise<Proveedor[]> {
+  if (isDemoActive()) return demoProveedores;
+
   const { data, error } = await supabase
     .from('proveedores')
     .select('codigo, nombre, rif, telefono')
