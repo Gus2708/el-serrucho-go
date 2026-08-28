@@ -1,6 +1,8 @@
 import { useEffect, useMemo } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, Producto } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
+import { demoProductos } from '../demo/demoData';
 
 export type StockFilter = 'todos' | 'sin_stock' | 'stock_bajo' | 'margen_negativo';
 
@@ -56,9 +58,6 @@ export function isPlaceholder(p: Producto): boolean {
   const desc = p.descripcion?.trim() ?? '';
   return /^[.\s]+$/.test(desc) || desc.length <= 2;
 }
-
-import { isDemoActive } from '../demo/useDemoStore';
-import { demoProductos } from '../demo/demoData';
 
 async function fetchProductos(
   search: string,

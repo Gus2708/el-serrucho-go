@@ -636,7 +636,6 @@ export default function ProductoDetail() {
                     setIsSaving(true);
 
                     if (isDemoActive()) {
-                      producto.existencia = finalQty;
                       queryClient.setQueryData(['producto', id], { ...producto, existencia: finalQty });
                       queryClient.invalidateQueries({ queryKey: ['productos'] });
                       setIsSaving(false);
@@ -984,8 +983,6 @@ export default function ProductoDetail() {
                     setIsSavingPrice(true);
 
                     if (isDemoActive()) {
-                      producto.precio_venta = finalPrice;
-                      producto.costo = finalCost;
                       queryClient.setQueryData(['producto', id], { ...producto, precio_venta: finalPrice, costo: finalCost });
                       queryClient.invalidateQueries({ queryKey: ['productos'] });
                       setIsSavingPrice(false);
@@ -1239,8 +1236,6 @@ export default function ProductoDetail() {
                   setIsSavingEdit(true);
 
                   if (isDemoActive()) {
-                    if (descChanged) producto.descripcion = descTrim;
-                    if (refChanged) producto.referencia = refTrim;
                     queryClient.setQueryData(['producto', id], { ...producto, descripcion: descTrim, referencia: refTrim });
                     queryClient.invalidateQueries({ queryKey: ['productos'] });
                     setIsSavingEdit(false);

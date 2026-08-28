@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Platform } from 'react-native';
 import { supabase, Profile, UserRole } from '../lib/supabase';
+import { isDemoActive, DEMO_USER_ID, DEMO_PROFILE } from '../demo/useDemoStore';
 
 // ── Offline cache for user role (Web/PWA only) ────────────────────────────────
 const ROLE_CACHE_KEY    = 'serrucho:user-role';
@@ -60,14 +61,12 @@ function isOffline(): boolean {
   return typeof navigator !== 'undefined' && !navigator.onLine;
 }
 
-import { isDemoActive, DEMO_USER_ID, DEMO_PROFILE } from '../demo/useDemoStore';
-
 export function useUserRole(userId?: string) {
   return useQuery({
     queryKey: ['user-role', userId],
     queryFn: async () => {
       let activeId = userId;
-      
+
       if (isDemoActive() || activeId === DEMO_USER_ID) {
         return { role: 'admin' as const, is_active: true, profile: DEMO_PROFILE };
       }
@@ -75,10 +74,6 @@ export function useUserRole(userId?: string) {
       if (!activeId) {
         const { data: { session } } = await supabase.auth.getSession();
         activeId = session?.user?.id;
-      }
-
-      if (isDemoActive() || activeId === DEMO_USER_ID) {
-        return { role: 'admin' as const, is_active: true, profile: DEMO_PROFILE };
       }
 
       if (!activeId) {

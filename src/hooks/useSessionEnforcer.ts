@@ -3,6 +3,7 @@ import { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { notify } from '../lib/notify';
 import { useRouter } from 'expo-router';
+import { isDemoActive, DEMO_USER_ID } from '../demo/useDemoStore';
 
 function decodeJwtSid(accessToken: string | undefined | null): string | null {
   if (!accessToken) return null;
@@ -36,8 +37,6 @@ function notifyKicked() {
  *  3. Suscribe Realtime al propio row de profiles: si `allowed_sid` cambia y
  *     ya no coincide con nuestro sid → signOut + alerta.
  */
-import { isDemoActive, DEMO_USER_ID } from '../demo/useDemoStore';
-
 export function useSessionEnforcer(session: Session | null) {
   const claimedSidRef = useRef<string | null>(null);
   const router = useRouter();

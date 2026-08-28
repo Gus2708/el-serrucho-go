@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { playNotificationSound, showLocalNotification, playSecurityAlertSound } from '../utils/notifications';
+import { isDemoActive } from '../demo/useDemoStore';
 
 /**
  * Hook global que centraliza todas las suscripciones de Realtime.
@@ -17,8 +18,6 @@ import { playNotificationSound, showLocalNotification, playSecurityAlertSound } 
  *     resto — es la notificación más crítica del sistema (seguridad, no conveniencia) y
  *     no puede arriesgarse a perderse por compartir canal con otras 3 suscripciones.
  */
-import { isDemoActive } from '../demo/useDemoStore';
-
 export function useRealtimeSync() {
   const queryClient = useQueryClient();
 

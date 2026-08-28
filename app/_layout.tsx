@@ -15,6 +15,7 @@ import { Session } from '@supabase/supabase-js';
 import { supabase } from '../src/lib/supabase';
 import { clearRoleCache } from '../src/hooks/useUserRole';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
+import { elSerrucho } from '../src/theme/brands/el-serrucho';
 import * as Font from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { ActivityIndicator, Platform, View, useWindowDimensions, Text, Pressable } from 'react-native';
@@ -472,10 +473,10 @@ export default function RootLayout() {
             width: '100%',
             maxWidth: 480,
             height: '100%',
-            backgroundColor: '#010100',
+            backgroundColor: elSerrucho.colors.bg,
             borderLeftWidth: 1,
             borderRightWidth: 1,
-            borderColor: '#1e1e1e',
+            borderColor: elSerrucho.colors.surfaceAlt,
             overflow: 'hidden',
           }}>
             {inner}

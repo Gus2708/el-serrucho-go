@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 import * as Notifications from 'expo-notifications';
+import { isDemoActive } from '../demo/useDemoStore';
 
 // ── Web Push (VAPID) ──────────────────────────────────────────────────────────
 
@@ -139,8 +140,6 @@ async function subscribeNative(): Promise<void> {
  * - Web/PWA: subscribes via Web Push (VAPID) only if permission is already granted.
  * - Native Android: requests permission via expo-notifications and registers FCM token.
  */
-import { isDemoActive } from '../demo/useDemoStore';
-
 export function usePushNotifications(): void {
   useEffect(() => {
     if (isDemoActive()) return;

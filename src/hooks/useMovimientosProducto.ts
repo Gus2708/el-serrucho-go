@@ -1,5 +1,6 @@
 import { useQuery, UseQueryResult } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { isDemoActive } from '../demo/useDemoStore';
 
 export interface MovimientoProducto {
   id:              string;
@@ -53,8 +54,6 @@ export function useMovimientosProducto(codigoProducto: string): UseQueryResult<M
     staleTime: 30_000,
   });
 }
-
-import { isDemoActive } from '../demo/useDemoStore';
 
 /**
  * Obtiene las ventas y los ajustes de stock del producto, los unifica y ordena.

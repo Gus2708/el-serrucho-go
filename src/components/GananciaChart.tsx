@@ -1,6 +1,6 @@
 import { scaleFont } from '../theme/responsive';
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { BarChart } from 'react-native-gifted-charts';
 import { useTheme } from '../theme/ThemeContext';
 import { useDeviceSize } from '../hooks/useDeviceSize';

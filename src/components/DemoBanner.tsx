@@ -6,7 +6,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useDemoStore } from '../demo/useDemoStore';
 import { useTheme } from '../theme/ThemeContext';
 import { scaleFont } from '../theme/responsive';
-import { useDeviceSize } from '../hooks/useDeviceSize';
 import { clearRoleCache } from '../hooks/useUserRole';
 
 export function DemoBanner() {
@@ -15,7 +14,6 @@ export function DemoBanner() {
   const { colors } = useTheme();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { isDesktop } = useDeviceSize();
 
   if (!isDemoMode) return null;
 
@@ -31,27 +29,19 @@ export function DemoBanner() {
       style={[
         styles.container,
         {
-          backgroundColor: '#16140c',
+          backgroundColor: colors.primaryFaded,
           borderBottomColor: colors.primary + '55',
         },
       ]}
     >
       <View style={styles.content}>
-        <View style={styles.badge}>
+        <View style={[styles.badge, { backgroundColor: colors.primary + '26' }]}>
           <Feather name="zap" size={12} color={colors.primary} />
           <Text style={[styles.badgeText, { color: colors.primary }]}>MODO DEMO</Text>
         </View>
 
-        <Text
-          style={[
-            styles.title,
-            { color: colors.textMuted },
-          ]}
-          numberOfLines={1}
-        >
-          {isDesktop
-            ? 'Exploración para Reclutadores · Datos simulados en memoria'
-            : 'Reclutadores · Datos simulados'}
+        <Text style={[styles.title, { color: colors.textMuted }]} numberOfLines={1}>
+          Reclutadores · Datos simulados en memoria
         </Text>
       </View>
 
@@ -61,12 +51,12 @@ export function DemoBanner() {
           styles.exitBtn,
           {
             borderColor: colors.border,
-            backgroundColor: pressed ? '#222' : '#1a1a1a',
+            backgroundColor: pressed ? colors.border : colors.surfaceAlt,
           },
         ]}
       >
-        <Feather name="log-out" size={12} color="#f87171" style={{ marginRight: 5 }} />
-        <Text style={styles.exitText}>Salir de demo</Text>
+        <Feather name="log-out" size={12} color={colors.danger} style={{ marginRight: 5 }} />
+        <Text style={[styles.exitText, { color: colors.danger }]}>Salir de demo</Text>
       </Pressable>
     </View>
   );
@@ -92,7 +82,6 @@ const styles = StyleSheet.create({
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(245, 178, 0, 0.15)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
@@ -118,7 +107,6 @@ const styles = StyleSheet.create({
   },
   exitText: {
     fontSize: scaleFont(11),
-    color: '#f87171',
     fontFamily: 'JetBrainsMono_500Medium',
   },
 });

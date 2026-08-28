@@ -11,7 +11,6 @@ import {
   Pressable,
   RefreshControl,
   ActivityIndicator,
-  useWindowDimensions,
   Platform,
 } from 'react-native';
 
