@@ -62,36 +62,9 @@ const LABEL_OFFSET = 16;        // separación visual entre label y dot
  * de gifted-charts en cada render del dashboard (p. ej. durante el scroll).
  */
 
-/** Extrae de forma segura la hora como entero (0–23) desde timestamps ISO, "HH:MM", cadenas numéricas o números. */
-export function parseHour(hora: unknown): number {
-  if (typeof hora === 'number') {
-    return isNaN(hora) ? 0 : Math.max(0, Math.min(23, Math.floor(hora)));
-  }
-  if (!hora || typeof hora !== 'string') return 0;
-  const trimmed = hora.trim();
-  if (/^\d{1,2}$/.test(trimmed)) {
-    const val = parseInt(trimmed, 10);
-    return isNaN(val) ? 0 : Math.max(0, Math.min(23, val));
-  }
-  const tMatch = trimmed.match(/[T ](\d{1,2}):/);
-  if (tMatch) {
-    const val = parseInt(tMatch[1], 10);
-    return isNaN(val) ? 0 : Math.max(0, Math.min(23, val));
-  }
-  const colonMatch = trimmed.match(/^(\d{1,2}):/);
-  if (colonMatch) {
-    const val = parseInt(colonMatch[1], 10);
-    return isNaN(val) ? 0 : Math.max(0, Math.min(23, val));
-  }
-  const d = new Date(trimmed);
-  const h = d.getHours();
-  return isNaN(h) ? 0 : h;
-}
-
 /** Formato compacto de hora local (12-h con sufijo a/p). */
 function formatHour(hour: number): string {
-  if (isNaN(hour)) return '12a';
-  if (hour === 0 || hour === 24) return '12a';
+  if (hour === 0)  return '12a';
   if (hour === 12) return '12p';
   if (hour < 12)   return `${hour}a`;
   return `${hour - 12}p`;
@@ -164,13 +137,13 @@ function buildModel(
   const subgridYs = [drawH * 0.25, drawH * 0.5, drawH * 0.75];
 
   // ── Detección de datos horarios + posición del receso 1pm–2pm ──
-  const isHourly = data.length > 0 && 'hora' in (data[0] as any);
+  const isHourly = 'hora' in (data[0] as any);
   let lunchStartX = -1;
   let lunchEndX   = -1;
   if (isHourly) {
     let idx13 = -1, idx14 = -1;
     data.forEach((d, i) => {
-      const hour = parseHour((d as any).hora);
+      const hour = new Date((d as any).hora).getHours();
       if (hour === 13 && idx13 === -1) idx13 = i;
       if (hour === 14 && idx14 === -1) idx14 = i;
     });
@@ -184,47 +157,49 @@ function buildModel(
   const lunchCenter = hasLunch ? lunchStartX + lunchWidth / 2 : 0;
 
   // ── Time ticks ── (hora para datos horarios, día para diario)
-  const isDaily = !isHourly && data.length > 0 && 'dia' in (data[0] as any);
+  const isDaily = !isHourly && 'dia' in (data[0] as any);
   const ticks: Tick[] = [];
-  const tickWidth = isDaily ? 38 : 28;
 
-  if (isHourly && data.length > 1) {
-    // 5 hitos canónicos limpios a lo largo de las 24 horas: 12a, 6a, 12p, 6p, 11p
-    const milestoneHours = [0, 6, 12, 18, 23];
-    milestoneHours.forEach((targetH) => {
-      const idx = data.findIndex((d) => parseHour((d as any).hora) === targetH);
-      if (idx !== -1) {
-        ticks.push({
-          idx,
-          label: formatHour(targetH),
-          x: idx * spacing,
-        });
+  // Width de cada label (en 10pt): horas son cortas ("8a"), días más largos ("Lun 4").
+  const tickWidth = isDaily ? 38 : 22; // Un poco más estrechos para que quepan más
+
+  if ((isHourly || isDaily) && data.length > 1) {
+    // Calculamos cuántos ticks caben sin solaparse (basado en tickWidth + margen)
+    const target = isDaily && data.length <= 8
+      ? data.length
+      : Math.max(4, Math.floor(w / (tickWidth * 1.5))); // Más aire entre etiquetas
+
+    const minGap = Math.ceil((tickWidth * 1.3) / spacing); // Gap mínimo en índices para evitar solapamiento visual
+    const indices: number[] = [0];
+    let lastAdded = 0;
+
+    const step = Math.max(1, Math.floor(data.length / (target - 1)));
+
+    // Recorremos los datos buscando puntos que respeten el minGap
+    for (let i = step; i < data.length - 1; i += step) {
+      // Solo agregamos si hay espacio suficiente con el anterior Y con el que será el último
+      if (i - lastAdded >= minGap && (data.length - 1 - i) >= minGap) {
+        indices.push(i);
+        lastAdded = i;
       }
-    });
-  } else if (isDaily && data.length > 1) {
-    if (data.length <= 8) {
-      // Vista semanal: cada día
-      data.forEach((d, idx) => {
-        ticks.push({
-          idx,
-          label: formatDay((d as any).dia, data.length),
-          x: idx * spacing,
-        });
-      });
-    } else {
-      // Vista mensual (30 días): 5 marcas uniformes
-      const step = Math.floor((data.length - 1) / 4);
-      const sampleIndices = [0, step, step * 2, step * 3, data.length - 1];
-      sampleIndices.forEach((idx) => {
-        if (data[idx]) {
-          ticks.push({
-            idx,
-            label: formatDay((data[idx] as any).dia, data.length),
-            x: idx * spacing,
-          });
-        }
-      });
     }
+
+    // El último siempre es prioritario para cerrar el rango temporal
+    if (data.length > 1 && !indices.includes(data.length - 1)) {
+      // Si el último que agregamos está muy cerca del final, lo quitamos para que el final no se amontone
+      if (data.length - 1 - lastAdded < minGap && indices.length > 1) {
+        indices.pop();
+      }
+      indices.push(data.length - 1);
+    }
+
+    indices.sort((a, b) => a - b).forEach(idx => {
+      const item = data[idx] as any;
+      const label = isHourly
+        ? formatHour(new Date(item.hora).getHours())
+        : formatDay(item.dia, data.length);
+      ticks.push({ idx, label, x: idx * spacing });
+    });
   }
 
   return {
@@ -253,19 +228,16 @@ function SparklineChartBase({ data, width, height = 70, viewMode }: Props) {
   const w = Math.max(MIN_CHART_W, width ?? SCREEN_W - 32);
 
   // ── Detección de Día No Laborable (Domingo) ──
+  // Intentamos detectarlo por datos primero, y si no hay datos, por el viewMode
   const isNonWorking = useMemo(() => {
+    if (data && data.length > 0 && 'hora' in data[0]) {
+      return new Date((data[0] as any).hora).getDay() === 0;
+    }
     if (viewMode === 'dia') return new Date().getDay() === 0;
     if (viewMode === 'ayer') {
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
       return yesterday.getDay() === 0;
-    }
-    if (data && data.length > 0 && 'hora' in data[0]) {
-      const horaVal = (data[0] as any).hora;
-      if (typeof horaVal === 'string' && horaVal.includes('-')) {
-        const d = new Date(horaVal);
-        return !isNaN(d.getTime()) && d.getDay() === 0;
-      }
     }
     return false;
   }, [data, viewMode]);
@@ -357,10 +329,10 @@ function SparklineChartBase({ data, width, height = 70, viewMode }: Props) {
 
           // ── Línea ──
           color={colors.primary}
-          thickness={2.5}
+          thickness={2}
           curved
-          curveType={CurveType.CUBIC}
-          curvature={0.2}
+          curveType={CurveType.QUADRATIC}
+          curvature={0.08}
           isAnimated={false}
 
           // ── Spacing ──
