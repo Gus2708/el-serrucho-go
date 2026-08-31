@@ -403,7 +403,7 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
 
         </View>
 
-        <View style={{ height: 180 }} />
+        <View style={{ height: items.length > 0 ? 220 : 40 }} />
       </ScrollView>
 
       {/* Submit bar */}
@@ -420,43 +420,58 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
             isDesktop && styles.submitBarWeb,
           ]}
         >
-          <View style={styles.submitInfo}>
-            <Text style={[styles.submitCount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
-              {items.length} ítem{items.length > 1 ? 's' : ''} · {formatUSD(total)}
-            </Text>
-            <View style={styles.secondaryActions}>
-              <PressableScale onPress={() => setBorradorModalVisible(true)} hitSlop={6}>
-                <Text style={[styles.saveDraftText, { color: colors.primary }]} numberOfLines={1}>
-                  {borradorId !== null ? 'Actualizar borrador' : 'Guardar borrador'}
-                </Text>
-              </PressableScale>
-              <PressableScale onPress={() => confirm({ title: 'Limpiar compra', message: 'Se perderán los ítems agregados.', confirmText: 'Limpiar', destructive: true, onConfirm: clear })} hitSlop={6}>
-                <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1}>
-                  Limpiar
-                </Text>
-              </PressableScale>
+          <View style={styles.submitTopRow}>
+            <View style={styles.submitInfo}>
+              <Text
+                style={[styles.submitCount, { color: colors.text }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                {items.length} ítem{items.length > 1 ? 's' : ''} · {formatUSD(total)}
+              </Text>
             </View>
+            <PressableScale
+              style={[
+                styles.submitBtn,
+                { backgroundColor: colors.primary },
+              ]}
+              dimmed={!canSubmit}
+              onPress={handleSubmit}
+              disabled={!canSubmit}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={colors.onPrimary} />
+              ) : (
+                <>
+                  <Feather name={editingCompraId !== null ? 'rotate-cw' : 'send'} size={16} color={colors.onPrimary} />
+                  <Text style={[styles.submitBtnText, { color: colors.onPrimary }]} numberOfLines={1} adjustsFontSizeToFit>
+                    {editingCompraId !== null ? 'Reintentar compra' : 'Emitir compra'}
+                  </Text>
+                </>
+              )}
+            </PressableScale>
           </View>
-          <PressableScale
-            style={[
-              styles.submitBtn,
-              { backgroundColor: colors.primary },
-            ]}
-            dimmed={!canSubmit}
-            onPress={handleSubmit}
-            disabled={!canSubmit}
-          >
-            {isLoading ? (
-              <ActivityIndicator color={colors.onPrimary} />
-            ) : (
-              <>
-                <Feather name={editingCompraId !== null ? 'rotate-cw' : 'send'} size={16} color={colors.onPrimary} />
-                <Text style={[styles.submitBtnText, { color: colors.onPrimary }]} numberOfLines={1} adjustsFontSizeToFit>
-                  {editingCompraId !== null ? 'Reintentar compra' : 'Emitir compra'}
-                </Text>
-              </>
-            )}
-          </PressableScale>
+
+          {/* Acciones secundarias en su propia fila: separadas y protegidas contra desbordamiento */}
+          <View style={[styles.secondaryActions, { borderTopColor: colors.border }]}>
+            <PressableScale onPress={() => setBorradorModalVisible(true)} hitSlop={10} style={styles.secondaryBtn}>
+              <Feather name="bookmark" size={12} color={colors.primary} />
+              <Text style={[styles.saveDraftText, { color: colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
+                {borradorId !== null ? 'Actualizar borrador' : 'Guardar borrador'}
+              </Text>
+            </PressableScale>
+            <PressableScale
+              onPress={() => confirm({ title: 'Limpiar compra', message: 'Se perderán los ítems agregados.', confirmText: 'Limpiar', destructive: true, onConfirm: clear })}
+              hitSlop={10}
+              style={styles.secondaryBtn}
+            >
+              <Feather name="trash-2" size={12} color={colors.danger} />
+              <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
+                Limpiar
+              </Text>
+            </PressableScale>
+          </View>
         </View>
       )}
 
@@ -1463,13 +1478,11 @@ const styles = StyleSheet.create({
     bottom:            100,
     left:              16,
     right:             16,
-    flexDirection:     'row',
-    alignItems:        'center',
-    justifyContent:    'space-between',
     borderRadius:      16,
     borderWidth:       0.5,
-    padding:           16,
-    gap:               12,
+    paddingHorizontal: 16,
+    paddingTop:        14,
+    paddingBottom:     4,
   },
   submitBarWeb: {
     position:         'relative',
@@ -1480,18 +1493,39 @@ const styles = StyleSheet.create({
     marginBottom:     16,
     marginTop:        8,
   },
-  submitInfo:  { flex: 1, gap: 2 },
+  submitTopRow: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+    gap:            12,
+  },
+  submitInfo:  { flex: 1, minWidth: 0, gap: 2 },
   submitCount: { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
-  secondaryActions: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 },
+  secondaryActions: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+    borderTopWidth: 0.5,
+    marginTop:      10,
+  },
+  secondaryBtn: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           6,
+    height:        40,
+    paddingRight:  4,
+  },
   saveDraftText: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold' },
-  clearText:   { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular' },
+  clearText:   { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold' },
   submitBtn: {
     flexDirection:     'row',
     alignItems:        'center',
+    justifyContent:    'center',
     gap:               8,
     borderRadius:      12,
-    paddingVertical:   12,
-    paddingHorizontal: 20,
+    height:            48,
+    paddingHorizontal: 18,
+    minWidth:          112,
   },
   submitBtnText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
 

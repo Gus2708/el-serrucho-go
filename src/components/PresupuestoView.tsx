@@ -624,7 +624,7 @@ const styles = StyleSheet.create({
       boxShadow: '0 -2px 12px rgba(0,0,0,0.4)',
     } : {}),
   } as any,
-  submitInfo: { flex: 1, gap: 2 },
+  submitInfo: { flex: 1, minWidth: 0, gap: 2 },
   submitCount: { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
   clearText: { fontSize: scaleFont(12), marginTop: 2, fontFamily: 'JetBrainsMono_400Regular' },
   submitBtn: {

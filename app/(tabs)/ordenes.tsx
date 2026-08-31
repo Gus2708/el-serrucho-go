@@ -1630,7 +1630,7 @@ const styles = StyleSheet.create({
     padding:           16,
     gap:               12,
   },
-  submitInfo:    { flex: 1, gap: 2 },
+  submitInfo:    { flex: 1, minWidth: 0, gap: 2 },
   submitCount:   { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
   clearText:     { fontSize: scaleFont(12), marginTop: 2, fontFamily: 'JetBrainsMono_400Regular' },
   submitBtn: {
