@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
+import { withSupabaseRetry } from '../lib/retry';
 import { fetchExistencias, faltantePorNegativo } from './useExistencias';
 import { fetchColisionesCodigo, describirColision, ColisionesMap } from './useColisionesCodigo';
 import { isDemoActive } from '../demo/useDemoStore';
@@ -164,32 +165,37 @@ export const useCompra = create<CompraStore>()((set, get) => ({
       let compraId: number;
 
       if (borradorId === null) {
-        const { data, error } = await supabase
-          .from('compras_app')
-          .insert({ ...cabecera, creado_por: userId })
-          .select('id')
-          .single();
+        const { data, error } = await withSupabaseRetry(
+          () =>
+            supabase
+              .from('compras_app')
+              .insert({ ...cabecera, creado_por: userId })
+              .select('id')
+              .single(),
+          { retries: 1 }
+        );
         if (error || !data) throw error ?? new Error('No compra id');
         compraId = data.id;
       } else {
         compraId = borradorId;
 
-        const { error: updateError } = await supabase
-          .from('compras_app')
-          .update(cabecera)
-          .eq('id', borradorId);
+        const { error: updateError } = await withSupabaseRetry(
+          () => supabase.from('compras_app').update(cabecera).eq('id', borradorId),
+          { retries: 1 }
+        );
         if (updateError) throw updateError;
 
-        const { error: deleteItemsError } = await supabase
-          .from('compras_app_items')
-          .delete()
-          .eq('compra_id', borradorId);
+        const { error: deleteItemsError } = await withSupabaseRetry(
+          () => supabase.from('compras_app_items').delete().eq('compra_id', borradorId),
+          { retries: 1 }
+        );
         if (deleteItemsError) throw deleteItemsError;
       }
 
-      const { error: itemsError } = await supabase
-        .from('compras_app_items')
-        .insert(buildItemRows(compraId, items));
+      const { error: itemsError } = await withSupabaseRetry(
+        () => supabase.from('compras_app_items').insert(buildItemRows(compraId, items)),
+        { retries: 1 }
+      );
       if (itemsError) throw itemsError;
 
       set({ isLoading: false, borradorId: compraId, titulo: nombre });
@@ -255,32 +261,44 @@ export const useCompra = create<CompraStore>()((set, get) => ({
 
     if (existingId !== null) {
       try {
-        const { error: updateError } = await supabase
-          .from('compras_app')
-          .update({
-            proveedor_codigo:    proveedorCodigo,
-            proveedor_nombre:    proveedorNombre,
-            nota:                nota || null,
-            numero_documento:    numeroDocumento.trim() || null,
-            status:              'emitido',
-            backend_status:      'pendiente',
-            backend_resultado:   null,
-            backend_intentos:    0,
-            backend_aplicado_en: null,
-          })
-          .eq('id', existingId);
-        if (updateError) throw updateError;
-
-        const { error: deleteItemsError } = await supabase
-          .from('compras_app_items')
-          .delete()
-          .eq('compra_id', existingId);
+        // 1. Reemplazar los items primero, antes de marcar como emitido,
+        // para que el listener jamás vea una compra con 0 items.
+        const { error: deleteItemsError } = await withSupabaseRetry(
+          () =>
+            supabase
+              .from('compras_app_items')
+              .delete()
+              .eq('compra_id', existingId),
+          { retries: 1 }
+        );
         if (deleteItemsError) throw deleteItemsError;
 
-        const { error: itemsError } = await supabase
-          .from('compras_app_items')
-          .insert(buildItemRows(existingId, itemsAEnviar));
+        const { error: itemsError } = await withSupabaseRetry(
+          () => supabase.from('compras_app_items').insert(buildItemRows(existingId, itemsAEnviar)),
+          { retries: 1 }
+        );
         if (itemsError) throw itemsError;
+
+        // 2. Solo tras garantizar los items, activamos status='emitido'
+        const { error: updateError } = await withSupabaseRetry(
+          () =>
+            supabase
+              .from('compras_app')
+              .update({
+                proveedor_codigo:    proveedorCodigo,
+                proveedor_nombre:    proveedorNombre,
+                nota:                nota || null,
+                numero_documento:    numeroDocumento.trim() || null,
+                status:              'emitido',
+                backend_status:      'pendiente',
+                backend_resultado:   null,
+                backend_intentos:    0,
+                backend_aplicado_en: null,
+              })
+              .eq('id', existingId),
+          { retries: 1 }
+        );
+        if (updateError) throw updateError;
 
         set({ isLoading: false });
         return { compraId: existingId };
@@ -293,29 +311,50 @@ export const useCompra = create<CompraStore>()((set, get) => ({
     let createdCompraId: number | null = null;
 
     try {
-      // 1. Create the compra header
-      const { data: compra, error: compraError } = await supabase
-        .from('compras_app')
-        .insert({
-          creado_por:       userId,
-          proveedor_codigo: proveedorCodigo,
-          proveedor_nombre: proveedorNombre,
-          nota:              nota || null,
-          numero_documento:  numeroDocumento.trim() || null,   // vacío -> el backend usa el id de la compra
-          status:            'emitido',
-        })
-        .select('id')
-        .single();
+      // 1. Crear cabecera en status='borrador' para que el listener NO la procese
+      // hasta que todos los items hayan sido confirmados en Supabase.
+      const { data: compra, error: compraError } = await withSupabaseRetry(
+        () =>
+          supabase
+            .from('compras_app')
+            .insert({
+              creado_por:       userId,
+              proveedor_codigo: proveedorCodigo,
+              proveedor_nombre: proveedorNombre,
+              nota:              nota || null,
+              numero_documento:  numeroDocumento.trim() || null,   // vacío -> el backend usa el id de la compra
+              status:            'borrador',
+            })
+            .select('id')
+            .single(),
+        { retries: 1 }
+      );
 
       if (compraError || !compra) throw compraError ?? new Error('No compra id');
       createdCompraId = compra.id;
 
-      // 2. Insert all items
-      const { error: itemsError } = await supabase
-        .from('compras_app_items')
-        .insert(buildItemRows(compra.id, itemsAEnviar));
+      // 2. Insertar todos los items
+      const { error: itemsError } = await withSupabaseRetry(
+        () => supabase.from('compras_app_items').insert(buildItemRows(compra.id, itemsAEnviar)),
+        { retries: 1 }
+      );
 
       if (itemsError) throw itemsError;
+
+      // 3. Activar status='emitido' ahora que los items están garantizados
+      const { error: emitError } = await withSupabaseRetry(
+        () =>
+          supabase
+            .from('compras_app')
+            .update({
+              status:         'emitido',
+              backend_status: 'pendiente',
+            })
+            .eq('id', compra.id),
+        { retries: 1 }
+      );
+
+      if (emitError) throw emitError;
 
       set({ isLoading: false });
       return { compraId: compra.id };

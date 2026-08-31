@@ -288,6 +288,25 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
 
     if (existingId !== null) {
       try {
+        // 1. Reemplazar los items primero, antes de marcar como emitido,
+        // para que el listener jamás vea un pedido con 0 items.
+        const { error: deleteItemsError } = await withSupabaseRetry(
+          () =>
+            supabase
+              .from('pedidos_app_items')
+              .delete()
+              .eq('pedido_id', existingId),
+          { retries: 1 },
+        );
+        if (deleteItemsError) throw deleteItemsError;
+
+        const { error: itemsError } = await withSupabaseRetry(
+          () => supabase.from('pedidos_app_items').insert(buildItemRows(existingId, items)),
+          { retries: 1 },
+        );
+        if (itemsError) throw itemsError;
+
+        // 2. Solo tras garantizar los items, activamos status='emitido'
         const { error: updateError } = await withSupabaseRetry(
           () =>
             supabase
@@ -308,22 +327,6 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
         );
         if (updateError) throw updateError;
 
-        const { error: deleteItemsError } = await withSupabaseRetry(
-          () =>
-            supabase
-              .from('pedidos_app_items')
-              .delete()
-              .eq('pedido_id', existingId),
-          { retries: 1 },
-        );
-        if (deleteItemsError) throw deleteItemsError;
-
-        const { error: itemsError } = await withSupabaseRetry(
-          () => supabase.from('pedidos_app_items').insert(buildItemRows(existingId, items)),
-          { retries: 1 },
-        );
-        if (itemsError) throw itemsError;
-
         await marcarPresupuestoConvertido(presupuestoOrigenId, existingId);
 
         set({ isLoading: false });
@@ -337,6 +340,8 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
     let createdPedidoId: number | null = null;
 
     try {
+      // 1. Crear cabecera en status='borrador' para que el listener NO la procese
+      // hasta que todos los items hayan sido confirmados en Supabase.
       const { data: pedido, error: pedidoError } = await withSupabaseRetry(
         () =>
           supabase
@@ -346,7 +351,7 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
               cliente_codigo: clienteCodigo,
               cliente_nombre: clienteNombre,
               nota:            nota || null,
-              status:          'emitido',
+              status:          'borrador',
             })
             .select('id')
             .single(),
@@ -356,12 +361,28 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
       if (pedidoError || !pedido) throw pedidoError ?? new Error('No pedido id');
       createdPedidoId = pedido.id;
 
+      // 2. Insertar todos los items
       const { error: itemsError } = await withSupabaseRetry(
         () => supabase.from('pedidos_app_items').insert(buildItemRows(pedido.id, items)),
         { retries: 1 },
       );
 
       if (itemsError) throw itemsError;
+
+      // 3. Activar status='emitido' ahora que los items están garantizados
+      const { error: emitError } = await withSupabaseRetry(
+        () =>
+          supabase
+            .from('pedidos_app')
+            .update({
+              status:         'emitido',
+              backend_status: 'pendiente',
+            })
+            .eq('id', pedido.id),
+        { retries: 1 },
+      );
+
+      if (emitError) throw emitError;
 
       await marcarPresupuestoConvertido(presupuestoOrigenId, pedido.id);
 
