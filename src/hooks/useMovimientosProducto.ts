@@ -220,10 +220,20 @@ async function fetchMovimientos(codigoProducto: string): Promise<MovimientoProdu
     });
   }
 
-  // 5. Fusionar, ordenar por fecha descendente y limitar a 50
-  const merged = movimientos
+  // 5. Fusionar, ordenar por fecha descendente y deduplicar defensivamente
+  const seenKeys = new Set<string>();
+  const merged: MovimientoProducto[] = [];
+  
+  movimientos
     .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, 50);
+    .forEach((m) => {
+      // Clave única para evitar duplicados visuales: tipo + referencia + cantidad + fecha
+      const uniqueKey = `${m.tipo}|${m.referencia}|${m.cantidad}|${m.fechaFormateada}`;
+      if (!seenKeys.has(uniqueKey)) {
+        seenKeys.add(uniqueKey);
+        merged.push(m);
+      }
+    });
 
-  return merged;
+  return merged.slice(0, 50);
 }
