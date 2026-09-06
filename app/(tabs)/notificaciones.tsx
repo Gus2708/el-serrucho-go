@@ -28,6 +28,7 @@ import { notify, confirm } from '../../src/lib/notify';
 import { requestNotificationPermission } from '../../src/utils/notifications';
 import { PressableScale } from '../../src/components/PressableScale';
 import { pressScale } from '../../src/theme/motion';
+import { isDemoActive } from '../../src/demo/useDemoStore';
 
 const MOTIVO_LABEL: Record<AlertaZelleSpoof['motivo'], string> = {
   dominio_no_autorizado: 'Dirección de remitente falsa',
@@ -88,6 +89,8 @@ export default function Notificaciones() {
 
   const [activeTab, setActiveTab] = useState<'atenciones' | 'solicitudes' | 'seguridad'>('atenciones');
   const [claimingId, setClaimingId] = useState<number | null>(null);
+  const [descartandoAtencionId, setDescartandoAtencionId] = useState<number | null>(null);
+  const [isCleaningAll, setIsCleaningAll] = useState(false);
   const [retryingId, setRetryingId] = useState<number | null>(null);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | null>(null);
 
@@ -164,6 +167,87 @@ export default function Notificaciones() {
     } finally {
       setClaimingId(null);
     }
+  }
+
+  function handleDiscardAtencion(id: number, nombre: string) {
+    if (descartandoAtencionId !== null) return;
+    confirm({
+      title: 'Descartar atención',
+      message: `¿Marcar la atención de ${nombre} como atendida y quitarla de la lista?`,
+      confirmText: 'Descartar',
+      cancelText: 'Cancelar',
+      destructive: true,
+      onConfirm: async () => {
+        setDescartandoAtencionId(id);
+        try {
+          if (isDemoActive()) {
+            queryClient.setQueryData<AtencionPendiente[]>(['atenciones-pendientes'], (prev) =>
+              prev ? prev.filter((item) => item.id !== id) : []
+            );
+            queryClient.invalidateQueries({ queryKey: ['atenciones-count'] });
+            return;
+          }
+          const { error } = await supabase
+            .from('atenciones_pendientes')
+            .update({
+              status: 'atendido',
+              atendido_en: new Date().toISOString(),
+              atendido_por: userAuth?.profile?.id || null,
+            })
+            .eq('id', id)
+            .eq('status', 'pendiente');
+
+          if (error) throw error;
+          queryClient.setQueryData<AtencionPendiente[]>(['atenciones-pendientes'], (prev) =>
+            prev ? prev.filter((item) => item.id !== id) : []
+          );
+          queryClient.invalidateQueries({ queryKey: ['atenciones-count'] });
+        } catch (e: any) {
+          notify('Error', e.message || 'No se pudo descartar la atención.');
+        } finally {
+          setDescartandoAtencionId(null);
+        }
+      },
+    });
+  }
+
+  function handleClearAllAtenciones() {
+    if (isCleaningAll || atenciones.length === 0) return;
+    confirm({
+      title: '¿Limpiar todas las atenciones?',
+      message: `Hay ${atenciones.length} atención(es) pendiente(s). Se marcarán todas como atendidas para vaciar la cola.`,
+      confirmText: 'Limpiar todas',
+      cancelText: 'Cancelar',
+      destructive: true,
+      onConfirm: async () => {
+        setIsCleaningAll(true);
+        try {
+          if (isDemoActive()) {
+            queryClient.setQueryData<AtencionPendiente[]>(['atenciones-pendientes'], []);
+            queryClient.invalidateQueries({ queryKey: ['atenciones-count'] });
+            notify('Atenciones limpiadas', 'Se marcaron todas las atenciones como atendidas.');
+            return;
+          }
+          const { error } = await supabase
+            .from('atenciones_pendientes')
+            .update({
+              status: 'atendido',
+              atendido_en: new Date().toISOString(),
+              atendido_por: userAuth?.profile?.id || null,
+            })
+            .eq('status', 'pendiente');
+
+          if (error) throw error;
+          queryClient.setQueryData<AtencionPendiente[]>(['atenciones-pendientes'], []);
+          queryClient.invalidateQueries({ queryKey: ['atenciones-count'] });
+          notify('Atenciones limpiadas', 'Se marcaron todas las atenciones como atendidas.');
+        } catch (e: any) {
+          notify('Error', e.message || 'No se pudieron limpiar las atenciones.');
+        } finally {
+          setIsCleaningAll(false);
+        }
+      },
+    });
   }
 
   function handleDiscard(id: number) {
@@ -245,9 +329,34 @@ export default function Notificaciones() {
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text, flex: 1, marginRight: 8 }]} numberOfLines={1} adjustsFontSizeToFit>
-          Notificaciones
-        </Text>
+        <View style={styles.headerTitleRow}>
+          <Text style={[styles.title, { color: colors.text }]}>
+            Notificaciones
+          </Text>
+          {activeTab === 'atenciones' && atenciones.length > 0 && (
+            <PressableScale
+              style={[
+                styles.clearAllBtn,
+                { borderColor: colors.border, backgroundColor: colors.surface },
+              ]}
+              activeScale={pressScale.row}
+              dimmed={isCleaningAll}
+              disabled={isCleaningAll}
+              onPress={handleClearAllAtenciones}
+              hitSlop={6}
+            >
+              {isCleaningAll ? (
+                <ActivityIndicator size={12} color={colors.danger} />
+              ) : (
+                <Feather name="trash-2" size={13} color={colors.danger} />
+              )}
+              <Text style={[styles.clearAllBtnText, { color: colors.danger }]}>
+                Limpiar todas ({atenciones.length})
+              </Text>
+            </PressableScale>
+          )}
+        </View>
+
         {/* Tab switcher */}
         <View style={[styles.tabSwitcher, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <PressableScale
@@ -375,7 +484,27 @@ export default function Notificaciones() {
                     +{formatPhone(item.telefono)}
                   </Text>
                 </View>
-                <TimeAgoText creadoEn={item.creado_en} />
+                <View style={styles.cardHeaderRight}>
+                  <TimeAgoText creadoEn={item.creado_en} />
+                  <PressableScale
+                    style={[
+                      styles.discardBtn,
+                      { borderColor: colors.border },
+                    ]}
+                    activeScale={pressScale.icon}
+                    dimmed={descartandoAtencionId === item.id}
+                    onPress={() => handleDiscardAtencion(item.id, item.nombre || formatPhone(item.telefono))}
+                    disabled={descartandoAtencionId === item.id}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Descartar atención"
+                  >
+                    {descartandoAtencionId === item.id
+                      ? <ActivityIndicator size={14} color={colors.textMuted} />
+                      : <Feather name="x" size={16} color={colors.textMuted} />
+                    }
+                  </PressableScale>
+                </View>
               </View>
 
               <View style={styles.reasonBox}>
@@ -599,23 +728,45 @@ const styles = StyleSheet.create({
   },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 10,
+    gap: 12,
+  },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 34,
   },
   title: {
-    fontSize: scaleFont(26),
+    fontSize: scaleFont(22),
     fontFamily: 'JetBrainsMono_700Bold',
+  },
+  clearAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 0.5,
+  },
+  clearAllBtnText: {
+    fontSize: scaleFont(11),
+    fontFamily: 'JetBrainsMono_600SemiBold',
+  },
+  cardHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   tabSwitcher: {
     flexDirection: 'row',
     borderRadius: 12,
     borderWidth: 0.5,
     overflow: 'hidden',
+    alignSelf: 'flex-start',
   },
   tabBtn: {
     flexDirection: 'row',
