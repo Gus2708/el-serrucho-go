@@ -54,7 +54,7 @@ export default function SeleccionarProductos() {
         presupuestoStore.setEnBs(false, null, null);
       }
     } else {
-      pedidoStore.setEnBs(toBs);
+      pedidoStore.setEnBs(toBs, markupPct);
     }
   }
 
@@ -182,6 +182,7 @@ export default function SeleccionarProductos() {
           cantidad:        1,
           precio_base_usd: basePrice,
           precio_unitario: basePrice,
+          costo_usd:       producto.costo === null ? undefined : Number(producto.costo),
         });
       } else {
         pedidoStore.updateItem(producto.codigo_interno, { cantidad: qty + 1 });
@@ -239,6 +240,7 @@ export default function SeleccionarProductos() {
               cantidad:        num,
               precio_base_usd: basePrice,
               precio_unitario: basePrice,
+              costo_usd:       producto.costo === null ? undefined : Number(producto.costo),
             });
           } else {
             pedidoStore.updateItem(producto.codigo_interno, { cantidad: num });

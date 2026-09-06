@@ -185,7 +185,7 @@ export default function PedidosView({ router, onEmitted, onSavedDraft }: Pedidos
       const currentClientName = clienteNombre;
       const totalItemsCount = items.length;
 
-      const { pedidoId } = await submit(userId);
+      const { pedidoId } = await submit(userId, markupPct);
 
       clear();
 
@@ -205,7 +205,7 @@ export default function PedidosView({ router, onEmitted, onSavedDraft }: Pedidos
   async function handleSaveDraft(nombre: string): Promise<void> {
     try {
       const userId = await getUserId();
-      await saveDraft(userId, nombre);
+      await saveDraft(userId, nombre, markupPct);
       setBorradorModalVisible(false);
       clear();
       await queryClient.invalidateQueries({ queryKey: borradoresQueryKey('pedido') });
@@ -376,7 +376,7 @@ export default function PedidosView({ router, onEmitted, onSavedDraft }: Pedidos
                   enBs && { backgroundColor: colors.primary },
                 ]}
                 activeScale={pressScale.row}
-                onPress={() => setEnBs(true)}
+                onPress={() => setEnBs(true, markupPct)}
               >
                 <Text style={[styles.segmentedText, { color: enBs ? colors.onPrimary : colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
                   Bs. {bcv > 0 ? `(@ ${bcv.toFixed(2)})` : ''}

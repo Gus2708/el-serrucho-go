@@ -73,6 +73,7 @@ interface PedidoStore {
   nota:               string;
   titulo:             string;          // nombre del borrador ("Pedido ferretería Tovar")
   enBs:               boolean;
+  markupPct:          number;
   modalOpen:          boolean;
   skipModalAnimation: boolean;
   isLoading:          boolean;
@@ -80,7 +81,7 @@ interface PedidoStore {
   borradorId:         number | null;   // != null => se está armando sobre un borrador guardado
   presupuestoOrigenId: number | null;  // != null => al emitir, marcar ese presupuesto como convertido
   setCliente:         (codigo: string, nombre: string) => void;
-  setEnBs:            (enBs: boolean) => void;
+  setEnBs:            (enBs: boolean, markupPct?: number) => void;
   setModalOpen:       (open: boolean, skipAnimation?: boolean) => void;
   addItem:            (item: PedidoDraftItem) => void;
   removeItem:         (codigo: string) => void;
@@ -91,8 +92,8 @@ interface PedidoStore {
   loadForEdit:         (draft: PedidoEditDraft) => void;
   loadFromPresupuesto: (draft: PedidoFromPresupuestoDraft) => void;
   loadBorrador:        (draft: PedidoBorradorDraft) => void;
-  saveDraft:           (userId: string, titulo: string) => Promise<{ pedidoId: number }>;
-  submit:              (userId: string) => Promise<{ pedidoId: number }>;
+  saveDraft:           (userId: string, titulo: string, markupPct?: number) => Promise<{ pedidoId: number }>;
+  submit:              (userId: string, markupPct?: number) => Promise<{ pedidoId: number }>;
 }
 
 export const usePedido = create<PedidoStore>()((set, get) => ({
@@ -102,6 +103,7 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
   nota:               '',
   titulo:             '',
   enBs:               false,
+  markupPct:          30,
   modalOpen:          false,
   skipModalAnimation: false,
   isLoading:          false,
@@ -110,7 +112,7 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
   presupuestoOrigenId: null,
 
   setCliente:   (codigo, nombre) => set({ clienteCodigo: codigo, clienteNombre: nombre }),
-  setEnBs:      (enBs) => set({ enBs }),
+  setEnBs:      (enBs, markupPct) => set(state => ({ enBs, markupPct: markupPct !== undefined ? markupPct : state.markupPct })),
   setModalOpen: (modalOpen, skipAnimation = false) => set({ modalOpen, skipModalAnimation: skipAnimation }),
 
   // Consolida por código: Hybrid permite líneas repetidas, pero el orquestador
@@ -147,7 +149,7 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
   setTitulo: (titulo) => set({ titulo }),
 
   clear: () => set({
-    clienteCodigo: null, clienteNombre: null, items: [], nota: '', titulo: '', editingPedidoId: null, borradorId: null, presupuestoOrigenId: null, enBs: false, skipModalAnimation: false,
+    clienteCodigo: null, clienteNombre: null, items: [], nota: '', titulo: '', editingPedidoId: null, borradorId: null, presupuestoOrigenId: null, enBs: false, markupPct: 30, skipModalAnimation: false,
   }),
 
   loadForEdit: (draft) => set({
@@ -199,12 +201,13 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
   // ignora (sus listeners filtran status=eq.emitido), así que no llega a caja
   // hasta que el usuario la retome y la emita. Solo exige ítems: el cliente es
   // opcional a propósito, se puede armar la lista antes de saber a quién va.
-  saveDraft: async (userId: string, titulo: string) => {
+  saveDraft: async (userId: string, titulo: string, markupPct?: number) => {
     if (isDemoActive()) {
       get().clear();
       return { pedidoId: 999 };
     }
-    const { clienteCodigo, clienteNombre, items, nota, borradorId } = get();
+    const { clienteCodigo, clienteNombre, items, nota, borradorId, enBs, markupPct: storeMarkup } = get();
+    const effectiveMarkup = markupPct ?? storeMarkup ?? 30;
 
     if (items.length === 0) throw new Error('Agrega al menos un producto antes de guardar el borrador.');
 
@@ -254,7 +257,7 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
       }
 
       const { error: itemsError } = await withSupabaseRetry(
-        () => supabase.from('pedidos_app_items').insert(buildItemRows(pedidoId, items)),
+        () => supabase.from('pedidos_app_items').insert(buildItemRows(pedidoId, items, enBs, effectiveMarkup)),
         { retries: 1 },
       );
       if (itemsError) throw itemsError;
@@ -267,12 +270,13 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
     }
   },
 
-  submit: async (userId: string) => {
+  submit: async (userId: string, markupPct?: number) => {
     if (isDemoActive()) {
       get().clear();
       return { pedidoId: 999 };
     }
-    const { clienteCodigo, clienteNombre, items, nota, editingPedidoId, borradorId, presupuestoOrigenId } = get();
+    const { clienteCodigo, clienteNombre, items, nota, editingPedidoId, borradorId, presupuestoOrigenId, enBs, markupPct: storeMarkup } = get();
+    const effectiveMarkup = markupPct ?? storeMarkup ?? 30;
 
     if (!clienteCodigo) throw new Error('Selecciona un cliente antes de emitir el pedido.');
     if (items.length === 0) throw new Error('Agrega al menos un producto antes de emitir el pedido.');
@@ -319,7 +323,7 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
         if (deleteItemsError) throw deleteItemsError;
 
         const { error: itemsError } = await withSupabaseRetry(
-          () => supabase.from('pedidos_app_items').insert(buildItemRows(existingId, items)),
+          () => supabase.from('pedidos_app_items').insert(buildItemRows(existingId, items, enBs, effectiveMarkup)),
           { retries: 1 },
         );
         if (itemsError) throw itemsError;
@@ -357,7 +361,7 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
       createdPedidoId = pedido.id;
 
       const { error: itemsError } = await withSupabaseRetry(
-        () => supabase.from('pedidos_app_items').insert(buildItemRows(pedido.id, items)),
+        () => supabase.from('pedidos_app_items').insert(buildItemRows(pedido.id, items, enBs, effectiveMarkup)),
         { retries: 1 },
       );
 
@@ -383,14 +387,28 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
   },
 }));
 
-function buildItemRows(pedidoId: number, items: PedidoDraftItem[]): Record<string, unknown>[] {
-  return items.map(item => ({
-    pedido_id:       pedidoId,
-    codigo_producto: item.codigo_producto,
-    descripcion:     item.descripcion,
-    cantidad:        item.cantidad,
-    precio:          precioManual(item),
-  }));
+export function buildItemRows(
+  pedidoId: number,
+  items: PedidoDraftItem[],
+  enBs: boolean = false,
+  markupPct: number = 0,
+): Record<string, unknown>[] {
+  return items.map(item => {
+    let precio: number | null = null;
+    if (enBs) {
+      const base = item.precio_unitario ?? item.precio_base_usd ?? 0;
+      precio = parseFloat((base * (1 + markupPct / 100)).toFixed(2));
+    } else {
+      precio = precioManual(item);
+    }
+    return {
+      pedido_id:       pedidoId,
+      codigo_producto: item.codigo_producto,
+      descripcion:     item.descripcion,
+      cantidad:        item.cantidad,
+      precio,
+    };
+  });
 }
 
 /**
