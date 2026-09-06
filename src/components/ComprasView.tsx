@@ -57,6 +57,8 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
     titulo,
     numeroDocumento,
     isLoading,
+    isAutoSaving,
+    lastSavedAt,
     editingCompraId,
     borradorId,
     setProveedor,
@@ -67,6 +69,8 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
     setNumeroDocumento,
     clear,
     saveDraft,
+    autoSaveDraft,
+    deleteActiveDraft,
     submit,
   } = useCompra();
 
@@ -120,6 +124,38 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
     itemCountRef.current = items.length;
   }, [items.length]);
 
+  // Autoguardado continuo en segundo plano (debounce de 1.5s)
+  const autoSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    // Solo autoguardar si hay ítems y no estamos en modo reintento de compra fallida
+    if (items.length === 0 || editingCompraId !== null) {
+      return;
+    }
+
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+
+    autoSaveTimerRef.current = setTimeout(async () => {
+      try {
+        const userId = await getUserId();
+        if (!userId) return;
+        const newDraftId = await autoSaveDraft(userId);
+        if (newDraftId) {
+          await queryClient.invalidateQueries({ queryKey: borradoresQueryKey('compra') });
+        }
+      } catch (err) {
+        console.warn('[ComprasView] Auto-save error:', err);
+      }
+    }, 1500);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [items, proveedorCodigo, proveedorNombre, nota, numeroDocumento, editingCompraId]);
+
   function handleSelectProveedor(proveedor: Proveedor): void {
     setProveedor(proveedor.codigo, proveedor.nombre);
     setProveedorModalVisible(false);
@@ -161,11 +197,15 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
   }
 
   async function performSubmit(): Promise<void> {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
     const wasEditing = editingCompraId !== null;
     try {
       const userId = await getUserId();
       const { compraId } = await submit(userId);
       clear();
+      await queryClient.invalidateQueries({ queryKey: borradoresQueryKey('compra') });
       notify(
         wasEditing ? 'Compra reencolada' : 'Compra emitida',
         `C-${String(compraId).padStart(4, '0')} en cola para registrarse en Hybrid.`
@@ -179,6 +219,9 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
   // Guardar sin emitir: la lista queda como status='borrador' (invisible para
   // el backend) y el armador se libera. Se retoma desde la pestaña Borradores.
   async function handleSaveDraft(nombre: string): Promise<void> {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
     try {
       const userId = await getUserId();
       await saveDraft(userId, nombre);
@@ -232,6 +275,72 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
 
   const canSubmit = isPrivileged && Boolean(proveedorCodigo) && items.length > 0 && !isLoading;
 
+  function handleDismissEditing(): void {
+    if (items.length === 0) {
+      clear();
+      return;
+    }
+    confirm({
+      title: '¿Cancelar edición?',
+      message: `Tienes ${items.length} producto${items.length > 1 ? 's' : ''} en la compra. Si cancelas, se limpiará la pantalla actual.`,
+      confirmText: 'Cancelar y limpiar',
+      cancelText: 'Continuar editando',
+      destructive: true,
+      onConfirm: () => {
+        if (autoSaveTimerRef.current) {
+          clearTimeout(autoSaveTimerRef.current);
+        }
+        clear();
+      },
+    });
+  }
+
+  function handleDismissBorrador(): void {
+    if (items.length === 0) {
+      clear();
+      return;
+    }
+    confirm({
+      title: '¿Salir del borrador?',
+      message: `Tienes ${items.length} producto${items.length > 1 ? 's' : ''} en la lista. Tu progreso está guardado automáticamente en Borradores.\n\n¿Deseas salir y limpiar la pantalla? Podrás retomarlo en cualquier momento desde la pestaña Borradores.`,
+      confirmText: 'Salir y limpiar',
+      cancelText: 'Continuar editando',
+      destructive: false,
+      onConfirm: () => {
+        if (autoSaveTimerRef.current) {
+          clearTimeout(autoSaveTimerRef.current);
+        }
+        clear();
+      },
+    });
+  }
+
+  function handleClear(): void {
+    if (items.length === 0) {
+      clear();
+      return;
+    }
+    const hasDraft = borradorId !== null;
+    confirm({
+      title: hasDraft ? '¿Eliminar borrador y limpiar?' : '¿Limpiar compra?',
+      message: hasDraft
+        ? `Tienes ${items.length} producto${items.length > 1 ? 's' : ''} en la lista. Se eliminará el borrador guardado y se limpiará la pantalla.`
+        : 'Se perderán los ítems agregados.',
+      confirmText: hasDraft ? 'Eliminar y limpiar' : 'Limpiar',
+      destructive: true,
+      onConfirm: async () => {
+        if (autoSaveTimerRef.current) {
+          clearTimeout(autoSaveTimerRef.current);
+        }
+        if (hasDraft) {
+          await deleteActiveDraft();
+          await queryClient.invalidateQueries({ queryKey: borradoresQueryKey('compra') });
+        }
+        clear();
+      },
+    });
+  }
+
   return (
     <View style={styles.flex}>
       {/* stickyHeaderIndices apunta al índice 1 — los hijos del ScrollView son
@@ -255,7 +364,13 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
                 Corrige lo que causó el error y reintenta. No se creará una compra nueva.
               </Text>
             </View>
-            <PressableScale onPress={clear} hitSlop={8} activeScale={pressScale.icon}>
+            <PressableScale
+              onPress={handleDismissEditing}
+              hitSlop={8}
+              activeScale={pressScale.icon}
+              accessibilityRole="button"
+              accessibilityLabel="Cancelar edición"
+            >
               <Feather name="x" size={18} color={colors.textMuted} />
             </PressableScale>
           </View>
@@ -263,16 +378,29 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
 
         {borradorId !== null ? (
           <View style={[styles.infoBanner, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
-            <Feather name="bookmark" size={15} color={colors.textMuted} style={styles.infoBannerIcon} />
+            <Feather name="bookmark" size={15} color={colors.primary} style={styles.infoBannerIcon} />
             <View style={styles.infoBannerTextContainer}>
-              <Text style={[styles.infoBannerTitle, { color: colors.text }]} numberOfLines={1}>
-                Continuando borrador{titulo ? `: ${titulo}` : ''}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={[styles.infoBannerTitle, { color: colors.text, flexShrink: 1 }]} numberOfLines={1}>
+                  Borrador autoguardado{titulo ? `: ${titulo}` : ''}
+                </Text>
+                {isAutoSaving ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+              </View>
               <Text style={[styles.infoBannerSub, { color: colors.textMuted }]}>
-                Al guardar se actualiza esta misma lista. Al emitir, deja de ser borrador y se registra en Hybrid.
+                {isAutoSaving
+                  ? 'Guardando cambios en segundo plano…'
+                  : lastSavedAt
+                    ? `Guardado a las ${lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Al emitir se registrará en Hybrid.`
+                    : 'Los cambios se guardan automáticamente. Al emitir se registrará en Hybrid.'}
               </Text>
             </View>
-            <PressableScale onPress={clear} hitSlop={8} activeScale={pressScale.icon}>
+            <PressableScale
+              onPress={handleDismissBorrador}
+              hitSlop={8}
+              activeScale={pressScale.icon}
+              accessibilityRole="button"
+              accessibilityLabel="Salir del borrador"
+            >
               <Feather name="x" size={18} color={colors.textMuted} />
             </PressableScale>
           </View>
@@ -424,13 +552,22 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
             <Text style={[styles.submitCount, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
               {items.length} ítem{items.length > 1 ? 's' : ''} · {formatUSD(total)}
             </Text>
+            {isAutoSaving ? (
+              <Text style={[styles.autoSaveStatus, { color: colors.primary }]} numberOfLines={1}>
+                Autoguardando…
+              </Text>
+            ) : lastSavedAt ? (
+              <Text style={[styles.autoSaveStatus, { color: colors.textDim }]} numberOfLines={1}>
+                Guardado {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </Text>
+            ) : null}
             <View style={styles.secondaryActions}>
               <PressableScale onPress={() => setBorradorModalVisible(true)} hitSlop={6}>
                 <Text style={[styles.saveDraftText, { color: colors.primary }]} numberOfLines={1}>
                   {borradorId !== null ? 'Actualizar borrador' : 'Guardar borrador'}
                 </Text>
               </PressableScale>
-              <PressableScale onPress={() => confirm({ title: 'Limpiar compra', message: 'Se perderán los ítems agregados.', confirmText: 'Limpiar', destructive: true, onConfirm: clear })} hitSlop={6}>
+              <PressableScale onPress={handleClear} hitSlop={6}>
                 <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1}>
                   Limpiar
                 </Text>
@@ -1482,6 +1619,7 @@ const styles = StyleSheet.create({
   },
   submitInfo:  { flex: 1, gap: 2 },
   submitCount: { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
+  autoSaveStatus: { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_400Regular' },
   secondaryActions: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 },
   saveDraftText: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold' },
   clearText:   { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular' },

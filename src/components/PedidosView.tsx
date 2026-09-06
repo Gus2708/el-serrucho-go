@@ -243,6 +243,36 @@ export default function PedidosView({ router, onEmitted, onSavedDraft }: Pedidos
 
   const canSubmit = allowedToOrder && Boolean(clienteCodigo) && items.length > 0 && !isLoading;
 
+  function handleDismissEditing(): void {
+    if (items.length === 0) {
+      clear();
+      return;
+    }
+    confirm({
+      title: '¿Cancelar edición?',
+      message: `Tienes ${items.length} producto${items.length > 1 ? 's' : ''} en el pedido. Si cancelas, se limpiará la pantalla actual.`,
+      confirmText: 'Cancelar y limpiar',
+      cancelText: 'Continuar editando',
+      destructive: true,
+      onConfirm: clear,
+    });
+  }
+
+  function handleDismissBorrador(): void {
+    if (items.length === 0) {
+      clear();
+      return;
+    }
+    confirm({
+      title: '¿Salir del borrador?',
+      message: `Tienes ${items.length} producto${items.length > 1 ? 's' : ''} en la lista. Si sales, se limpiará el pedido actual.\n\nEl borrador original guardado permanecerá intacto en la pestaña Borradores.`,
+      confirmText: 'Salir y limpiar',
+      cancelText: 'Continuar editando',
+      destructive: true,
+      onConfirm: clear,
+    });
+  }
+
   return (
     <View style={styles.flex}>
       {/* stickyHeaderIndices apunta al índice 1 — los hijos del ScrollView son
@@ -278,7 +308,13 @@ export default function PedidosView({ router, onEmitted, onSavedDraft }: Pedidos
                 Corrige lo que causó el error y reintenta. No se creará un pedido nuevo.
               </Text>
             </View>
-            <PressableScale onPress={clear} hitSlop={8} activeScale={pressScale.icon}>
+            <PressableScale
+              onPress={handleDismissEditing}
+              hitSlop={8}
+              activeScale={pressScale.icon}
+              accessibilityRole="button"
+              accessibilityLabel="Cancelar edición"
+            >
               <Feather name="x" size={18} color={colors.textMuted} />
             </PressableScale>
           </View>
@@ -295,7 +331,13 @@ export default function PedidosView({ router, onEmitted, onSavedDraft }: Pedidos
                 Al guardar se actualiza esta misma lista. Al emitir, deja de ser borrador y pasa a caja.
               </Text>
             </View>
-            <PressableScale onPress={clear} hitSlop={8} activeScale={pressScale.icon}>
+            <PressableScale
+              onPress={handleDismissBorrador}
+              hitSlop={8}
+              activeScale={pressScale.icon}
+              accessibilityRole="button"
+              accessibilityLabel="Salir del borrador"
+            >
               <Feather name="x" size={18} color={colors.textMuted} />
             </PressableScale>
           </View>

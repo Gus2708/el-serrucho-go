@@ -231,10 +231,25 @@ function BorradorView({ router, isPrivileged, onEmitted }: { router: any; isPriv
 
   const showBanner = items.length > 0 && !bannerDismissed;
 
-  function handleClear() {
+  function resetForm() {
     clear();
     setPriceInputs({});
     setCostInputs({});
+  }
+
+  function handleClear() {
+    if (items.length === 0) {
+      resetForm();
+      return;
+    }
+    confirm({
+      title: 'Limpiar borrador',
+      message: `Se perderán los ${items.length} producto${items.length > 1 ? 's' : ''} agregados a la orden.`,
+      confirmText: 'Limpiar',
+      cancelText: 'Continuar editando',
+      destructive: true,
+      onConfirm: resetForm,
+    });
   }
 
   // Lazy-load userId once
@@ -247,7 +262,7 @@ function BorradorView({ router, isPrivileged, onEmitted }: { router: any; isPriv
     try {
       const userId = await getUserId();
       const { orderId, html } = await submit(userId);
-      handleClear();
+      resetForm();
       
       const msg = `OC-${String(orderId).padStart(4, '0')} generada.`;
       

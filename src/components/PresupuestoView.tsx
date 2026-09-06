@@ -418,7 +418,31 @@ export default function PresupuestoView({ router, onEmitted }: { router: any; on
                 Bs. {(total * bcv).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </Text>
             )}
-            <PressableScale onPress={() => { reset(); setPriceInputs({}); }} style={{ marginTop: 4 }} hitSlop={6}>
+            <PressableScale 
+              onPress={() => {
+                const handleClearPresupuesto = () => {
+                  if (items.length === 0) {
+                    reset();
+                    setPriceInputs({});
+                    return;
+                  }
+                  confirm({
+                    title: 'Limpiar presupuesto',
+                    message: `Se perderán los ${items.length} producto${items.length > 1 ? 's' : ''} agregados.`,
+                    confirmText: 'Limpiar',
+                    cancelText: 'Continuar editando',
+                    destructive: true,
+                    onConfirm: () => {
+                      reset();
+                      setPriceInputs({});
+                    },
+                  });
+                };
+                handleClearPresupuesto();
+              }} 
+              style={{ marginTop: 4 }} 
+              hitSlop={6}
+            >
               <Text style={[styles.clearText, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>Limpiar presupuesto</Text>
             </PressableScale>
           </View>
