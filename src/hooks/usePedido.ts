@@ -305,7 +305,7 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
         if (deleteItemsError) throw deleteItemsError;
 
         const { error: itemsError } = await withSupabaseRetry(
-          () => supabase.from('pedidos_app_items').insert(buildItemRows(existingId, items)),
+          () => supabase.from('pedidos_app_items').insert(buildItemRows(existingId, items, enBs, effectiveMarkup)),
           { retries: 1 },
         );
         if (itemsError) throw itemsError;
@@ -408,11 +408,15 @@ export const usePedido = create<PedidoStore>()((set, get) => ({
   },
 }));
 
+// enBs y markupPct van sin valor por defecto a proposito. Con defaults, un
+// punto de llamada al que se le olviden compila limpio, pasa el typecheck y
+// guarda precios en dolares sin recargo; asi fue como el camino de reemitir un
+// pedido existente quedo sin convertir. Sin defaults, el compilador lo caza.
 export function buildItemRows(
   pedidoId: number,
   items: PedidoDraftItem[],
-  enBs: boolean = false,
-  markupPct: number = 0,
+  enBs: boolean,
+  markupPct: number,
 ): Record<string, unknown>[] {
   return items.map(item => {
     let precio: number | null = null;

@@ -1,13 +1,37 @@
 ﻿(global as any).__DEV__ = true;
+// Captura las filas que submit() manda a pedidos_app_items. El prefijo `mock`
+// es lo unico que jest deja referenciar dentro de una factory de jest.mock.
+const mockItemInserts: unknown[][] = [];
+
 jest.mock('../lib/supabase', () => ({
   supabase: {
-    from: jest.fn(),
-    rpc: jest.fn(),
+    from: jest.fn((tabla: string) => ({
+      delete: () => ({ eq: () => Promise.resolve({ error: null }) }),
+      insert: (filas: unknown[]) => {
+        if (tabla === 'pedidos_app_items') mockItemInserts.push(filas);
+        // Insertar la cabecera encadena .select('id').single(); insertar items
+        // se espera con await. Este objeto sirve para los dos.
+        return {
+          select: () => ({ single: () => Promise.resolve({ data: { id: 123 }, error: null }) }),
+          then: (resolve: (r: { error: null }) => void) => resolve({ error: null }),
+        };
+      },
+      update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+    })),
+    rpc: jest.fn(() => Promise.resolve({ error: null })),
   },
-  withSupabaseRetry: jest.fn(),
 }));
 
-import { buildItemRows, precioManual, PedidoDraftItem } from './usePedido';
+// El de verdad reintenta con espera; aca ejecuta la llamada y ya.
+jest.mock('../lib/retry', () => ({
+  withSupabaseRetry: (fn: () => unknown) => fn(),
+}));
+
+jest.mock('../demo/useDemoStore', () => ({
+  isDemoActive: () => false,
+}));
+
+import { buildItemRows, precioManual, PedidoDraftItem, usePedido } from './usePedido';
 
 describe('usePedido price resolution for writeback', () => {
   const sampleItems: PedidoDraftItem[] = [
@@ -116,5 +140,65 @@ describe('usePedido price resolution for writeback', () => {
       const rows = buildItemRows(100, customItems, true, 30);
       expect(rows[0].precio).toBe(15.60); // 12.00 * 1.30 = 15.60
     });
+  });
+});
+
+// El bug que motiva estos tests: buildItemRows tiene enBs y markupPct con valor
+// por defecto, asi que un punto de llamada al que se le olvide pasarlos compila
+// limpio, pasa el typecheck y guarda precios en dolares sin recargo. Los tests
+// de arriba prueban buildItemRows sola y no ven nada. Estos ejercitan submit(),
+// que es donde estaba el olvido.
+describe('usePedido submit sends Bs prices down every path', () => {
+  const items: PedidoDraftItem[] = [
+    {
+      codigo_producto: '01404',
+      descripcion: 'Item 1',
+      cantidad: 1,
+      precio_base_usd: 19.99,
+      precio_unitario: 19.99,
+    },
+  ];
+
+  beforeEach(() => {
+    mockItemInserts.length = 0;
+    usePedido.setState({
+      clienteCodigo:       'C-1',
+      clienteNombre:       'Cliente 1',
+      items,
+      nota:                '',
+      enBs:                true,
+      markupPct:           30,
+      editingPedidoId:     null,
+      borradorId:          null,
+      presupuestoOrigenId: null,
+      isLoading:           false,
+    });
+  });
+
+  it('applies the markup when creating a new pedido', async () => {
+    await usePedido.getState().submit('user-1');
+
+    expect(mockItemInserts).toHaveLength(1);
+    expect((mockItemInserts[0] as Array<{ precio: number | null }>)[0].precio).toBe(25.99);
+  });
+
+  it('applies the markup when re-emitting a pedido that already exists', async () => {
+    // editingPedidoId es el reintento de un pedido que fallo; borradorId es
+    // emitir un borrador guardado. Los dos caen en la misma rama de submit().
+    usePedido.setState({ editingPedidoId: 77 });
+
+    await usePedido.getState().submit('user-1');
+
+    expect(mockItemInserts).toHaveLength(1);
+    expect((mockItemInserts[0] as Array<{ precio: number | null }>)[0].precio).toBe(25.99);
+  });
+
+  it('applies the markup when emitting a saved draft', async () => {
+    usePedido.setState({ borradorId: 88 });
+
+    await usePedido.getState().submit('user-1');
+
+    expect(mockItemInserts).toHaveLength(1);
+    expect((mockItemInserts[0] as Array<{ precio: number | null }>)[0].precio).toBe(25.99);
   });
 });
