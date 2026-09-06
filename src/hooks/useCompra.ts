@@ -47,6 +47,9 @@ interface CompraStore {
   titulo:           string;   // nombre del borrador ("Reposición tornillería")
   numeroDocumento:  string;   // opcional; vacío = el backend usa el id de la compra
   isLoading:        boolean;
+  isAutoSaving:     boolean;
+  lastSavedAt:      Date | null;
+  autoSaveError:    string | null;
   editingCompraId:  number | null;   // != null => reintentar una compra existente (update, no insert)
   borradorId:       number | null;   // != null => se está armando sobre un borrador guardado
   setProveedor:      (codigo: string, nombre: string) => void;
@@ -60,6 +63,8 @@ interface CompraStore {
   loadForEdit:       (draft: CompraEditDraft) => void;
   loadBorrador:      (draft: CompraBorradorDraft) => void;
   saveDraft:         (userId: string, titulo: string) => Promise<{ compraId: number }>;
+  autoSaveDraft:     (userId: string) => Promise<number | null>;
+  deleteActiveDraft: () => Promise<void>;
   submit:            (userId: string) => Promise<{ compraId: number }>;
 }
 
@@ -71,6 +76,9 @@ export const useCompra = create<CompraStore>()((set, get) => ({
   titulo:          '',
   numeroDocumento: '',
   isLoading:       false,
+  isAutoSaving:    false,
+  lastSavedAt:     null,
+  autoSaveError:   null,
   editingCompraId: null,
   borradorId:      null,
 
@@ -106,7 +114,7 @@ export const useCompra = create<CompraStore>()((set, get) => ({
   setNumeroDocumento: (numero) => set({ numeroDocumento: numero }),
 
   clear: () => set({
-    proveedorCodigo: null, proveedorNombre: null, items: [], nota: '', titulo: '', numeroDocumento: '', editingCompraId: null, borradorId: null,
+    proveedorCodigo: null, proveedorNombre: null, items: [], nota: '', titulo: '', numeroDocumento: '', editingCompraId: null, borradorId: null, isAutoSaving: false, lastSavedAt: null, autoSaveError: null,
   }),
 
   loadForEdit: (draft) => set({
@@ -198,11 +206,96 @@ export const useCompra = create<CompraStore>()((set, get) => ({
       );
       if (itemsError) throw itemsError;
 
-      set({ isLoading: false, borradorId: compraId, titulo: nombre });
+      set({ isLoading: false, borradorId: compraId, titulo: nombre, lastSavedAt: new Date() });
       return { compraId };
     } catch (err) {
       set({ isLoading: false });
       throw err;
+    }
+  },
+
+  // Autoguardado continuo en segundo plano: no bloquea UI ni lanza excepciones al usuario.
+  autoSaveDraft: async (userId: string) => {
+    if (isDemoActive()) return 888;
+    const { proveedorCodigo, proveedorNombre, items, nota, numeroDocumento, borradorId, editingCompraId, titulo } = get();
+
+    if (items.length === 0 || editingCompraId !== null) return null;
+
+    const nombre = titulo.trim() || (proveedorNombre ? `Compra ${proveedorNombre}` : `Borrador ${new Date().toLocaleDateString('es-VE')}`);
+
+    const cabecera = {
+      proveedor_codigo: proveedorCodigo,
+      proveedor_nombre: proveedorNombre,
+      nota:             nota || null,
+      numero_documento: numeroDocumento.trim() || null,
+      titulo:           nombre,
+      status:           'borrador',
+      actualizado_en:   new Date().toISOString(),
+    };
+
+    set({ isAutoSaving: true, autoSaveError: null });
+
+    try {
+      let compraId: number;
+
+      if (borradorId === null) {
+        const { data, error } = await supabase
+          .from('compras_app')
+          .insert({ ...cabecera, creado_por: userId })
+          .select('id')
+          .single();
+        if (error || !data) throw error ?? new Error('No compra id');
+        compraId = data.id;
+      } else {
+        compraId = borradorId;
+
+        const { error: updateError } = await supabase
+          .from('compras_app')
+          .update(cabecera)
+          .eq('id', borradorId);
+        if (updateError) throw updateError;
+
+        const { error: deleteItemsError } = await supabase
+          .from('compras_app_items')
+          .delete()
+          .eq('compra_id', borradorId);
+        if (deleteItemsError) throw deleteItemsError;
+      }
+
+      const { error: itemsError } = await supabase
+        .from('compras_app_items')
+        .insert(buildItemRows(compraId, items));
+      if (itemsError) throw itemsError;
+
+      set({
+        isAutoSaving: false,
+        borradorId: compraId,
+        titulo: nombre,
+        lastSavedAt: new Date(),
+        autoSaveError: null,
+      });
+      return compraId;
+    } catch (err: any) {
+      set({ isAutoSaving: false, autoSaveError: err.message ?? 'Error en autoguardado' });
+      console.warn('[useCompra] autoSaveDraft failed:', err);
+      return null;
+    }
+  },
+
+  // Elimina el borrador activo de Supabase cuando el usuario decide descartar/limpiar la lista
+  deleteActiveDraft: async () => {
+    const { borradorId } = get();
+    if (borradorId === null) return;
+    try {
+      await supabase
+        .from('compras_app')
+        .delete()
+        .eq('id', borradorId)
+        .eq('status', 'borrador');
+    } catch (err) {
+      console.warn('[useCompra] deleteActiveDraft failed:', err);
+    } finally {
+      set({ borradorId: null, titulo: '' });
     }
   },
 
