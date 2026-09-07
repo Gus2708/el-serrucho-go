@@ -1,6 +1,7 @@
 import { scaleFont } from '../src/theme/responsive';
 import { useEffect, useState } from 'react';
 import { Slot, useRouter, useSegments } from 'expo-router';
+import Head from 'expo-router/head';
 
 // Web only: remove input focus outline
 if (typeof window !== 'undefined') {
@@ -287,6 +288,10 @@ export default function RootLayout() {
   useEffect(() => {
     if (Platform.OS !== 'web') return;
 
+    if (typeof document !== 'undefined' && document.title !== 'El Serrucho GO') {
+      document.title = 'El Serrucho GO';
+    }
+
     // 1. Detección de display-mode standalone
     const checkStandalone = () => {
       const isStandalone = 
@@ -463,6 +468,9 @@ export default function RootLayout() {
           <RealtimeInitializer>
             <ThemeProvider>
               <>
+                <Head>
+                  <title>El Serrucho GO</title>
+                </Head>
                 <AuthGuard session={activeSession} ready={isAppReady} />
                 <UpdateToast />
               </>

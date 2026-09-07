@@ -40,4 +40,28 @@ if (fs.existsSync(iconSrc)) {
   console.log('Icon copied to dist/icon.png');
 }
 
+// Asegurar que ningún HTML estático exportado quede con <title data-rh="true"></title> vacío
+function sanitizeHtmlTitles(dir) {
+  if (!fs.existsSync(dir)) return;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      sanitizeHtmlTitles(fullPath);
+    } else if (entry.isFile() && entry.name.endsWith('.html')) {
+      let content = fs.readFileSync(fullPath, 'utf8');
+      if (content.includes('<title data-rh="true"></title>')) {
+        content = content.replace(
+          /<title data-rh="true"><\/title>/g,
+          '<title data-rh="true">El Serrucho GO</title>'
+        );
+        fs.writeFileSync(fullPath, content, 'utf8');
+      }
+    }
+  }
+}
+
+sanitizeHtmlTitles(dest);
+console.log('Sanitized HTML title tags in dist');
+
 console.log('Files copied successfully');
