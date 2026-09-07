@@ -1,20 +1,36 @@
 
-<img width="512" height="512" alt="elserruchogo512x512" src="https://github.com/user-attachments/assets/148272ad-d174-47fe-8ea9-056fe11740d7" />
-# El Serrucho GO
+<div align="center">
 
-<img width="800" height="450" alt="el-serrucho-go" src="https://github.com/user-attachments/assets/b9ed518a-0443-4253-8685-307c5911c090" />
+  <img src="https://github.com/user-attachments/assets/148272ad-d174-47fe-8ea9-056fe11740d7" alt="El Serrucho GO Logo" width="96" height="96" style="border-radius: 20%;" />
 
-![Expo](https://img.shields.io/badge/Expo-53-000020?style=for-the-badge&logo=expo&logoColor=white)
-![React Native](https://img.shields.io/badge/React_Native-0.79-61DAFB?style=for-the-badge&logo=react&logoColor=black)
-![Supabase](https://img.shields.io/badge/Supabase-Database-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
-![PWA](https://img.shields.io/badge/PWA-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)
+  # El Serrucho GO
 
-[English](README.md) · [Español](README.es.md)
+  <p align="center">
+    <strong>Dashboard móvil de alto rendimiento para analítica de ventas y control de inventario en tiempo real.</strong><br>
+    Sincronización bidireccional continua con el sistema POS local de <em>Ferretería El Serrucho</em>.
+  </p>
 
-**El Serrucho GO** is a premium mobile dashboard for real-time inventory management and sales analytics for *Ferretería El Serrucho*. Built with a focus on performance, design quality, and robust data synchronization with an on-premise POS system.
+  <p align="center">
+    <a href="README.md"><strong>English</strong></a> · <a href="README.es.md"><strong>Español</strong></a>
+  </p>
 
-It ships as an **Android app (EAS)** and as an **installable PWA** (Vercel) that shares the same codebase via `react-native-web`.
+  <p align="center">
+    <img src="https://img.shields.io/badge/Expo-53-000020?style=for-the-badge&logo=expo&logoColor=white" alt="Expo 53" />
+    <img src="https://img.shields.io/badge/React_Native-0.79-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React Native 0.79" />
+    <img src="https://img.shields.io/badge/Supabase-Database-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase" />
+    <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript 5.8" />
+    <img src="https://img.shields.io/badge/PWA-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Vercel PWA" />
+  </p>
+
+  <br />
+
+  <img src="https://github.com/user-attachments/assets/b9ed518a-0443-4253-8685-307c5911c090" alt="El Serrucho GO Mockup Interface" width="850" />
+
+  <p align="center">
+    <em>Distribuido como app móvil nativa para Android (EAS) y PWA instalable multiplataforma vía <code>react-native-web</code>.</em>
+  </p>
+
+</div>
 
 ---
 
