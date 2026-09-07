@@ -1,4 +1,5 @@
 
+<img width="512" height="512" alt="elserruchogo512x512" src="https://github.com/user-attachments/assets/148272ad-d174-47fe-8ea9-056fe11740d7" />
 # El Serrucho GO
 
 <img width="800" height="450" alt="el-serrucho-go" src="https://github.com/user-attachments/assets/b9ed518a-0443-4253-8685-307c5911c090" />
