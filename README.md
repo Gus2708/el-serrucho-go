@@ -1,3 +1,7 @@
+
+
+https://github.com/user-attachments/assets/16f911fb-0879-4009-967b-cffb48aa85ca
+
 # El Serrucho GO
 
 ![Expo](https://img.shields.io/badge/Expo-53-000020?style=for-the-badge&logo=expo&logoColor=white)
