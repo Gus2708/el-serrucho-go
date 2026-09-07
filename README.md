@@ -1,7 +1,7 @@
 
 # El Serrucho GO
 
-https://github.com/user-attachments/assets/275bf117-f2a7-4dc8-8b31-15ceeddae678
+<img width="800" height="450" alt="el-serrucho-go" src="https://github.com/user-attachments/assets/b9ed518a-0443-4253-8685-307c5911c090" />
 
 ![Expo](https://img.shields.io/badge/Expo-53-000020?style=for-the-badge&logo=expo&logoColor=white)
 ![React Native](https://img.shields.io/badge/React_Native-0.79-61DAFB?style=for-the-badge&logo=react&logoColor=black)
