@@ -6,8 +6,8 @@
   # El Serrucho GO
 
   <p align="center">
-    <strong>Dashboard móvil de alto rendimiento para analítica de ventas y control de inventario en tiempo real.</strong><br>
-    Sincronización bidireccional continua con el sistema POS local de <em>Ferretería El Serrucho</em>.
+    <strong>High-performance mobile dashboard for real-time sales analytics and inventory control.</strong><br>
+    Continuous bidirectional synchronization with the local POS system of <em>Ferretería El Serrucho</em>.
   </p>
 
   <p align="center">
@@ -27,7 +27,7 @@
   <img src="https://github.com/user-attachments/assets/b9ed518a-0443-4253-8685-307c5911c090" alt="El Serrucho GO Mockup Interface" width="850" />
 
   <p align="center">
-    <em>Distribuido como app móvil nativa para Android (EAS) y PWA instalable multiplataforma vía <code>react-native-web</code>.</em>
+    <em>Distributed as a native Android mobile app (EAS) and cross-platform installable PWA via <code>react-native-web</code>.</em>
   </p>
 
 </div>
