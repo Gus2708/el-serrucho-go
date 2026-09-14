@@ -46,7 +46,7 @@ export default function GuardarBorradorModal({
     <Modal visible={visible} animationType="fade" transparent statusBarTranslucent onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'android' ? 'height' : undefined}
       >
         <View style={[styles.card, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           <View style={styles.header}>

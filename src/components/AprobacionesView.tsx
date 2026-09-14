@@ -185,7 +185,7 @@ export default function AprobacionesView(): React.JSX.Element {
 
       {/* Modal de motivo de rechazo */}
       <Modal visible={rechazoOrdenId !== null} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setRechazoOrdenId(null)}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'android' ? 'height' : undefined}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Rechazar ajuste</Text>
             <Text style={[styles.modalSub, { color: colors.textMuted }]}>

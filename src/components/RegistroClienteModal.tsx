@@ -92,7 +92,7 @@ export default function RegistroClienteModal({ visible, onClose, onRegistered, p
   return (
     <>
       <Modal visible={visible && !showStatusModal} animationType="slide" transparent statusBarTranslucent onRequestClose={handleClose}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'android' ? 'height' : undefined}>
           <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Registrar cliente</Text>

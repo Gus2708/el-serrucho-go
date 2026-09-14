@@ -861,7 +861,7 @@ function ProveedorPickerModal({ visible, canCreate, onClose, onSelect, onCreate 
 
   return (
     <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'android' ? 'height' : undefined}>
         <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Elegir proveedor</Text>
@@ -956,7 +956,7 @@ function ProductoPickerModal({ visible, initialSearch = '', onClose, onSelect }:
 
   return (
     <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'android' ? 'height' : undefined}>
         <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Agregar producto</Text>
@@ -1217,7 +1217,7 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
 
   return (
     <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={handleClose}>
-      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'android' ? 'height' : undefined}>
         <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Producto nuevo</Text>

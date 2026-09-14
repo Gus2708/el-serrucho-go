@@ -843,7 +843,7 @@ function ClientePickerModal({ visible, onClose, onSelect, onCreate }: ClientePic
 
   return (
     <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'android' ? 'height' : undefined}>
         <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Elegir cliente</Text>
@@ -926,7 +926,7 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
 
   return (
     <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'android' ? 'height' : undefined}>
         <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Agregar producto</Text>
