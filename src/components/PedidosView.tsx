@@ -841,7 +841,7 @@ function ClientePickerModal({ visible, onClose, onSelect, onCreate }: ClientePic
   });
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           <View style={styles.modalHeader}>
@@ -924,7 +924,7 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
   const bcv              = tasa?.bcv_usd ?? 0;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           <View style={styles.modalHeader}>

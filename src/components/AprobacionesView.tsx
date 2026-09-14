@@ -182,7 +182,7 @@ export default function AprobacionesView(): React.JSX.Element {
       <OrdenCambioDetailModal orden={selectedOrden} onClose={() => setSelectedOrden(null)} />
 
       {/* Modal de motivo de rechazo */}
-      <Modal visible={rechazoOrdenId !== null} transparent animationType="fade" onRequestClose={() => setRechazoOrdenId(null)}>
+      <Modal visible={rechazoOrdenId !== null} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setRechazoOrdenId(null)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Rechazar ajuste</Text>

@@ -91,7 +91,7 @@ export default function RegistroProveedorModal({ visible, onClose, onRegistered,
 
   return (
     <>
-      <Modal visible={visible && !showStatusModal} animationType="slide" transparent onRequestClose={handleClose}>
+      <Modal visible={visible && !showStatusModal} animationType="slide" transparent statusBarTranslucent onRequestClose={handleClose}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
             <View style={styles.modalHeader}>
