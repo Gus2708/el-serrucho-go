@@ -133,10 +133,18 @@ const visualViewportSync = `
 (function () {
   var vv = window.visualViewport;
   if (!vv || !(navigator.maxTouchPoints > 0)) return;
-  var style = document.documentElement.style;
+  var root = document.documentElement;
   function sync() {
-    style.setProperty('--app-vh', vv.height + 'px');
-    style.setProperty('--app-vv-top', vv.offsetTop + 'px');
+    // Solo con teclado abierto: en la PWA instalada iOS puede reportar un
+    // visualViewport mas alto que 100dvh y la barra inferior quedaba cortada.
+    var keyboardOpen = root.clientHeight - vv.height > 120;
+    if (keyboardOpen) {
+      root.style.setProperty('--app-vh', vv.height + 'px');
+      root.style.setProperty('--app-vv-top', vv.offsetTop + 'px');
+    } else {
+      root.style.removeProperty('--app-vh');
+      root.style.removeProperty('--app-vv-top');
+    }
     if (window.scrollY !== 0) window.scrollTo(0, 0);
   }
   vv.addEventListener('resize', sync);
