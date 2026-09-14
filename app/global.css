@@ -7,12 +7,12 @@ html, body, #root {
 @media (display-mode: standalone) {
   html, body {
     height: 100vh !important;
-    height: 100dvh !important;
+    height: var(--app-vh, 100dvh) !important;
     overflow: hidden !important;
   }
   #root {
     min-height: 100vh !important;
-    min-height: 100dvh !important;
+    min-height: var(--app-vh, 100dvh) !important;
   }
 }
 

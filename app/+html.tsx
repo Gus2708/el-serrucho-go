@@ -54,6 +54,7 @@ export default function Root({ children }: PropsWithChildren) {
 
         <ScrollViewStyleReset />
         <style dangerouslySetInnerHTML={{ __html: expoRootStyles }} />
+        <script dangerouslySetInnerHTML={{ __html: visualViewportSync }} />
       </head>
       <body>{children}</body>
     </html>
@@ -80,13 +81,13 @@ body {
 
 #root {
   position: fixed !important;
-  top: 0 !important;
+  top: var(--app-vv-top, 0px) !important;
   left: 0 !important;
   right: 0 !important;
-  bottom: 0 !important;
+  bottom: auto !important;
   width: 100% !important;
   height: 100vh !important;
-  height: 100dvh !important;
+  height: var(--app-vh, 100dvh) !important;
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
@@ -108,13 +109,39 @@ body.app-framed [aria-modal="true"] {
   margin-right: auto;
 }
 
+/* iOS Safari: con el teclado abierto solo se achica el visual viewport; lo
+   fixed de borde a borde sigue midiendo la pantalla completa y Safari deja
+   panear la diferencia. Se ata al visual viewport (ver visualViewportSync). */
+[aria-modal="true"] {
+  top: var(--app-vv-top, 0px) !important;
+  bottom: auto !important;
+  height: var(--app-vh, 100%) !important;
+}
+
 /* iOS standalone: fill entire screen including safe areas */
 @supports (padding: env(safe-area-inset-top)) {
   #root {
     padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: 0;
     height: 100vh !important;
-    height: 100dvh !important;
+    height: var(--app-vh, 100dvh) !important;
   }
 }
+`;
+
+const visualViewportSync = `
+(function () {
+  var vv = window.visualViewport;
+  if (!vv || !(navigator.maxTouchPoints > 0)) return;
+  var style = document.documentElement.style;
+  function sync() {
+    style.setProperty('--app-vh', vv.height + 'px');
+    style.setProperty('--app-vv-top', vv.offsetTop + 'px');
+    if (window.scrollY !== 0) window.scrollTo(0, 0);
+  }
+  vv.addEventListener('resize', sync);
+  vv.addEventListener('scroll', sync);
+  window.addEventListener('scroll', sync, { passive: true });
+  sync();
+})();
 `;
