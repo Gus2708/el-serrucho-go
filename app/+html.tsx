@@ -55,6 +55,7 @@ export default function Root({ children }: PropsWithChildren) {
         <ScrollViewStyleReset />
         <style dangerouslySetInnerHTML={{ __html: expoRootStyles }} />
         <script dangerouslySetInnerHTML={{ __html: visualViewportSync }} />
+        <script dangerouslySetInnerHTML={{ __html: viewportDebugPanel }} />
       </head>
       <body>{children}</body>
     </html>
@@ -151,5 +152,99 @@ const visualViewportSync = `
   vv.addEventListener('scroll', sync);
   window.addEventListener('scroll', sync, { passive: true });
   sync();
+})();
+`;
+
+// Temporary viewport diagnostics for the iOS PWA. Toggle with a two-finger long press.
+const viewportDebugPanel = `
+(function () {
+  var KEY = 'serrucho-viewport-debug';
+  var panel = null;
+  var pre = null;
+  var interval = null;
+  var pressTimer = null;
+
+  function probe(css, read) {
+    var el = document.createElement('div');
+    el.style.cssText = 'position:fixed;top:0;left:0;width:0;visibility:hidden;pointer-events:none;' + css;
+    document.body.appendChild(el);
+    var value = read(el);
+    document.body.removeChild(el);
+    return value;
+  }
+
+  function unitHeight(unit) {
+    return probe('height:100' + unit, function (el) { return el.getBoundingClientRect().height.toFixed(1); });
+  }
+
+  function safeArea(side) {
+    return probe('padding-top:env(safe-area-inset-' + side + ',0px)', function (el) { return getComputedStyle(el).paddingTop; });
+  }
+
+  function report() {
+    var vv = window.visualViewport;
+    var de = document.documentElement;
+    var root = document.getElementById('root');
+    var rr = root ? root.getBoundingClientRect() : null;
+    var vars = getComputedStyle(de);
+    return [
+      'UA: ' + navigator.userAgent,
+      'standalone: ' + (navigator.standalone === true) + ' | display-mode: ' + matchMedia('(display-mode: standalone)').matches,
+      'screen: ' + screen.width + 'x' + screen.height + ' @' + window.devicePixelRatio,
+      'innerHeight: ' + window.innerHeight + ' | outerHeight: ' + window.outerHeight + ' | clientHeight: ' + de.clientHeight,
+      'visualViewport: ' + (vv ? vv.height.toFixed(1) + ' | offsetTop: ' + vv.offsetTop.toFixed(1) + ' | scale: ' + vv.scale : 'n/a'),
+      '100vh: ' + unitHeight('vh') + ' | 100dvh: ' + unitHeight('dvh') + ' | 100svh: ' + unitHeight('svh') + ' | 100lvh: ' + unitHeight('lvh'),
+      'safe-area top: ' + safeArea('top') + ' | bottom: ' + safeArea('bottom'),
+      '#root: ' + (rr ? 'top ' + rr.top.toFixed(1) + ' | height ' + rr.height.toFixed(1) + ' | bottom ' + rr.bottom.toFixed(1) : 'n/a'),
+      '--app-vh: ' + (vars.getPropertyValue('--app-vh').trim() || '-') + ' | --app-vv-top: ' + (vars.getPropertyValue('--app-vv-top').trim() || '-'),
+      'scrollY: ' + window.scrollY
+    ].join('\\n');
+  }
+
+  function button(label, onPress) {
+    var b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = 'margin-right:8px;padding:6px 12px;border:0;border-radius:8px;background:#F5B200;color:#0C0C0C;font:700 12px ui-monospace,Menlo,monospace';
+    b.addEventListener('click', function () { onPress(b); });
+    return b;
+  }
+
+  function show() {
+    if (panel || !document.body) return;
+    panel = document.createElement('div');
+    panel.style.cssText = 'position:fixed;left:8px;right:8px;top:calc(env(safe-area-inset-top,0px) + 8px);z-index:2147483647;background:rgba(0,0,0,0.92);color:#7CFC00;border:1px solid #F5B200;border-radius:10px;padding:10px;font:11px/1.4 ui-monospace,Menlo,monospace;-webkit-user-select:text;user-select:text';
+    pre = document.createElement('pre');
+    pre.style.cssText = 'margin:0 0 10px;white-space:pre-wrap;word-break:break-all';
+    panel.appendChild(pre);
+    panel.appendChild(button('Copiar', function (b) {
+      if (!navigator.clipboard) return;
+      navigator.clipboard.writeText(report()).then(function () { b.textContent = 'Copiado'; });
+    }));
+    panel.appendChild(button('Cerrar', hide));
+    document.body.appendChild(panel);
+    pre.textContent = report();
+    interval = setInterval(function () { pre.textContent = report(); }, 1000);
+    try { localStorage.setItem(KEY, '1'); } catch (e) {}
+  }
+
+  function hide() {
+    if (!panel) return;
+    clearInterval(interval);
+    panel.parentNode.removeChild(panel);
+    panel = null;
+    try { localStorage.removeItem(KEY); } catch (e) {}
+  }
+
+  window.addEventListener('touchstart', function (e) {
+    clearTimeout(pressTimer);
+    if (e.touches.length !== 2) return;
+    pressTimer = setTimeout(function () { panel ? hide() : show(); }, 1000);
+  }, { passive: true, capture: true });
+  window.addEventListener('touchend', function () { clearTimeout(pressTimer); }, { passive: true, capture: true });
+  window.addEventListener('touchcancel', function () { clearTimeout(pressTimer); }, { passive: true, capture: true });
+
+  var enabled = false;
+  try { enabled = localStorage.getItem(KEY) === '1'; } catch (e) {}
+  if (enabled) window.addEventListener('load', show);
 })();
 `;
