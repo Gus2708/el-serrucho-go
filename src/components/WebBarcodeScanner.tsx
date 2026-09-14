@@ -34,6 +34,8 @@ interface Props {
 
 type ScannerStatus = 'requesting' | 'denied' | 'scanning' | 'error';
 
+const STALE_BUNDLE_RELOAD_KEY = 'serrucho-stale-bundle-reload';
+
 // BarcodeDetector no está en lib.dom todavía — declaración manual
 declare class BarcodeDetector {
   static getSupportedFormats(): Promise<string[]>;
@@ -152,8 +154,17 @@ export function WebBarcodeScanner({ visible, onClose, onScan }: Props) {
       } else {
         await startZxingScanner();
       }
+      sessionStorage.removeItem(STALE_BUNDLE_RELOAD_KEY);
     } catch (err: any) {
       cleanup();
+      // Tras un deploy, la PWA abierta sigue con el JS viejo y el chunk de
+      // @zxing que referencia ya no existe (404). Recargar trae la versión nueva.
+      const staleBundle = /Loading module|dynamically imported module|Importing a module script failed/i.test(err?.message ?? '');
+      if (staleBundle && !sessionStorage.getItem(STALE_BUNDLE_RELOAD_KEY)) {
+        sessionStorage.setItem(STALE_BUNDLE_RELOAD_KEY, '1');
+        window.location.reload();
+        return;
+      }
       if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
         setStatus('denied');
       } else {
