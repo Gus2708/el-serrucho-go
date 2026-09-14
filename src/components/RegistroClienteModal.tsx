@@ -11,6 +11,7 @@ import {
   Modal,
   ActivityIndicator,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
@@ -91,7 +92,7 @@ export default function RegistroClienteModal({ visible, onClose, onRegistered, p
   return (
     <>
       <Modal visible={visible && !showStatusModal} animationType="slide" transparent statusBarTranslucent onRequestClose={handleClose}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Registrar cliente</Text>
@@ -136,7 +137,7 @@ export default function RegistroClienteModal({ visible, onClose, onRegistered, p
               <View style={{ height: 24 }} />
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {submittedData && (

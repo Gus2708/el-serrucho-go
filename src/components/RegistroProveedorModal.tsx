@@ -10,6 +10,8 @@ import {
   ScrollView,
   Modal,
   ActivityIndicator,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
@@ -92,7 +94,7 @@ export default function RegistroProveedorModal({ visible, onClose, onRegistered,
   return (
     <>
       <Modal visible={visible && !showStatusModal} animationType="slide" transparent statusBarTranslucent onRequestClose={handleClose}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Registrar proveedor</Text>
@@ -138,7 +140,7 @@ export default function RegistroProveedorModal({ visible, onClose, onRegistered,
               <View style={{ height: 24 }} />
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {submittedData && (

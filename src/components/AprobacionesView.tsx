@@ -9,6 +9,8 @@ import {
   Modal,
   TextInput,
   RefreshControl,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
@@ -183,7 +185,7 @@ export default function AprobacionesView(): React.JSX.Element {
 
       {/* Modal de motivo de rechazo */}
       <Modal visible={rechazoOrdenId !== null} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setRechazoOrdenId(null)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Rechazar ajuste</Text>
             <Text style={[styles.modalSub, { color: colors.textMuted }]}>
@@ -213,7 +215,7 @@ export default function AprobacionesView(): React.JSX.Element {
               </PressableScale>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

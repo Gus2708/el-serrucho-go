@@ -11,6 +11,7 @@ import {
   Modal,
   FlatList,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
@@ -860,7 +861,7 @@ function ProveedorPickerModal({ visible, canCreate, onClose, onSelect, onCreate 
 
   return (
     <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Elegir proveedor</Text>
@@ -926,7 +927,7 @@ function ProveedorPickerModal({ visible, canCreate, onClose, onSelect, onCreate 
             />
           )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -955,7 +956,7 @@ function ProductoPickerModal({ visible, initialSearch = '', onClose, onSelect }:
 
   return (
     <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Agregar producto</Text>
@@ -1041,7 +1042,7 @@ function ProductoPickerModal({ visible, initialSearch = '', onClose, onSelect }:
             />
           )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
       <BarcodeScannerModal
         visible={scannerVisible}
         onClose={() => setScannerVisible(false)}
@@ -1216,7 +1217,7 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
 
   return (
     <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={handleClose}>
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Producto nuevo</Text>
@@ -1381,7 +1382,7 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
             <View style={{ height: 24 }} />
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
       <BarcodeScannerModal
         visible={scannerTarget !== null}
         onClose={() => setScannerTarget(null)}

@@ -11,6 +11,7 @@ import {
   Modal,
   FlatList,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -842,7 +843,7 @@ function ClientePickerModal({ visible, onClose, onSelect, onCreate }: ClientePic
 
   return (
     <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Elegir cliente</Text>
@@ -901,7 +902,7 @@ function ClientePickerModal({ visible, onClose, onSelect, onCreate }: ClientePic
             />
           )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -925,7 +926,7 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
 
   return (
     <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Agregar producto</Text>
@@ -1001,7 +1002,7 @@ function ProductoPickerModal({ visible, onClose, onSelect }: ProductoPickerModal
             />
           )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
