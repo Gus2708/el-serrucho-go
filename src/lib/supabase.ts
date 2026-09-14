@@ -223,6 +223,21 @@ export type PagoZelle = {
 };
 
 
+export type CrashReport = {
+  id:           string;
+  empleado_id:  string | null;
+  plataforma:   string;
+  marca:        string | null;
+  modelo:       string | null;
+  version_so:   string | null;
+  app_version:  string | null;
+  tipo:         'js_error' | 'session_trail';
+  mensaje:      string | null;
+  stack:        string | null;
+  breadcrumbs:  { ts: number; evento: string; meta?: Record<string, unknown> }[] | null;
+  creado_en:    string;
+};
+
 // ── View row types ────────────────────────────────────────────────────────────
 
 export type ProfitSummaryRow = {

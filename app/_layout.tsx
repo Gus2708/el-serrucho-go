@@ -23,6 +23,12 @@ import * as SplashScreen from 'expo-splash-screen';
 import { ActivityIndicator, Platform, View, useWindowDimensions, Text, Pressable } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PressableScale } from '../src/components/PressableScale';
+import { initCrashLog, logBreadcrumb } from '../src/lib/crashLog';
+
+// Instalado lo antes posible: si el proceso muere más adelante (fuentes,
+// auth, push), esto ya está armado para subir el rastro apenas la app reabra.
+initCrashLog();
+
 // SplashScreen is a no-op on web
 if (Platform.OS !== 'web') {
   SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -357,17 +363,21 @@ export default function RootLayout() {
     }, 2500);
 
     // ── INICIALIZACIÓN AUTH ──
+    logBreadcrumb('auth: getSession iniciado');
     supabase.auth.getSession()
       .then(({ data, error }) => {
         if (error) {
           // Token expirado o revocado en el backend: limpiar storage local
+          logBreadcrumb('auth: getSession error', { error: error.message });
           supabase.auth.signOut().catch(() => {});
           setSession(null);
         } else {
+          logBreadcrumb('auth: getSession resuelto', { haySesion: !!data.session });
           setSession(data.session);
         }
       })
       .catch((err) => {
+        logBreadcrumb('auth: excepcion en getSession', { error: String(err?.message || err) });
         console.warn('Supabase initialization error (clearing dead session):', err?.message || err);
         supabase.auth.signOut().catch(() => {});
         setSession(null);
@@ -378,6 +388,7 @@ export default function RootLayout() {
 
     // Suscripción a cambios de auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
+      logBreadcrumb(`auth: evento ${event}`);
       setSession(s);
       
       // Al entrar o recuperar sesión, invalidamos solo lo relacionado con auth

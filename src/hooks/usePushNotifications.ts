@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 import * as Notifications from 'expo-notifications';
 import { isDemoActive } from '../demo/useDemoStore';
+import { logBreadcrumb } from '../lib/crashLog';
 
 // ── Web Push (VAPID) ──────────────────────────────────────────────────────────
 
@@ -75,6 +76,7 @@ Notifications.setNotificationHandler({
 async function ensureAndroidChannels(): Promise<void> {
   if (Platform.OS !== 'android') return;
   try {
+    logBreadcrumb('push: creando canales android');
     // Canal usado por send-push para pagos Zelle y avisos de bots (channelId: 'default').
     // Debe existir en el dispositivo o Android 8+ no muestra el push.
     await Notifications.setNotificationChannelAsync('default', {
@@ -94,7 +96,9 @@ async function ensureAndroidChannels(): Promise<void> {
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       bypassDnd: true,
     });
+    logBreadcrumb('push: canales android listos');
   } catch (e) {
+    logBreadcrumb('push: fallo creando canales', { error: String(e) });
     console.warn('[push] no se pudieron crear los canales de notificación:', e);
   }
 }
@@ -103,18 +107,26 @@ async function subscribeNative(): Promise<void> {
   await ensureAndroidChannels();
 
   // Request permission (on Android 13+ this shows the system dialog; older = auto-granted).
+  logBreadcrumb('push: chequeando permiso existente');
   const { status: existing } = await Notifications.getPermissionsAsync();
   let finalStatus = existing;
 
   if (existing !== 'granted') {
+    logBreadcrumb('push: pidiendo permiso de notificaciones');
     const { status } = await Notifications.requestPermissionsAsync();
     finalStatus = status;
+    logBreadcrumb('push: respuesta de permiso', { status });
   }
 
-  if (finalStatus !== 'granted') return;
+  if (finalStatus !== 'granted') {
+    logBreadcrumb('push: permiso no otorgado, abortando');
+    return;
+  }
 
+  logBreadcrumb('push: pidiendo token de Expo');
   const tokenData = await Notifications.getExpoPushTokenAsync({ projectId: EAS_PROJECT_ID });
   const expoToken = tokenData.data;
+  logBreadcrumb('push: token obtenido');
 
   const { data: { session } } = await supabase.auth.getSession();
   const empleadoId = session?.user?.id;
@@ -150,13 +162,38 @@ export function usePushNotifications(): void {
         if (session) subscribeWeb().catch((e) => console.warn('[push] web re-subscribe:', e));
       });
       return () => subscription.unsubscribe();
-    } else {
-      subscribeNative().catch((e) => console.warn('[push] native subscribe failed:', e));
-
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-        if (session) subscribeNative().catch((e) => console.warn('[push] native re-subscribe:', e));
-      });
-      return () => subscription.unsubscribe();
     }
+
+    // Nativo: antes esto se disparaba sin condicionar a que hubiera sesión,
+    // así que el diálogo de permiso de notificaciones (Android) podía aparecer
+    // con el usuario todavía parado en la pantalla de login — compitiendo con
+    // la propia transición de navegación del login. Ahora esperamos una sesión
+    // confirmada y un pequeño delay antes de tocar nada nativo.
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleSubscribe = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (!cancelled) {
+          logBreadcrumb('push: disparando subscribeNative');
+          subscribeNative().catch((e) => console.warn('[push] native subscribe failed:', e));
+        }
+      }, 2500);
+    };
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session && !cancelled) scheduleSubscribe();
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) scheduleSubscribe();
+    });
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      subscription.unsubscribe();
+    };
   }, []);
 }
