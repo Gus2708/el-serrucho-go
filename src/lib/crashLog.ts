@@ -1,30 +1,80 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { supabase } from './supabase';
+import {
+  EVENT_ACTIVE,
+  EVENT_BACKGROUND,
+  EVENT_BOOT,
+  EVENT_CRASH_REPORTED,
+  MENSAJE_MAX,
+  STACK_MAX,
+  appendBreadcrumb,
+  isAbnormalExit,
+  parseJsonArray,
+  prunePending,
+  sanitizeMeta,
+  truncate,
+  type Breadcrumb,
+  type PendingReport,
+} from './crashTrail';
 
 // ── Diagnóstico de crashes en dispositivos reales ───────────────────────────
 //
-// No hay Sentry/Bugsnag en el proyecto. Esto es un logger mínimo, propio,
-// sobre la infra que ya existe (Supabase): guarda un rastro de "breadcrumbs"
-// en AsyncStorage a medida que la app hace cosas riesgosas, y lo sube a la
-// nube en el PRÓXIMO arranque — así, si el proceso muere sin que JS llegue a
-// enterarse (crash nativo puro), igual queda la última pista antes del corte.
-// Además instala un handler global para las excepciones JS no capturadas,
-// que sí es capturable la mayoría de las veces en RN.
+// No hay Sentry/Bugsnag en el proyecto. Logger mínimo sobre Supabase:
+//  - Un rastro de breadcrumbs en AsyncStorage. Si el proceso muere con la app
+//    en primer plano (crash nativo, sin excepción JS), el próximo arranque lo
+//    detecta y lo encola como 'session_trail'.
+//  - Un handler global para excepciones JS no capturadas ('js_error'). En un
+//    error fatal espera a que el reporte llegue a disco antes de dejar que RN
+//    mate el proceso.
+//  - Los reportes quedan en una cola persistida hasta que el insert se
+//    confirma: sin red o sin sesión no se pierde nada.
+//
+// Solo corre en builds nativas de release: en dev cada recarga de Metro
+// parecería un crash, y web tiene sus propias herramientas.
 
-const STORAGE_KEY = 'serrucho-crash-breadcrumbs-v1';
-const MAX_BREADCRUMBS = 40;
+const TRAIL_KEY = 'serrucho-crashlog-trail-v2';
+const PENDING_KEY = 'serrucho-crashlog-pending-v2';
+const FATAL_PERSIST_TIMEOUT_MS = 1500;
 
-type Breadcrumb = { ts: number; evento: string; meta?: Record<string, unknown> };
+type GlobalErrorHandler = (error: Error, isFatal?: boolean) => void;
 
-let breadcrumbs: Breadcrumb[] = [];
+let enabled = false;
+let bootDone = false;
+let bootPromise: Promise<void> = Promise.resolve();
+let trail: Breadcrumb[] = [];
+let pending: PendingReport[] = [];
+let flushing = false;
+
+// Nada se escribe hasta leer lo que dejó la sesión anterior: si no, el rastro
+// nuevo pisaría al viejo antes de revisarlo.
+function canPersist(): boolean {
+  return enabled && bootDone;
+}
+
+function persistTrail(): Promise<void> {
+  if (!canPersist()) return Promise.resolve();
+  return AsyncStorage.setItem(TRAIL_KEY, JSON.stringify(trail)).catch(() => {});
+}
+
+function persistAll(): Promise<void> {
+  if (!canPersist()) return Promise.resolve();
+  return AsyncStorage.multiSet([
+    [TRAIL_KEY, JSON.stringify(trail)],
+    [PENDING_KEY, JSON.stringify(pending)],
+  ]).catch(() => {});
+}
 
 /** Registra un paso de diagnóstico y lo persiste de inmediato (para sobrevivir un crash del proceso). */
 export function logBreadcrumb(evento: string, meta?: Record<string, unknown>): void {
-  breadcrumbs.push({ ts: Date.now(), evento, meta });
-  if (breadcrumbs.length > MAX_BREADCRUMBS) breadcrumbs = breadcrumbs.slice(-MAX_BREADCRUMBS);
-  AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(breadcrumbs)).catch(() => {});
+  trail = appendBreadcrumb(trail, { ts: Date.now(), evento, meta: sanitizeMeta(meta) });
+  void persistTrail();
+}
+
+function enqueue(report: Omit<PendingReport, 'ocurridoEn'>): void {
+  const now = Date.now();
+  pending = prunePending([...pending, { ...report, ocurridoEn: now }], now);
 }
 
 function deviceInfo(): {
@@ -37,30 +87,81 @@ function deviceInfo(): {
   const androidConstants = Platform.OS === 'android' ? Platform.constants : null;
   return {
     plataforma:  Platform.OS,
-    marca:       androidConstants?.Brand ?? null,
-    modelo:      androidConstants?.Model ?? (Constants.deviceName ?? null),
-    version_so:  androidConstants ? String(androidConstants.Release) : String(Platform.Version ?? ''),
-    app_version: Constants.expoConfig?.version ?? null,
+    marca:       truncate(androidConstants?.Brand, 100),
+    modelo:      truncate(androidConstants?.Model, 100),
+    version_so:  truncate(androidConstants ? androidConstants.Release : String(Platform.Version), 50),
+    app_version: truncate(Constants.expoConfig?.version, 50),
   };
 }
 
-async function uploadReport(
-  tipo: 'js_error' | 'session_trail',
-  extra: { mensaje?: string; stack?: string; trail: Breadcrumb[] },
-): Promise<void> {
+async function flushPending(): Promise<void> {
+  if (!canPersist() || flushing || pending.length === 0) return;
+  flushing = true;
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    await supabase.from('crash_reports').insert({
-      empleado_id: session?.user?.id ?? null,
-      tipo,
-      mensaje:     extra.mensaje ?? null,
-      stack:       extra.stack ?? null,
-      breadcrumbs: extra.trail,
-      ...deviceInfo(),
-    });
+    for (const report of [...pending]) {
+      // Sin sesión se sube anónimo (migración 048): un crash antes de
+      // iniciar sesión también tiene que llegar.
+      const { error } = await supabase.from('crash_reports').insert({
+        empleado_id: session?.user?.id ?? null,
+        tipo:        report.tipo,
+        mensaje:     report.mensaje,
+        stack:       report.stack,
+        breadcrumbs: report.breadcrumbs,
+        ...deviceInfo(),
+      });
+      // insert() no lanza: devuelve el error. Sin red o con el JWT vencido,
+      // el reporte queda en la cola para el próximo intento.
+      if (error) break;
+      pending = pending.filter((item) => item !== report);
+      await persistAll();
+    }
   } catch {
-    // Sin red, sin sesión, o falló el insert: no hay nada más que hacer acá.
+    // Falla de red: los reportes siguen encolados.
+  } finally {
+    flushing = false;
   }
+}
+
+function installErrorHandler(): void {
+  const errorUtils = (global as typeof global & {
+    ErrorUtils?: {
+      getGlobalHandler?: () => GlobalErrorHandler;
+      setGlobalHandler?: (handler: GlobalErrorHandler) => void;
+    };
+  }).ErrorUtils;
+  if (!errorUtils?.setGlobalHandler) return;
+
+  const previousHandler = errorUtils.getGlobalHandler?.();
+
+  errorUtils.setGlobalHandler((error, isFatal) => {
+    try {
+      enqueue({
+        tipo:        'js_error',
+        mensaje:     truncate(error?.message, MENSAJE_MAX),
+        stack:       truncate(error?.stack, STACK_MAX),
+        breadcrumbs: trail,
+      });
+
+      if (!isFatal) {
+        void persistAll().then(flushPending);
+        previousHandler?.(error, isFatal);
+        return;
+      }
+
+      // En release, el handler por defecto de RN mata el proceso al instante.
+      // Se le da al reporte una ventana corta para llegar a disco (se sube en
+      // el próximo arranque), y se marca el rastro para no reportarlo dos
+      // veces. El marcador se escribe junto con la cola en un solo multiSet.
+      trail = appendBreadcrumb(trail, { ts: Date.now(), evento: EVENT_CRASH_REPORTED });
+      const persisted = bootPromise.then(persistAll);
+      const timeout = new Promise<void>((resolve) => setTimeout(resolve, FATAL_PERSIST_TIMEOUT_MS));
+      void Promise.race([persisted, timeout]).finally(() => previousHandler?.(error, isFatal));
+    } catch {
+      // Un bug en el logger nunca puede tragarse el manejo normal del error.
+      previousHandler?.(error, isFatal);
+    }
+  });
 }
 
 /**
@@ -68,35 +169,44 @@ async function uploadReport(
  * antes de cualquier componente).
  */
 export function initCrashLog(): void {
-  // 1. Subir el rastro de la sesión anterior, si el proceso murió con
-  //    breadcrumbs pendientes (crash nativo sin excepción JS capturable).
-  AsyncStorage.getItem(STORAGE_KEY)
-    .then((raw) => {
-      if (!raw) return;
-      AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
-      const trail = JSON.parse(raw) as Breadcrumb[];
-      if (trail.length > 0) uploadReport('session_trail', { trail });
+  if (enabled || __DEV__ || Platform.OS === 'web') return;
+  enabled = true;
+
+  logBreadcrumb(EVENT_BOOT);
+  installErrorHandler();
+
+  bootPromise = AsyncStorage.multiGet([TRAIL_KEY, PENDING_KEY])
+    .then((entries) => {
+      const stored = Object.fromEntries(entries);
+      const previousTrail = parseJsonArray<Breadcrumb>(stored[TRAIL_KEY]);
+      const storedPending = parseJsonArray<PendingReport>(stored[PENDING_KEY]);
+      const recovered: PendingReport[] = isAbnormalExit(previousTrail)
+        ? [{
+            tipo:        'session_trail',
+            mensaje:     null,
+            stack:       null,
+            breadcrumbs: previousTrail,
+            ocurridoEn:  previousTrail[previousTrail.length - 1].ts,
+          }]
+        : [];
+      // Lo que esta sesión ya encoló antes de terminar la lectura (un crash
+      // muy temprano) va al final.
+      pending = prunePending([...storedPending, ...recovered, ...pending], Date.now());
     })
-    .catch(() => {});
-
-  logBreadcrumb('app_boot');
-
-  // 2. Handler global para excepciones JS no capturadas — cubre la mayoría
-  //    de los "dejó de funcionar" en RN, que suelen ser esto antes de que el
-  //    bridge tumbe el proceso nativo.
-  const globalWithErrorUtils = global as typeof global & {
-    ErrorUtils?: {
-      getGlobalHandler?: () => (error: Error, isFatal?: boolean) => void;
-      setGlobalHandler?: (handler: (error: Error, isFatal?: boolean) => void) => void;
-    };
-  };
-  const errorUtils = globalWithErrorUtils.ErrorUtils;
-  if (errorUtils?.setGlobalHandler) {
-    const previousHandler = errorUtils.getGlobalHandler?.();
-    errorUtils.setGlobalHandler((error, isFatal) => {
-      logBreadcrumb('js_error', { isFatal, mensaje: error?.message });
-      uploadReport('js_error', { mensaje: error?.message, stack: error?.stack, trail: breadcrumbs });
-      previousHandler?.(error, isFatal);
+    .catch(() => {})
+    .finally(() => {
+      bootDone = true;
     });
-  }
+
+  void bootPromise.then(persistAll).then(flushPending);
+
+  AppState.addEventListener('change', (state) => {
+    if (state === 'background') {
+      logBreadcrumb(EVENT_BACKGROUND);
+      void flushPending();
+    } else if (state === 'active') {
+      logBreadcrumb(EVENT_ACTIVE);
+      void flushPending();
+    }
+  });
 }
