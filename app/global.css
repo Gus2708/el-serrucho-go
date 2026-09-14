@@ -5,13 +5,13 @@ html, body, #root {
 
 /* PWA standalone: ensure full viewport coverage on iOS */
 @media (display-mode: standalone) {
+  /* One declaration per property: the CSS minifier reorders a 100vh fallback
+     after a var() value, and 100vh is taller than the standalone viewport. */
   html, body {
-    height: 100vh !important;
     height: var(--app-vh, 100dvh) !important;
     overflow: hidden !important;
   }
   #root {
-    min-height: 100vh !important;
     min-height: var(--app-vh, 100dvh) !important;
   }
 }
