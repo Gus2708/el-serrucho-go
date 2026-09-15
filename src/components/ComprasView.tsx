@@ -13,6 +13,7 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from 'react-native';
+import { HIDE_ON_KEYBOARD } from '../web/hideOnKeyboard';
 import { Feather } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -538,6 +539,7 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
       {/* Submit bar */}
       {items.length > 0 && (
         <View
+          dataSet={HIDE_ON_KEYBOARD}
           style={[
             styles.submitBar,
             {

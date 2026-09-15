@@ -1,6 +1,7 @@
 import { scaleFont } from '../theme/responsive';
 import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TextInput, ActivityIndicator, Platform } from 'react-native';
+import { HIDE_ON_KEYBOARD } from '../web/hideOnKeyboard';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeContext';
@@ -399,7 +400,7 @@ export default function PresupuestoView({ router, onEmitted }: { router: any; on
 
       {/* Submit bar */}
       {items.length > 0 && (
-        <View style={[
+        <View dataSet={HIDE_ON_KEYBOARD} style={[
           styles.submitBar, 
           { 
             backgroundColor: colors.surface, 

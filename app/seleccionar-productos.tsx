@@ -1,6 +1,7 @@
 import { scaleFont } from '../src/theme/responsive';
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, Platform } from 'react-native';
+import { HIDE_ON_KEYBOARD } from '../src/web/hideOnKeyboard';
 import { FlashList } from '@shopify/flash-list';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -474,7 +475,7 @@ export default function SeleccionarProductos() {
 
       {/* "No lo hay": resolver sin productos cuando no se eligió ninguno */}
       {solicitudId && presupuestoStore.items.length === 0 && (
-        <View style={[
+        <View dataSet={HIDE_ON_KEYBOARD} style={[
           styles.submitBar,
           {
             backgroundColor: colors.surface,
@@ -512,7 +513,7 @@ export default function SeleccionarProductos() {
 
       {/* Submit bar if solicitudId is present */}
       {solicitudId && presupuestoStore.items.length > 0 && (
-        <View style={[
+        <View dataSet={HIDE_ON_KEYBOARD} style={[
           styles.submitBar,
           {
             backgroundColor: colors.surface,

@@ -14,6 +14,7 @@ import {
   Platform,
   RefreshControl,
 } from 'react-native';
+import { HIDE_ON_KEYBOARD } from '../../src/web/hideOnKeyboard';
 import { notify, confirm } from '../../src/lib/notify';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -567,7 +568,7 @@ function BorradorView({ router, isPrivileged, onEmitted }: { router: any; isPriv
 
       {/* Submit bar */}
       {items.length > 0 && (
-        <View style={[
+        <View dataSet={HIDE_ON_KEYBOARD} style={[
           styles.submitBar,
           {
             backgroundColor: colors.surface,
