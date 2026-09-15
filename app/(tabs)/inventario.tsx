@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
+import { NO_BOTTOM_INSET_ON_KEYBOARD } from '../../src/web/keyboardMarkers';
 import { FlashList } from '@shopify/flash-list';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -89,7 +90,7 @@ export default function Inventario() {
   }, [hasMore, isFetchingMore, fetchMore]);
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
+    <SafeAreaView dataSet={NO_BOTTOM_INSET_ON_KEYBOARD} style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
       <StatusBar style="light" />
 
       {/* Header */}

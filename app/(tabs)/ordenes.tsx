@@ -14,7 +14,7 @@ import {
   Platform,
   RefreshControl,
 } from 'react-native';
-import { HIDE_ON_KEYBOARD } from '../../src/web/hideOnKeyboard';
+import { HIDE_ON_KEYBOARD, NO_BOTTOM_INSET_ON_KEYBOARD } from '../../src/web/keyboardMarkers';
 import { notify, confirm } from '../../src/lib/notify';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -81,7 +81,7 @@ export default function Ordenes() {
   }, [isPrivileged, tab]);
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
+    <SafeAreaView dataSet={NO_BOTTOM_INSET_ON_KEYBOARD} style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
       <StatusBar style="light" />
 
       <View style={styles.header}>

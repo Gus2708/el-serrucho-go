@@ -61,6 +61,12 @@ html.keyboard-open [data-hide-on-keyboard] {
   display: none !important;
 }
 
+/* El margen del indicador de inicio queda debajo del teclado: sin esto se ve
+   como una franja negra entre el formulario y el teclado. */
+html.keyboard-open [data-no-bottom-inset-on-keyboard] {
+  padding-bottom: 0 !important;
+}
+
 /* iOS standalone: fill entire screen including safe areas */
 @supports (padding: env(safe-area-inset-top)) {
   #root {
@@ -82,7 +88,7 @@ export const visualViewportSync = `
   function reveal(el) {
     if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA')) return;
     setTimeout(function () {
-      if (document.activeElement === el) el.scrollIntoView({ block: 'nearest' });
+      if (document.activeElement === el) el.scrollIntoView({ block: 'center' });
     }, 0);
   }
   function sync() {

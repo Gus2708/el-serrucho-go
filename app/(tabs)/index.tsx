@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
+import { NO_BOTTOM_INSET_ON_KEYBOARD } from '../../src/web/keyboardMarkers';
 
 // Padding interior del bigCard (debe coincidir con `bigCard.padding` en styles)
 const BIG_CARD_PADDING = 20;
@@ -332,7 +333,7 @@ export default function Index() {
   }
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
+    <SafeAreaView dataSet={NO_BOTTOM_INSET_ON_KEYBOARD} style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
       <StatusBar style="light" />
 
       <ScrollView

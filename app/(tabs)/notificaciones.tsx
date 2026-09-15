@@ -8,6 +8,7 @@ import {
   Pressable,
   ActivityIndicator,
 } from 'react-native';
+import { NO_BOTTOM_INSET_ON_KEYBOARD } from '../../src/web/keyboardMarkers';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -294,7 +295,7 @@ export default function Notificaciones() {
   }
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
+    <SafeAreaView dataSet={NO_BOTTOM_INSET_ON_KEYBOARD} style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
       <StatusBar style="light" />
 
       {/* Notification permission card — shown when permission is not yet granted */}

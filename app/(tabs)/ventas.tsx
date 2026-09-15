@@ -18,6 +18,7 @@ import {
   TextInput,
   Platform,
 } from 'react-native';
+import { NO_BOTTOM_INSET_ON_KEYBOARD } from '../../src/web/keyboardMarkers';
 import { FlashList } from '@shopify/flash-list';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -206,7 +207,7 @@ export default function Ventas() {
   const totalFacturas = periodStats.ventas;
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
+    <SafeAreaView dataSet={NO_BOTTOM_INSET_ON_KEYBOARD} style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
       <StatusBar style="light" />
 
       <FlashList

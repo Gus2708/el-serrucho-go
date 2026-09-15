@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import { NO_BOTTOM_INSET_ON_KEYBOARD } from '../src/web/keyboardMarkers';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -161,7 +162,7 @@ export default function Pagos(): React.ReactElement {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={['top']}>
+    <SafeAreaView dataSet={NO_BOTTOM_INSET_ON_KEYBOARD} style={[styles.container, { backgroundColor: colors.bg }]} edges={['top']}>
       {/* ── Header ── */}
       <View style={styles.header}>
         <PressableScale

@@ -8,6 +8,7 @@ import {
   Platform,
   Pressable,
 } from 'react-native';
+import { NO_BOTTOM_INSET_ON_KEYBOARD } from '../web/keyboardMarkers';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -126,7 +127,7 @@ function PedidoModal({ visible, skipAnimation, onClose }: { visible: boolean; sk
 
   return (
     <Modal visible={visible} animationType={skipAnimation ? 'none' : 'slide'} transparent={false} onRequestClose={onClose}>
-      <SafeAreaView style={[styles.modalRoot, { backgroundColor: colors.bg }]} edges={['top']}>
+      <SafeAreaView dataSet={NO_BOTTOM_INSET_ON_KEYBOARD} style={[styles.modalRoot, { backgroundColor: colors.bg }]} edges={['top']}>
         <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
           <View style={styles.modalTitleRow}>
             <Feather name="shopping-cart" size={18} color={colors.primary} />

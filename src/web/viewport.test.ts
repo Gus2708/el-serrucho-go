@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { HIDE_ON_KEYBOARD } from './hideOnKeyboard';
+import { HIDE_ON_KEYBOARD, NO_BOTTOM_INSET_ON_KEYBOARD } from './keyboardMarkers';
 import { rootStyles, viewportDebugPanel, visualViewportSync } from './viewport';
 
 type Listener = (event?: unknown) => void;
@@ -75,6 +75,14 @@ function lastValue(body: string, property: string): string | undefined {
   return values[values.length - 1];
 }
 
+// Mirrors react-native-web's dataSet -> data-* conversion.
+function dataAttribute(marker: Record<string, string>): string {
+  const [key] = Object.keys(marker);
+  return `data-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+}
+
+const REPO_ROOT = path.join(__dirname, '..', '..');
+
 describe('rootStyles (inline <style>, not minified)', () => {
   const blocks = cssBlocks(rootStyles);
   const rootBlocks = blocks.filter((block) => block.selector === '#root');
@@ -98,11 +106,17 @@ describe('rootStyles (inline <style>, not minified)', () => {
   });
 
   it('hides the elements marked by HIDE_ON_KEYBOARD only while the keyboard is open', () => {
-    const [key] = Object.keys(HIDE_ON_KEYBOARD);
-    const attribute = `data-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
-    const block = blocks.find((candidate) => candidate.selector === `html.keyboard-open [${attribute}]`);
+    const selector = `html.keyboard-open [${dataAttribute(HIDE_ON_KEYBOARD)}]`;
+    const block = blocks.find((candidate) => candidate.selector === selector);
 
     expect(lastValue(block?.body ?? '', 'display')).toBe('none !important');
+  });
+
+  it('drops the bottom inset of NO_BOTTOM_INSET_ON_KEYBOARD elements only while the keyboard is open', () => {
+    const selector = `html.keyboard-open [${dataAttribute(NO_BOTTOM_INSET_ON_KEYBOARD)}]`;
+    const block = blocks.find((candidate) => candidate.selector === selector);
+
+    expect(lastValue(block?.body ?? '', 'padding-bottom')).toBe('0 !important');
   });
 });
 
@@ -118,9 +132,45 @@ describe('floating bars hidden while typing', () => {
   ];
 
   it.each(markedFiles)('%s keeps its floating bars marked', (file, expected) => {
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', file), 'utf8');
+    const source = fs.readFileSync(path.join(REPO_ROOT, file), 'utf8');
 
     expect(source.split('dataSet={HIDE_ON_KEYBOARD}').length - 1).toBe(expected);
+  });
+});
+
+describe('top-only SafeAreaViews while typing', () => {
+  const safeAreaContext = path.join(REPO_ROOT, 'node_modules', 'react-native-safe-area-context', 'lib', 'module');
+
+  function topOnlySafeAreaLines(): string[] {
+    return ['app', 'src'].flatMap((dir) =>
+      (fs.readdirSync(path.join(REPO_ROOT, dir), { recursive: true }) as string[])
+        .filter((file) => file.endsWith('.tsx'))
+        .flatMap((file) => {
+          const relative = path.join(dir, file);
+          return fs
+            .readFileSync(path.join(REPO_ROOT, relative), 'utf8')
+            .split(/\r?\n/)
+            .filter((line) => line.includes("edges={['top']}"))
+            .map((line) => `${relative}: ${line.trim()}`);
+        }),
+    );
+  }
+
+  it('still pads unlisted edges on web (canary: remove the marker once this fails)', () => {
+    // Native fills edges missing from the array with 'off'; web falls through to 'additive',
+    // so edges={['top']} also pads the 34pt bottom inset on the iOS PWA.
+    const native = fs.readFileSync(path.join(safeAreaContext, 'SafeAreaView.js'), 'utf8');
+    const web = fs.readFileSync(path.join(safeAreaContext, 'SafeAreaView.web.js'), 'utf8');
+
+    expect(native).toContain("bottom: edgesObj.bottom ?? 'off'");
+    expect(web).not.toContain("?? 'off'");
+  });
+
+  it('marks every edges={[\'top\']} SafeAreaView so its bottom inset is dropped while typing', () => {
+    const lines = topOnlySafeAreaLines();
+
+    expect(lines.length).toBeGreaterThanOrEqual(10);
+    expect(lines.filter((line) => !line.includes('dataSet={NO_BOTTOM_INSET_ON_KEYBOARD}'))).toEqual([]);
   });
 });
 
@@ -311,7 +361,7 @@ describe('visualViewportSync', () => {
       expect(input.scrollIntoView).not.toHaveBeenCalled();
       jest.runOnlyPendingTimers();
 
-      expect(input.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+      expect(input.scrollIntoView).toHaveBeenCalledWith({ block: 'center' });
     });
 
     it('reveals a textarea focused while the keyboard is already open', () => {
@@ -322,7 +372,7 @@ describe('visualViewportSync', () => {
       harness.focus(textarea);
       jest.runOnlyPendingTimers();
 
-      expect(textarea.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+      expect(textarea.scrollIntoView).toHaveBeenCalledWith({ block: 'center' });
     });
 
     it('ignores focus while the keyboard is closed and non-text elements', () => {

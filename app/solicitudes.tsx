@@ -2,6 +2,7 @@ import { scaleFont } from '../src/theme/responsive';
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { NO_BOTTOM_INSET_ON_KEYBOARD } from '../src/web/keyboardMarkers';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -98,7 +99,7 @@ export default function Solicitudes() {
   }
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
+    <SafeAreaView dataSet={NO_BOTTOM_INSET_ON_KEYBOARD} style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
       <StatusBar style="light" />
 
       {/* Header */}

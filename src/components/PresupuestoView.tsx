@@ -1,7 +1,7 @@
 import { scaleFont } from '../theme/responsive';
 import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TextInput, ActivityIndicator, Platform } from 'react-native';
-import { HIDE_ON_KEYBOARD } from '../web/hideOnKeyboard';
+import { HIDE_ON_KEYBOARD } from '../web/keyboardMarkers';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeContext';

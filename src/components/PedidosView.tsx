@@ -13,7 +13,7 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from 'react-native';
-import { HIDE_ON_KEYBOARD } from '../web/hideOnKeyboard';
+import { HIDE_ON_KEYBOARD } from '../web/keyboardMarkers';
 import { Feather } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

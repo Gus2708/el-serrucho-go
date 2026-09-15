@@ -1,7 +1,7 @@
 import { scaleFont } from '../src/theme/responsive';
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, Platform } from 'react-native';
-import { HIDE_ON_KEYBOARD } from '../src/web/hideOnKeyboard';
+import { HIDE_ON_KEYBOARD } from '../src/web/keyboardMarkers';
 import { FlashList } from '@shopify/flash-list';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';

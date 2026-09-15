@@ -1,8 +1,8 @@
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { View, Pressable, StyleSheet, Platform } from 'react-native';
+import { HIDE_ON_KEYBOARD } from '../web/keyboardMarkers';
 import type { LayoutChangeEvent } from 'react-native';
-import { HIDE_ON_KEYBOARD } from '../web/hideOnKeyboard';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
