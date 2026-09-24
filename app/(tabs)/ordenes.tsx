@@ -268,7 +268,7 @@ function BorradorView({ router, isPrivileged, onEmitted }: { router: any; isPriv
       const msg = `OC-${String(orderId).padStart(4, '0')} generada.`;
       
       if (Platform.OS === 'web' && html) {
-        await printHtml(html);
+        await printHtml(html, `Ajuste_No_${orderId}.pdf`);
       }
       onEmitted?.();
     } catch (e: any) {
@@ -894,7 +894,7 @@ function HistorialView({
       }
       
       if (Platform.OS === 'web') {
-        await printHtml(html);
+        await printHtml(html, friendlyName);
       } else {
         const { uri } = await Print.printToFileAsync({ html });
         const localDestUri = `${FileSystem.cacheDirectory}${friendlyName}`;

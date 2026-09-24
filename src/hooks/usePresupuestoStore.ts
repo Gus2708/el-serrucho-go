@@ -7,6 +7,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { buildPresupuestoPdfHtml, getPresupuestoFilename } from '../utils/pdfGenerator';
+import { htmlToPdfBlob } from '../utils/webPdf';
 import { isDemoActive } from '../demo/useDemoStore';
 
 export type Cliente = {
@@ -212,7 +213,22 @@ export const usePresupuestoStore = create<PresupuestoStore>((set, get) => ({
       );
 
       if (Platform.OS === 'web') {
-        // Web: return the html so the UI can decide how to handle the print/delivery
+        const friendlyName = getPresupuestoFilename(cliente, presupuesto.id);
+        try {
+          const blob = await htmlToPdfBlob(html);
+          const blobUrl = URL.createObjectURL(blob);
+          try {
+            const pdfUrl = await uploadPdfAndGetUrl(blobUrl, friendlyName);
+            await supabase
+              .from('presupuestos')
+              .update({ pdf_url: pdfUrl })
+              .eq('id', presupuesto.id);
+          } finally {
+            URL.revokeObjectURL(blobUrl);
+          }
+        } catch (uploadErr) {
+          console.warn('[usePresupuestoStore] failed to upload web PDF:', uploadErr);
+        }
         return { presupuestoId: presupuesto.id, html };
       } else {
         // Native: generate a real PDF file and share it

@@ -111,3 +111,7 @@ scratch/
 task.md
 chats*/
 chats_*.json
+brag-output/
+brag-assets/
+openspec/
+skills/

@@ -24,6 +24,24 @@ import { ActivityIndicator, Platform, View, useWindowDimensions, Text, Pressable
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PressableScale } from '../src/components/PressableScale';
 import { initCrashLog, logBreadcrumb } from '../src/lib/crashLog';
+import * as Sentry from '@sentry/react-native';
+import { isRunningInExpoGo } from 'expo';
+
+// Sentry: Error Monitoring, Tracing y Session Replay
+Sentry.init({
+  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
+  enabled: Boolean(process.env.EXPO_PUBLIC_SENTRY_DSN),
+  sendDefaultPii: true,
+  tracesSampleRate: 1.0,
+  profilesSampleRate: 1.0,
+  replaysOnErrorSampleRate: 1.0,
+  replaysSessionSampleRate: 0.1,
+  integrations: [
+    Sentry.mobileReplayIntegration(),
+  ],
+  enableNativeFramesTracking: !isRunningInExpoGo(),
+  environment: __DEV__ ? 'development' : 'production',
+});
 
 // Instalado lo antes posible: si el proceso muere más adelante (fuentes,
 // auth, push), esto ya está armado para subir el rastro apenas la app reabra.
@@ -264,7 +282,7 @@ function UpdateToast() {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   const isDemoMode = useDemoStore(s => s.isDemoMode);
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -549,4 +567,6 @@ export default function RootLayout() {
 
   return inner;
 }
+
+export default Sentry.wrap(RootLayout);
 

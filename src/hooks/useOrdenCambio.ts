@@ -6,6 +6,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
 import { buildPdfHtml, DraftItem } from '../utils/pdfGenerator';
+import { htmlToPdfBlob } from '../utils/webPdf';
 import { isDemoActive } from '../demo/useDemoStore';
 
 interface OrdenStore {
@@ -106,13 +107,23 @@ export const useOrdenCambio = create<OrdenStore>()((set, get) => ({
       const html = buildPdfHtml(items, nota, orden.id, creadoPor);
 
       if (Platform.OS === 'web') {
-        // Web: return the html so the UI can decide how to handle the print/delivery
-        // Update status to emitted even on web
-        
-        // Update status to emitted even on web
+        const fileName = `orden-${orden.id}-${Date.now()}.pdf`;
+        let pdfUrl: string | undefined;
+        try {
+          const blob = await htmlToPdfBlob(html);
+          const blobUrl = URL.createObjectURL(blob);
+          try {
+            pdfUrl = await uploadPdfAndGetUrl(blobUrl, fileName);
+          } finally {
+            URL.revokeObjectURL(blobUrl);
+          }
+        } catch (uploadErr) {
+          console.warn('[useOrdenCambio] failed to upload web PDF:', uploadErr);
+        }
+
         await supabase
           .from('ordenes_cambio')
-          .update({ status: 'emitido' })
+          .update({ status: 'emitido', ...(pdfUrl ? { pdf_url: pdfUrl } : {}) })
           .eq('id', orden.id);
 
         set({ isLoading: false });

@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import * as Print from 'expo-print';
 import packageJson from '../../package.json';
 import { Cliente } from '../hooks/usePresupuestoStore';
+import { printWebPdf } from './webPdf';
 
 const appVersion = packageJson.version || '1.2.0';
 
@@ -865,11 +866,12 @@ export function buildVentaPdfHtml(
 }
 
 /**
- * Robustly triggers the print dialog for a given HTML string.
- * On Web, it uses an iframe-based approach (via expo-print) to avoid opening new windows/tabs,
- * which is critical for a smooth PWA experience.
+ * Robustly prints or exports a given HTML document.
+ * On Native (Android/iOS), it delegates to Expo Print.
+ * On Web / PWA, it generates a real PDF document (Blob) via html2canvas-pro & jsPDF
+ * and triggers Web Share API or direct PDF file download.
  */
-export async function printHtml(html: string) {
+export async function printHtml(html: string, filename = 'documento.pdf') {
   if (Platform.OS !== 'web') {
     try {
       await Print.printAsync({ html });
@@ -879,45 +881,6 @@ export async function printHtml(html: string) {
     return;
   }
 
-  // Web: Use an isolated hidden iframe for clean printing without opening new tabs.
-  // This avoids capturing the main application UI and provides better styling control.
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.left = '-10000px';
-  iframe.style.top = '-10000px';
-  iframe.style.width = '100%';
-  iframe.style.height = '100%';
-  document.body.appendChild(iframe);
-
-  const iframeDoc = iframe.contentWindow?.document;
-  if (!iframeDoc) {
-    // Fallback: download as HTML if iframe fails
-    const blob = new Blob([html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'documento.html';
-    link.click();
-    return;
-  }
-
-  iframeDoc.open();
-  iframeDoc.write(html);
-  iframeDoc.close();
-
-  // Give it a moment to load fonts/styles
-  setTimeout(() => {
-    try {
-      iframe.contentWindow?.focus();
-      iframe.contentWindow?.print();
-      // Cleanup after a delay to ensure print dialog was triggered
-      setTimeout(() => {
-        if (document.body.contains(iframe)) {
-          document.body.removeChild(iframe);
-        }
-      }, 2000);
-    } catch (e) {
-      console.error('Error during web print:', e);
-    }
-  }, 600);
+  await printWebPdf(html, filename);
 }
+

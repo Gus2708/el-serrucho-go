@@ -14,15 +14,16 @@ watches Hybrid POS `.dat` files and syncs to Supabase in real time.
 
 | Layer | Choice |
 |-------|--------|
-| Framework | React Native 0.76.9 + Expo SDK 52 + TypeScript |
-| Navigation | Expo Router v4 (file-based) |
+| Framework | React Native 0.79 + Expo SDK 53 + TypeScript |
+| Navigation | Expo Router v5 (file-based) |
 | Backend | Supabase (Postgres + Auth + Realtime + Storage + Edge Functions) |
 | Data fetching | TanStack Query v5 (`useQuery`, `useInfiniteQuery`, `useMutation`) |
 | State | Zustand (UI / draft change orders) |
 | Lists | `@shopify/flash-list` (virtualized — required for the 7,200-product inventory) |
 | Images | `expo-image` (NOT `react-native` Image) |
 | Charts | `react-native-gifted-charts` + custom `SparklineChart` (svg) |
-| PDF | `expo-print` + `expo-sharing` |
+| PDF | `expo-print` + `expo-sharing` (native) / `jspdf` + `html2canvas-pro` (web) |
+| Observability | `@sentry/react-native` (crashes, tracing, replay) |
 | Fonts | `@expo-google-fonts/jetbrains-mono` (400 / 500 / 700) |
 | AI anomalies | Gemini Flash 1.5 via Supabase Edge Function (never called from the client) |
 | Icons | `@expo/vector-icons` — Feather set |

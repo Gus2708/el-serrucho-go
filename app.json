@@ -78,6 +78,13 @@
             "./assets/fonts/JetBrainsMono_700Bold.ttf"
           ]
         }
+      ],
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "gusdev-y5",
+          "project": "react-native"
+        }
       ]
     ],
     "experiments": {

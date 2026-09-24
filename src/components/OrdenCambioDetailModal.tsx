@@ -444,7 +444,7 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
       );
 
       if (Platform.OS === 'web') {
-        await printHtml(html);
+        await printHtml(html, `Ajuste_No_${orden.id}.pdf`);
       } else {
         const { uri } = await Print.printToFileAsync({ html });
         await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });

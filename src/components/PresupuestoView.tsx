@@ -9,7 +9,7 @@ import { useDeviceSize } from '../hooks/useDeviceSize';
 import { usePresupuestoStore } from '../hooks/usePresupuestoStore';
 import { supabase } from '../lib/supabase';
 import { notify, confirm } from '../lib/notify';
-import { printHtml } from '../utils/pdfGenerator';
+import { printHtml, getPresupuestoFilename } from '../utils/pdfGenerator';
 import { MarginWarningBadge } from './MarginWarningBadge';
 import { PressableScale } from './PressableScale';
 import { pressScale } from '../theme/motion';
@@ -88,13 +88,14 @@ export default function PresupuestoView({ router, onEmitted }: { router: any; on
         return;
       }
       const { presupuestoId, html } = result;
+      const friendlyName = getPresupuestoFilename(cliente, presupuestoId);
       reset();
       setPriceInputs({});
       
       const msg = `P-${String(presupuestoId).padStart(4, '0')} generado.`;
       
       if (Platform.OS === 'web' && html) {
-        await printHtml(html);
+        await printHtml(html, friendlyName);
       }
       onEmitted?.();
     } catch (e: any) {

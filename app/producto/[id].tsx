@@ -21,6 +21,7 @@ import { useMovimientosProducto, MovimientoProducto } from '../../src/hooks/useM
 import { VentaDetailModal } from '../../src/components/VentaDetailModal';
 import { VentaHoy } from '../../src/hooks/useVentasHoy';
 import { buildPdfHtml, printHtml, DraftItem } from '../../src/utils/pdfGenerator';
+import { htmlToPdfBlob } from '../../src/utils/webPdf';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { uploadPdfAndGetUrl } from '../../src/lib/pdfStorage';
@@ -691,8 +692,21 @@ export default function ProductoDetail() {
                       const html = buildPdfHtml([draftItem], noteText, orden.id, creadoPor);
 
                       if (Platform.OS === 'web') {
-                        await printHtml(html);
-                        await supabase.from('ordenes_cambio').update({ status: 'emitido' }).eq('id', orden.id);
+                        const fileName = `orden-${orden.id}-${Date.now()}.pdf`;
+                        try {
+                          const blob = await htmlToPdfBlob(html);
+                          const blobUrl = URL.createObjectURL(blob);
+                          try {
+                            const pdfUrl = await uploadPdfAndGetUrl(blobUrl, fileName);
+                            await supabase.from('ordenes_cambio').update({ status: 'emitido', pdf_url: pdfUrl }).eq('id', orden.id);
+                          } finally {
+                            URL.revokeObjectURL(blobUrl);
+                          }
+                        } catch (err) {
+                          console.warn('[producto] failed to upload web PDF:', err);
+                          await supabase.from('ordenes_cambio').update({ status: 'emitido' }).eq('id', orden.id);
+                        }
+                        await printHtml(html, `Ajuste_No_${orden.id}.pdf`);
                       } else {
                         const { uri } = await Print.printToFileAsync({ html });
                         const fileName = `orden-${orden.id}-${Date.now()}.pdf`;
@@ -1042,8 +1056,21 @@ export default function ProductoDetail() {
                       const html = buildPdfHtml([draftItem], noteText, orden.id, creadoPor);
 
                       if (Platform.OS === 'web') {
-                        await printHtml(html);
-                        await supabase.from('ordenes_cambio').update({ status: 'emitido' }).eq('id', orden.id);
+                        const fileName = `orden-${orden.id}-${Date.now()}.pdf`;
+                        try {
+                          const blob = await htmlToPdfBlob(html);
+                          const blobUrl = URL.createObjectURL(blob);
+                          try {
+                            const pdfUrl = await uploadPdfAndGetUrl(blobUrl, fileName);
+                            await supabase.from('ordenes_cambio').update({ status: 'emitido', pdf_url: pdfUrl }).eq('id', orden.id);
+                          } finally {
+                            URL.revokeObjectURL(blobUrl);
+                          }
+                        } catch (err) {
+                          console.warn('[producto] failed to upload web PDF:', err);
+                          await supabase.from('ordenes_cambio').update({ status: 'emitido' }).eq('id', orden.id);
+                        }
+                        await printHtml(html, `Ajuste_No_${orden.id}.pdf`);
                       } else {
                         const { uri } = await Print.printToFileAsync({ html });
                         const fileName = `orden-${orden.id}-${Date.now()}.pdf`;

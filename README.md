@@ -19,6 +19,7 @@
     <img src="https://img.shields.io/badge/React_Native-0.79-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React Native 0.79" />
     <img src="https://img.shields.io/badge/Supabase-Database-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase" />
     <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript 5.8" />
+    <img src="https://img.shields.io/badge/Sentry-Monitoring-362D59?style=for-the-badge&logo=sentry&logoColor=white" alt="Sentry" />
     <img src="https://img.shields.io/badge/PWA-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Vercel PWA" />
   </p>
 
@@ -103,6 +104,7 @@ El Serrucho GO enforces strict security best practices audited through a compreh
 - **Lists**: `@shopify/flash-list`
 - **Web/PWA**: `react-native-web`, custom `service-worker.js` + `manifest.webmanifest`, deployed on Vercel
 - **Testing**: Jest (`babel-preset-expo`) + `@testing-library/react-native`
+- **Observability**: [@sentry/react-native](https://docs.sentry.io/platforms/react-native/) — Real-time crash reporting, distributed tracing with Expo Router, and mobile session replay
 
 ### Backend
 - **Platform**: [Supabase](https://supabase.com/)
@@ -246,6 +248,7 @@ Create a `.env.local` file at the root:
 | `EXPO_PUBLIC_SUPABASE_URL` | Your Supabase project URL |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous (public) key |
 | `EXPO_PUBLIC_WIDGET_API_URL` | *(Optional)* Local POS sync widget URL (e.g. `http://192.168.1.143:5000`) |
+| `EXPO_PUBLIC_SENTRY_DSN` | *(Optional)* Sentry DSN for crash reporting & distributed tracing |
 
 ### Installation
 

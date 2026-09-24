@@ -7,6 +7,10 @@
     "engram": {
       "command": "C:\\Users\\OFICINA\\.engram\\bin\\engram.exe",
       "args": ["mcp", "--tools=agent", "--project=el-serrucho-go"]
+    },
+    "sentry": {
+      "type": "http",
+      "url": "https://mcp.sentry.dev/mcp?utm_source=plugin"
     }
   }
 }

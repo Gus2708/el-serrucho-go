@@ -161,7 +161,7 @@ export function VentaDetailModal({ venta, onClose }: VentaDetailModalProps): Rea
     try {
       const html = buildVentaPdfHtml(venta, details);
       if (Platform.OS === 'web') {
-        await printHtml(html);
+        await printHtml(html, `Recibo_Venta_${venta.id}.pdf`);
       } else {
         const { uri } = await Print.printToFileAsync({ html });
         await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
