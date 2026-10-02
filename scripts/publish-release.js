@@ -25,22 +25,25 @@ function runCommand(cmd) {
 }
 
 function parseEasJson(output) {
-  const jsonStart = output.indexOf('[');
-  const jsonEnd = output.lastIndexOf(']');
-  if (jsonStart !== -1 && jsonEnd !== -1) {
-    return JSON.parse(output.substring(jsonStart, jsonEnd + 1));
+  const firstBrace = output.indexOf('{');
+  const firstBracket = output.indexOf('[');
+
+  if (firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)) {
+    const lastBracket = output.lastIndexOf(']');
+    return JSON.parse(output.substring(firstBracket, lastBracket + 1));
   }
-  const objStart = output.indexOf('{');
-  const objEnd = output.lastIndexOf('}');
-  if (objStart !== -1 && objEnd !== -1) {
-    return [JSON.parse(output.substring(objStart, objEnd + 1))];
+
+  if (firstBrace !== -1) {
+    const lastBrace = output.lastIndexOf('}');
+    return [JSON.parse(output.substring(firstBrace, lastBrace + 1))];
   }
+
   throw new Error('No se pudo parsear la respuesta JSON de EAS:\n' + output);
 }
 
 async function getBuildInfo(buildId) {
   const cmd = buildId
-    ? `npx eas build:view ${buildId} --json --non-interactive`
+    ? `npx eas build:view ${buildId} --json`
     : `npx eas build:list --platform android --limit 1 --json --non-interactive`;
   const raw = runCommand(cmd);
   const builds = parseEasJson(raw);
