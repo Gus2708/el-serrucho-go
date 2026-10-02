@@ -41,13 +41,27 @@ function parseEasJson(output) {
   throw new Error('No se pudo parsear la respuesta JSON de EAS:\n' + output);
 }
 
-async function getBuildInfo(buildId) {
+async function getBuildInfo(buildId, retries = 3) {
   const cmd = buildId
     ? `npx eas build:view ${buildId} --json`
     : `npx eas build:list --platform android --limit 1 --json --non-interactive`;
-  const raw = runCommand(cmd);
-  const builds = parseEasJson(raw);
-  return builds[0];
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const raw = runCommand(cmd);
+      if (!raw || raw.trim().length === 0) {
+        throw new Error('Respuesta vacía recibida de EAS');
+      }
+      const builds = parseEasJson(raw);
+      if (builds && builds.length > 0) {
+        return builds[0];
+      }
+    } catch (err) {
+      if (attempt === retries) throw err;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+  return null;
 }
 
 async function downloadFile(url, destPath) {
@@ -91,6 +105,8 @@ async function main() {
   console.log(`Versión EAS:   ${build.appVersion}`);
   console.log(`Estado actual: ${build.status}\n`);
 
+  let lastStatus = build.status;
+
   while (build.status === 'IN_QUEUE' || build.status === 'IN_PROGRESS') {
     if (!shouldWait) {
       console.log(`El build aún no termina (Estado: ${build.status}).`);
@@ -100,9 +116,22 @@ async function main() {
       return;
     }
 
-    console.log(`[EAS] Build en proceso (${build.status}). Esperando 30 segundos...`);
-    await new Promise((resolve) => setTimeout(resolve, 30000));
-    build = await getBuildInfo(build.id);
+    await new Promise((resolve) => setTimeout(resolve, 10000));
+
+    try {
+      const nextBuild = await getBuildInfo(build.id);
+      if (nextBuild) {
+        build = nextBuild;
+        if (build.status !== lastStatus) {
+          console.log(`[EAS] ¡Cambio de estado!: ${lastStatus} -> ${build.status}`);
+          lastStatus = build.status;
+        } else {
+          console.log(`[EAS] Estado: ${build.status}...`);
+        }
+      }
+    } catch (err) {
+      console.log(`[EAS] Consulta temporal fallida (${err.message}), reintentando...`);
+    }
   }
 
   if (build.status !== 'FINISHED') {
