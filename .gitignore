@@ -18,6 +18,8 @@ android/.gradle/
 ios/build/
 ios/Pods/
 ios/DerivedData/
+*.apk
+*.aab
 
 # EAS
 eas-build-*.tgz
