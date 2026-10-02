@@ -92,7 +92,7 @@ const queryPersister = createAsyncStoragePersister({
 const persistOptions = {
   persister: queryPersister,
   maxAge: 24 * 60 * 60_000,
-  buster: 'v1.2.1',
+  buster: 'v1.2.2',
   dehydrateOptions: {
     shouldDehydrateQuery: (query: { state: { status: string }; queryKey: readonly unknown[] }) =>
       query.state.status === 'success' && PERSISTED_QUERY_KEYS.has(String(query.queryKey[0])),
@@ -102,6 +102,8 @@ const persistOptions = {
 import { useUserRole } from '../src/hooks/useUserRole';
 import { usePWAInstallStore } from '../src/hooks/usePWAInstall';
 import { useDemoStore, DEMO_SESSION } from '../src/demo/useDemoStore';
+import AppUpdateModal from '../src/components/AppUpdateModal';
+import { useAppUpdateStore } from '../src/hooks/useAppUpdate';
 
 function AuthGuard({ session, ready }: { session: Session | null; ready: boolean }) {
   const [hardTimeout, setHardTimeout] = useState(false);
@@ -213,6 +215,18 @@ function RealtimeInitializer({ children }: { children: React.ReactNode }) {
   usePushNotifications();
   useForegroundRefresh();
   return <>{children}</>;
+}
+
+function AndroidUpdateChecker() {
+  const checkForUpdates = useAppUpdateStore((s) => s.checkForUpdates);
+
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      checkForUpdates(false).catch(() => {});
+    }
+  }, [checkForUpdates]);
+
+  return <AppUpdateModal />;
 }
 
 function UpdateToast() {
@@ -502,6 +516,7 @@ function RootLayout() {
                 </Head>
                 <AuthGuard session={activeSession} ready={isAppReady} />
                 <UpdateToast />
+                <AndroidUpdateChecker />
               </>
             </ThemeProvider>
           </RealtimeInitializer>

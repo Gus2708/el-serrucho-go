@@ -335,6 +335,7 @@ The badge state is computed from `MAX(productos.actualizado_en)`:
     is invoked from the Alertas screen via `supabase.functions.invoke`, gated
     behind a button).
 13. **Code Simplification**: Proactively and always apply the `code-simplifier` skill to any written or modified code. Refine for clarity, ES module syntax, explicit Props and return types, no nested ternaries, and standard function declarations, preserving exact original functionality.
+14. **Automatic Version Bumping & Releases**: Whenever completing a feature, fix, or release, bump the app version using `npm run bump:patch` (or `minor`/`major`). This automatically synchronizes `package.json`, `app.json`, `app/_layout.tsx` query persister buster, and `src/lib/appUpdater.ts`.
 
 ---
 

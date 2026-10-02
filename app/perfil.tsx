@@ -24,6 +24,7 @@ import { usePWAInstallStore } from '../src/hooks/usePWAInstall';
 import { PressableScale } from '../src/components/PressableScale';
 import { pressScale } from '../src/theme/motion';
 import { isDemoActive, useDemoStore, DEMO_PROFILE } from '../src/demo/useDemoStore';
+import { useAppUpdateStore } from '../src/hooks/useAppUpdate';
 
 function PWAProfileControl() {
   const { colors } = useTheme();
@@ -83,6 +84,97 @@ function PWAProfileControl() {
   }
 
   return null;
+}
+
+function AndroidProfileUpdateControl() {
+  const { colors } = useTheme();
+  const isChecking = useAppUpdateStore((s) => s.isChecking);
+  const isDownloading = useAppUpdateStore((s) => s.isDownloading);
+  const updateInfo = useAppUpdateStore((s) => s.updateInfo);
+  const currentVersion = useAppUpdateStore((s) => s.currentVersion);
+  const checkForUpdates = useAppUpdateStore((s) => s.checkForUpdates);
+  const openModal = useAppUpdateStore((s) => s.openModal);
+
+  if (Platform.OS !== 'android') return null;
+
+  const handleCheck = async () => {
+    try {
+      if (updateInfo?.isAvailable) {
+        openModal();
+        return;
+      }
+      const info = await checkForUpdates(true);
+      if (info && !info.isAvailable) {
+        notify('El Serrucho GO', `Tu versión (v${info.currentVersion}) está al día.`);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'No se pudo verificar la actualización.';
+      notify('Actualizaciones', message);
+    }
+  };
+
+  const hasUpdate = !!updateInfo?.isAvailable;
+
+  return (
+    <PressableScale
+      onPress={handleCheck}
+      disabled={isChecking || isDownloading}
+      activeScale={pressScale.row}
+      style={[
+        {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          height: 58,
+          borderRadius: 18,
+          borderWidth: 0.5,
+          borderColor: hasUpdate ? (colors.primary || '#F5B200') : (colors.border || '#333'),
+          backgroundColor: hasUpdate ? 'rgba(245, 178, 0, 0.08)' : (colors.surface || '#1E1E1E'),
+          marginTop: 10,
+          paddingHorizontal: 16,
+        },
+      ]}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <Feather
+          name={hasUpdate ? 'download-cloud' : 'refresh-cw'}
+          size={18}
+          color={hasUpdate ? (colors.primary || '#F5B200') : (colors.textMuted || '#888')}
+        />
+        <View>
+          <Text
+            style={{
+              fontSize: scaleFont(13),
+              fontFamily: 'JetBrainsMono_700Bold',
+              color: hasUpdate ? (colors.primary || '#F5B200') : '#FFFFFF',
+              letterSpacing: 0.5,
+            }}
+          >
+            {hasUpdate ? `NUEVA VERSIÓN (v${updateInfo.latestVersion})` : `VERSIÓN ${currentVersion}`}
+          </Text>
+          <Text
+            style={{
+              fontSize: scaleFont(10),
+              fontFamily: 'JetBrainsMono_500Medium',
+              color: colors.textMuted || '#888',
+            }}
+          >
+            {hasUpdate ? 'Toca para instalar la nueva versión' : 'Toca para buscar actualizaciones'}
+          </Text>
+        </View>
+      </View>
+
+      {isChecking ? (
+        <ActivityIndicator size="small" color={colors.primary || '#F5B200'} />
+      ) : (
+        <Feather
+          name="chevron-right"
+          size={18}
+          color={hasUpdate ? (colors.primary || '#F5B200') : (colors.textDim || '#666')}
+        />
+      )}
+    </PressableScale>
+  );
 }
 
 export default function Perfil() {
@@ -312,6 +404,7 @@ export default function Perfil() {
         </View>
 
         <PWAProfileControl />
+        <AndroidProfileUpdateControl />
 
         {/* Configuración admin */}
         {profile?.role === 'admin' && (

@@ -1,6 +1,6 @@
 {
   "name": "el-serrucho-go",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
@@ -10,6 +10,9 @@
     "build:web": "expo export --platform web && node copy-public.js",
     "build:apk": "eas build -p android --profile preview",
     "build:apk:local": "eas build -p android --profile preview --local",
+    "bump": "node scripts/bump-version.js",
+    "bump:patch": "node scripts/bump-version.js patch",
+    "bump:minor": "node scripts/bump-version.js minor",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx --max-warnings 9999",
     "test": "jest"
@@ -58,6 +61,7 @@
     "expo-file-system": "~18.1.11",
     "expo-font": "~13.3.2",
     "expo-image": "~2.4.1",
+    "expo-intent-launcher": "~12.1.5",
     "expo-linear-gradient": "~14.1.5",
     "expo-linking": "~7.1.7",
     "expo-notifications": "~0.31.5",
