@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { withSupabaseRetry } from '../lib/retry';
+import { calcularCantidadesCompra } from '../lib/compraCantidades';
 import { fetchExistencias, faltantePorNegativo } from './useExistencias';
 import { fetchColisionesCodigo, describirColision, ColisionesMap } from './useColisionesCodigo';
 import { isDemoActive } from '../demo/useDemoStore';
@@ -485,7 +486,8 @@ async function compensarExistenciasNegativas(items: CompraDraftItem[]): Promise<
     if (item.es_nuevo) return item;
     const faltante = faltantePorNegativo(existencias[item.codigo_producto]);
     if (faltante === 0) return item;
-    return { ...item, cantidad: item.cantidad + faltante };
+    const cantidades = calcularCantidadesCompra(item.cantidad, existencias[item.codigo_producto]);
+    return { ...item, cantidad: cantidades.cantidadPos };
   });
 }
 
