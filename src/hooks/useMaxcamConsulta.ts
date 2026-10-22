@@ -9,6 +9,7 @@ export type MaxcamCandidato = {
   stock_bq:   number;
   precio:     number | null;
   cant_caja:  number | null;
+  imagen?:    string | null; // photo URL on Maxcam's server; the app loads it directly
 };
 
 export type MaxcamConsulta = ConsultaProveedor<MaxcamCandidato>;

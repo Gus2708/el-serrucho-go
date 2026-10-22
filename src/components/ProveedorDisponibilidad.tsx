@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { scaleFont } from '../theme/responsive';
@@ -23,6 +24,7 @@ type Props<C extends CandidatoBase> = {
   sinResultado:  string;                 // text when the supplier has no equivalent
   badge:         (c: C) => string;       // availability label of one candidate
   detalle?:      (c: C) => string;       // extra line parts (box size, minimum sale...)
+  imagenes?:     (c: C) => string[];     // photo URLs to try in order; never stored by us
 };
 
 /**
@@ -110,10 +112,15 @@ export function ProveedorDisponibilidad<C extends CandidatoBase>(p: Props<C>) {
             ].filter(Boolean).join('  ·  ');
             return (
               <View key={c.sku} style={[styles.candidato, { borderColor: colors.border }]}>
-                <Text style={[styles.nombre, { color: colors.text }]} numberOfLines={2}>{c.nombre}</Text>
-                <Text style={[styles.meta, { color: colors.textMuted }]}>{extra}</Text>
-                <View style={[styles.badge, { backgroundColor: color + '22', borderColor: color + '55' }]}>
-                  <Text style={[styles.badgeText, { color }]}>{p.badge(c)}</Text>
+                <View style={styles.fila}>
+                  <Foto urls={p.imagenes?.(c) ?? []} colors={colors} />
+                  <View style={styles.texto}>
+                    <Text style={[styles.nombre, { color: colors.text }]} numberOfLines={2}>{c.nombre}</Text>
+                    <Text style={[styles.meta, { color: colors.textMuted }]}>{extra}</Text>
+                    <View style={[styles.badge, { backgroundColor: color + '22', borderColor: color + '55' }]}>
+                      <Text style={[styles.badgeText, { color }]}>{p.badge(c)}</Text>
+                    </View>
+                  </View>
                 </View>
               </View>
             );
@@ -125,6 +132,32 @@ export function ProveedorDisponibilidad<C extends CandidatoBase>(p: Props<C>) {
           </Text>
           <RetryButton colors={colors} onPress={reiniciar} label="Consultar de nuevo" />
         </>
+      )}
+    </View>
+  );
+}
+
+/**
+ * Photo of a suggested product, loaded straight from the supplier's server. Disposable on
+ * purpose: cachePolicy "none" so the app keeps no copy, and nothing is uploaded anywhere.
+ * `urls` are alternatives tried in order (the supplier's file extension varies); when all
+ * fail, or there are none, a placeholder icon is shown.
+ */
+function Foto({ urls, colors }: { urls: string[]; colors: any }) {
+  const [idx, setIdx] = React.useState(0);
+  const uri = urls[idx];
+  return (
+    <View style={[styles.foto, { borderColor: colors.border }]}>
+      {uri ? (
+        <Image
+          source={{ uri }}
+          style={styles.fotoImg}
+          contentFit="contain"
+          cachePolicy="none"
+          onError={() => setIdx((i) => i + 1)}
+        />
+      ) : (
+        <Feather name="image" size={20} color={colors.textDim} />
       )}
     </View>
   );
@@ -149,7 +182,11 @@ const styles = StyleSheet.create({
   row:          { flexDirection: 'row', alignItems: 'center', gap: 12 },
   btn:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 12, borderWidth: 0.5, paddingVertical: 12 },
   btnText:      { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
-  candidato:    { borderTopWidth: 0.5, paddingTop: 12, gap: 6 },
+  candidato:    { borderTopWidth: 0.5, paddingTop: 12 },
+  fila:         { flexDirection: 'row', gap: 12 },
+  texto:        { flex: 1, gap: 6 },
+  foto:         { width: 64, height: 64, borderRadius: 10, borderWidth: 0.5, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  fotoImg:      { width: '100%', height: '100%' },
   nombre:       { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
   meta:         { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular' },
   badge:        { alignSelf: 'flex-start', borderRadius: 999, borderWidth: 0.5, paddingVertical: 4, paddingHorizontal: 12 },
