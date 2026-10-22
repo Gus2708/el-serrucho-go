@@ -1,3 +1,4 @@
+import type { Event } from '@sentry/react-native';
 import {
   addLinea,
   buildSavePayload,
@@ -13,6 +14,12 @@ import {
   type FacturaLocalRecord,
   type StorageLike,
 } from './facturaLocalStore';
+
+const mockCaptureEvent = jest.fn();
+jest.mock('@sentry/react-native', () => ({
+  withScope: (callback: (scope: unknown) => void) => callback({ addEventProcessor: jest.fn() }),
+  captureEvent: (event: unknown) => mockCaptureEvent(event),
+}));
 
 const UID_A = '11111111-1111-4111-8111-111111111111';
 const UID_B = '22222222-2222-4222-8222-222222222222';
@@ -711,5 +718,128 @@ describe('acknowledged state and tombstones (U6)', () => {
     if (listed.status !== 'ok') return;
     expect(listed.drafts.map(draft => draft.facturaId)).toEqual([FACTURA_1]);
     expect(listed.problems).toEqual([]);
+  });
+});
+
+describe('unexpected failure reporting', () => {
+  const SECRET = 'SECRET Ferretería Norte 1234.56 /data/user/0/app/files/doc.pdf';
+  // Every clock read lands a minute after the last, so the reporter's per-failure throttle never hides a report.
+  let clock = Date.now() + 86_400_000;
+
+  beforeEach(() => {
+    mockCaptureEvent.mockReset();
+    jest.spyOn(Date, 'now').mockImplementation(() => (clock += 61_000));
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  const reported = (): string[] => mockCaptureEvent.mock.calls.map(([event]) => (event as Event).message ?? '');
+  const expectNoLeak = (): void => expect(JSON.stringify(mockCaptureEvent.mock.calls)).not.toMatch(/SECRET|Ferreter|user\/0/);
+
+  it('reports an unreadable store once, without the platform message', async () => {
+    const storage = new FakeStorage();
+    storage.failGet = () => new Error(SECRET);
+
+    const result = await createFacturaLocalStore(storage).hydrate(UID_A, FACTURA_1);
+
+    expect(result.status === 'error' && result.error.code).toBe('unavailable');
+    expect(reported()).toEqual(['factura.local_read.unavailable']);
+    expectNoLeak();
+  });
+
+  it('reports a full device as quota when a write fails', async () => {
+    const storage = new FakeStorage();
+    storage.failSet = () => Object.assign(new Error(SECRET), { name: 'QuotaExceededError' });
+
+    const result = await createFacturaLocalStore(storage).write(recordFor(UID_A, FACTURA_1, 1));
+
+    expect(result.status === 'error' && result.error.code).toBe('quota');
+    expect(reported()).toEqual(['factura.local_write.quota']);
+    expectNoLeak();
+  });
+
+  it('reports a record that fails its own validation as a corrupt write', async () => {
+    const storage = new FakeStorage();
+    const invalid = { ...recordFor(UID_A, FACTURA_1, 1), seq: -1 };
+
+    const result = await createFacturaLocalStore(storage).write(invalid);
+
+    expect(result.status === 'error' && result.error.code).toBe('corrupt');
+    expect(reported()).toEqual(['factura.local_write.corrupt']);
+  });
+
+  it('reports a key listing failure', async () => {
+    const storage = new FakeStorage();
+    storage.failKeys = new Error(SECRET);
+
+    await createFacturaLocalStore(storage).listDrafts(UID_A);
+
+    expect(reported()).toEqual(['factura.local_list.unavailable']);
+    expectNoLeak();
+  });
+
+  it('reports corrupt stored data once even when the quarantine copy succeeds', async () => {
+    const storage = new FakeStorage();
+    plant(storage, UID_A, FACTURA_1, SECRET);
+
+    const result = await createFacturaLocalStore(storage).hydrate(UID_A, FACTURA_1);
+
+    expect(result.status === 'error' && result.error.code).toBe('corrupt');
+    expect(reported()).toEqual(['factura.local_read.corrupt']);
+    expectNoLeak();
+  });
+
+  it('reports a failing quarantine copy and a failing original removal separately', async () => {
+    const copyFails = new FakeStorage();
+    plant(copyFails, UID_A, FACTURA_1, SECRET);
+    copyFails.failSet = () => new Error('quota exceeded');
+    const removeFails = new FakeStorage();
+    plant(removeFails, UID_A, FACTURA_1, SECRET);
+    removeFails.failRemove = () => new Error(SECRET);
+
+    await createFacturaLocalStore(copyFails).hydrate(UID_A, FACTURA_1);
+    await createFacturaLocalStore(removeFails).hydrate(UID_A, FACTURA_1);
+
+    expect(reported()).toEqual([
+      'factura.local_quarantine.quota',
+      'factura.local_read.corrupt',
+      'factura.local_quarantine.unavailable',
+      'factura.local_read.corrupt',
+    ]);
+    expectNoLeak();
+  });
+
+  it('does not report a draft written by a newer app version', async () => {
+    const storage = new FakeStorage();
+    plant(storage, UID_A, FACTURA_1, JSON.stringify({ ...recordFor(UID_A, FACTURA_1, 9), schema: 2 }));
+
+    const result = await createFacturaLocalStore(storage).hydrate(UID_A, FACTURA_1);
+
+    expect(result.status === 'error' && result.error.code).toBe('unsupported_schema');
+    expect(mockCaptureEvent).not.toHaveBeenCalled();
+  });
+
+  it('does not report healthy reads, writes, stale writes or empty keys', async () => {
+    const storage = new FakeStorage();
+    const store = createFacturaLocalStore(storage);
+
+    await store.hydrate(UID_A, FACTURA_1);
+    await store.write(recordFor(UID_A, FACTURA_1, 2));
+    await store.write(recordFor(UID_A, FACTURA_1, 1));
+    await store.hydrate(UID_A, FACTURA_1);
+    await store.listDrafts(UID_A);
+
+    expect(mockCaptureEvent).not.toHaveBeenCalled();
+  });
+
+  it('keeps the same outcome when Sentry itself fails', async () => {
+    mockCaptureEvent.mockImplementation(() => {
+      throw new Error('sentry down');
+    });
+    const storage = new FakeStorage();
+    storage.failSet = () => new Error(SECRET);
+
+    const result = await createFacturaLocalStore(storage).write(recordFor(UID_A, FACTURA_1, 1));
+
+    expect(result.status === 'error' && result.error.code).toBe('unavailable');
   });
 });

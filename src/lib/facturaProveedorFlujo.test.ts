@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Event } from '@sentry/react-native';
 import { createFacturaLocalStore, type StorageLike } from './facturaLocalStore';
 import { FacturaError, createFacturaRepository } from './facturaProveedorRepository';
 import {
@@ -12,6 +13,12 @@ import {
   type FlowRepository,
 } from './facturaProveedorFlujo';
 import { addLinea, createDraft, type FacturaDocumento } from './facturaProveedor';
+
+const mockCaptureEvent = jest.fn();
+jest.mock('@sentry/react-native', () => ({
+  withScope: (callback: (scope: unknown) => void) => callback({ addEventProcessor: jest.fn() }),
+  captureEvent: (event: unknown) => mockCaptureEvent(event),
+}));
 
 const FACTURA = 'f0000000-0000-4000-8000-000000000001';
 const OWNER = '11111111-1111-4111-8111-111111111111';
@@ -543,5 +550,79 @@ describe('controlador conectado al repositorio real (fakes de Supabase y almacen
     await expect(fresh.sweep()).resolves.toMatchObject({ removed: [] });
     expect(first.bucket.remove).not.toHaveBeenCalled();
     expect(second.bucket.remove).not.toHaveBeenCalled();
+  });
+
+  describe('reporte de fallos inesperados de punta a punta', () => {
+    // Every clock read lands a minute after the last, so the reporter's per-failure throttle never hides a report.
+    let clock = Date.now() + 86_400_000;
+
+    beforeEach(() => {
+      mockCaptureEvent.mockReset();
+      jest.spyOn(Date, 'now').mockImplementation(() => (clock += 61_000));
+    });
+    afterEach(() => jest.restoreAllMocks());
+
+    const reported = (): Event[] => mockCaptureEvent.mock.calls.map(([event]) => event as Event);
+
+    it('un 500 sin mapa se reporta una sola vez aunque cruce repositorio, adaptador y controlador', async () => {
+      const { service } = open({ answers: [refused('XX000', 500)] });
+      const controller = await acquire(service, draftWithLine(2));
+
+      await expect(controller.save()).resolves.toMatchObject({ status: 'rejected', reason: 'unknown' });
+
+      expect(reported()).toHaveLength(1);
+      expect(reported()[0]).toMatchObject({
+        message: 'factura.save.desconocido',
+        tags: { operation: 'save', code: 'desconocido', sql_state: 'XX000', http_status: '500' },
+      });
+    });
+
+    it('un 502 de pasarela sigue siendo ambiguo y se reporta una vez', async () => {
+      const { service } = open({ answers: [refused('', 502)] });
+      const controller = await acquire(service);
+
+      await expect(controller.save()).resolves.toMatchObject({ status: 'pending' });
+
+      expect(reported().map(event => event.tags)).toEqual([
+        { feature: 'factura_proveedor', operation: 'save', code: 'desconocido', http_status: '502' },
+      ]);
+    });
+
+    it.each([
+      ['PV409', 400],
+      ['PI409', 400],
+      ['22023', 400],
+      ['42501', 403],
+    ])('el rechazo esperado %s (HTTP %s) no se reporta', async (code, status) => {
+      const { service } = open({ answers: [refused(code, status)] });
+      const controller = await acquire(service, draftWithLine(2));
+
+      await expect(controller.save()).resolves.toMatchObject({ status: 'rejected' });
+
+      expect(mockCaptureEvent).not.toHaveBeenCalled();
+    });
+
+    it('perder la conexion no se reporta, ni al guardar ni al subir', async () => {
+      const { service, bucket } = open({ answers: [new TypeError('Network request failed')] });
+      bucket.upload.mockRejectedValueOnce(new TypeError('Network request failed'));
+      const controller = await acquire(service);
+
+      await expect(controller.save()).resolves.toMatchObject({ status: 'pending' });
+      await expect(controller.attach(PDF, 'a.pdf')).resolves.toMatchObject({ status: 'upload_failed' });
+
+      expect(mockCaptureEvent).not.toHaveBeenCalled();
+    });
+
+    it('un fallo 5xx de Storage al subir se reporta una sola vez y el adjunto falla como antes', async () => {
+      const { service, bucket } = open({ answers: [] });
+      bucket.upload.mockResolvedValueOnce({ data: null as never, error: { message: 'SECRET boom', statusCode: '500' } as never });
+      const controller = await acquire(service);
+
+      await expect(controller.attach(PDF, 'a.pdf')).resolves.toMatchObject({ status: 'upload_failed' });
+
+      expect(reported().map(event => event.message)).toEqual(['factura.upload.desconocido']);
+      expect(JSON.stringify(reported())).not.toContain('SECRET');
+      expect(controller.getState().draft.documento).toBeNull();
+    });
   });
 });

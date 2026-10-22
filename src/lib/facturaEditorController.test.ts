@@ -1,3 +1,4 @@
+import type { Event } from '@sentry/react-native';
 import {
   addLinea,
   createDraft,
@@ -15,7 +16,8 @@ import {
   type StorageLike,
 } from './facturaLocalStore';
 import { buildDocumentPath, detectDocumentMime, displayNameFor } from './facturaDocumento';
-import type { GuardarInput, SubirDocumentoInput } from './facturaProveedorRepository';
+import { FacturaError, type GuardarInput, type SubirDocumentoInput } from './facturaProveedorRepository';
+import { reportFacturaThrown } from './facturaTelemetry';
 import {
   hydrateFacturaEditor,
   type DocumentGateway,
@@ -23,6 +25,12 @@ import {
   type RejectReason,
   type SubmitResult,
 } from './facturaEditorController';
+
+const mockCaptureEvent = jest.fn();
+jest.mock('@sentry/react-native', () => ({
+  withScope: (callback: (scope: unknown) => void) => callback({ addEventProcessor: jest.fn() }),
+  captureEvent: (event: unknown) => mockCaptureEvent(event),
+}));
 
 const UID_A = '11111111-1111-4111-8111-111111111111';
 const UID_B = '22222222-2222-4222-8222-222222222222';
@@ -1817,5 +1825,177 @@ describe('controller reuse across reconstruction', () => {
     const persisted = recordOn(storage);
     expect(persisted.draft.notas).toBe('dos');
     expect(persisted.seq).toBeGreaterThan(1);
+  });
+});
+
+describe('unexpected failure reporting', () => {
+  const SECRET = 'SECRET Ferretería Norte 1234.56 /data/user/0/app/cache/doc.pdf';
+  // Every clock read lands a minute after the last, so the reporter's per-failure throttle never hides a report.
+  let clock = Date.now() + 86_400_000;
+
+  beforeEach(() => {
+    mockCaptureEvent.mockReset();
+    jest.spyOn(Date, 'now').mockImplementation(() => (clock += 61_000));
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  const reported = (): string[] => mockCaptureEvent.mock.calls.map(([event]) => (event as Event).message ?? '');
+  const expectNoLeak = (): void => expect(JSON.stringify(mockCaptureEvent.mock.calls)).not.toMatch(/SECRET|Ferreter|user\/0/);
+
+  async function seedUploads(): Promise<AttachOpened> {
+    const seed = new FakeStorage();
+    await createFacturaLocalStore(seed).write({
+      schema: 1,
+      uid: UID_A,
+      facturaId: FACTURA,
+      seq: 1,
+      draft: baseDraft(),
+      savedDocumentPath: null,
+      intent: null,
+      uploads: [{ path: documentPath(1), status: 'failed' }],
+      protectedPaths: [],
+      dirty: true,
+    });
+    const documents = new FakeDocuments();
+    documents.files.add(documentPath(1));
+    return openWithDocuments({ storage: restart(seed), documents });
+  }
+
+  it('reports a submit adapter that throws, keeps the unanswered-request outcome and the same retry key', async () => {
+    const server = new FakeServer();
+    let calls = 0;
+    const { controller } = await open({
+      server,
+      submit: async input => {
+        calls += 1;
+        if (calls === 1) throw new Error(SECRET);
+        return server.submit(input);
+      },
+    });
+
+    expect(await controller.save()).toMatchObject({ status: 'pending' });
+    expect(reported()).toEqual(['factura.save.unexpected']);
+    expectNoLeak();
+
+    expect(await controller.save()).toMatchObject({ status: 'saved', version: 1 });
+    expect(server.log[0].key).toBeDefined();
+    expect(reported()).toEqual(['factura.save.unexpected']);
+  });
+
+  it('does not report answers the server gave or a lost response', async () => {
+    const { controller, server } = await open();
+    server.script = ['drop', { reject: 'conflict' }];
+
+    expect(await controller.save()).toMatchObject({ status: 'pending' });
+    expect(await controller.save()).toMatchObject({ status: 'rejected' });
+
+    expect(mockCaptureEvent).not.toHaveBeenCalled();
+  });
+
+  it('reports a failing upload once when the repository already reported the same error', async () => {
+    const { controller, documents } = await openWithDocuments();
+    const error = new FacturaError('desconocido', { httpStatus: 503 });
+    reportFacturaThrown('upload', error);
+    documents.upload = async () => {
+      throw error;
+    };
+
+    expect(await controller.attach(PDF_BYTES, 'factura.pdf')).toEqual({ status: 'upload_failed', message: UPLOAD_FAILED_MESSAGE });
+
+    expect(reported()).toEqual(['factura.upload.desconocido']);
+  });
+
+  it('reports an upload that throws something untyped, without its message', async () => {
+    const { controller, documents } = await openWithDocuments();
+    documents.upload = async () => {
+      throw new Error(SECRET);
+    };
+
+    expect(await controller.attach(PDF_BYTES, 'factura.pdf')).toEqual({ status: 'upload_failed', message: UPLOAD_FAILED_MESSAGE });
+
+    expect(reported()).toEqual(['factura.upload.unexpected']);
+    expectNoLeak();
+  });
+
+  it.each(['no_autorizado', 'red', 'datos_invalidos'] as const)('does not report an upload rejected as %s', async code => {
+    const { controller, documents } = await openWithDocuments();
+    documents.upload = async () => {
+      throw new FacturaError(code);
+    };
+
+    expect(await controller.attach(PDF_BYTES, 'factura.pdf')).toEqual({ status: 'upload_failed', message: UPLOAD_FAILED_MESSAGE });
+
+    expect(mockCaptureEvent).not.toHaveBeenCalled();
+  });
+
+  it('reports a hashing failure on the device', async () => {
+    const { controller, documents } = await openWithDocuments();
+    documents.sha256 = async () => {
+      throw new Error(SECRET);
+    };
+
+    expect(await controller.attach(PDF_BYTES, 'factura.pdf')).toEqual({ status: 'upload_failed', message: UPLOAD_FAILED_MESSAGE });
+
+    expect(reported()).toEqual(['factura.hash_document.unexpected']);
+    expectNoLeak();
+  });
+
+  it('reports a removal that throws, but not one that simply returns false', async () => {
+    const { controller, documents } = await seedUploads();
+    documents.failRemove = true;
+    expect(await controller.sweep()).toMatchObject({ status: 'swept', removed: [] });
+    expect(mockCaptureEvent).not.toHaveBeenCalled();
+
+    documents.failRemove = false;
+    documents.remove = async () => {
+      throw new Error(SECRET);
+    };
+    expect(await controller.sweep()).toMatchObject({ status: 'swept', removed: [] });
+    expect(reported()).toEqual(['factura.cleanup.unexpected']);
+    expectNoLeak();
+  });
+
+  it('reports a store that throws instead of answering, and keeps the not-durable outcome', async () => {
+    const real = createFacturaLocalStore(new FakeStorage());
+    const store: FacturaLocalStore = {
+      ...real,
+      write: async () => {
+        throw new Error(SECRET);
+      },
+    };
+    const { controller } = await open({ store });
+
+    controller.edit(withNotas('uno'));
+    await controller.persisted();
+
+    expect(controller.getState().localSaved).toBe(false);
+    expect(reported()).toEqual(['factura.local_write.unexpected']);
+    expectNoLeak();
+  });
+
+  it('does not report again a store failure the store already answered with', async () => {
+    const storage = new FakeStorage();
+    const { controller } = await open({ storage });
+    storage.failSet = () => new Error('disk full: quota');
+
+    controller.edit(withNotas('uno'));
+    await controller.persisted();
+
+    expect(controller.getState().localSaved).toBe(false);
+    expect(reported()).toEqual(['factura.local_write.quota']);
+  });
+
+  it('keeps every outcome when Sentry itself fails', async () => {
+    mockCaptureEvent.mockImplementation(() => {
+      throw new Error('sentry down');
+    });
+    const { controller } = await open({
+      submit: async () => {
+        throw new Error(SECRET);
+      },
+    });
+
+    expect(await controller.save()).toMatchObject({ status: 'pending' });
+    expect(controller.getState().retryPending).toBe(true);
   });
 });

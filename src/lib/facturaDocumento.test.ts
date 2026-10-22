@@ -1,3 +1,4 @@
+import type { Event } from '@sentry/react-native';
 import {
   MAX_DOCUMENT_BYTES,
   buildDocumentPath,
@@ -7,6 +8,22 @@ import {
   extensionFor,
   validateDocumentBytes,
 } from './facturaDocumento';
+import { pickFacturaDocument } from './facturaDocumentoPicker';
+
+const mockCaptureEvent = jest.fn();
+const mockGetDocumentAsync = jest.fn();
+const mockReadAsStringAsync = jest.fn();
+jest.mock('@sentry/react-native', () => ({
+  withScope: (callback: (scope: unknown) => void) => callback({ addEventProcessor: jest.fn() }),
+  captureEvent: (event: unknown) => mockCaptureEvent(event),
+}));
+jest.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
+jest.mock('expo-document-picker', () => ({ getDocumentAsync: (...args: unknown[]) => mockGetDocumentAsync(...args) }));
+jest.mock('expo-file-system', () => ({
+  readAsStringAsync: (...args: unknown[]) => mockReadAsStringAsync(...args),
+  EncodingType: { Base64: 'base64' },
+}));
+jest.mock('expo-crypto', () => ({ CryptoDigestAlgorithm: { SHA256: 'SHA-256' }, digest: jest.fn(), randomUUID: jest.fn() }));
 
 const OWNER = '11111111-1111-4111-8111-111111111111';
 const FACTURA = 'f0000000-0000-4000-8000-000000000001';
@@ -99,5 +116,67 @@ describe('utilidades', () => {
     expect(displayNameFor('a\u0000b\nc.pdf')).toBe('abc.pdf');
     expect(displayNameFor('')).toBe('documento');
     expect(displayNameFor('x'.repeat(300) + '.pdf').length).toBeLessThanOrEqual(120);
+  });
+});
+
+describe('pickFacturaDocument: unexpected failure reporting', () => {
+  const SECRET = 'SECRET file:///data/user/0/app/cache/Factura Ferretería Norte 1234.56.pdf';
+  const asset = (overrides: Record<string, unknown> = {}) => ({
+    canceled: false,
+    assets: [{ uri: SECRET, name: 'factura.pdf', size: 6, ...overrides }],
+  });
+  // Every clock read lands a minute after the last, so the reporter's per-failure throttle never hides a report.
+  let clock = Date.now() + 86_400_000;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(Date, 'now').mockImplementation(() => (clock += 61_000));
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  const reported = (): string[] => mockCaptureEvent.mock.calls.map(([event]) => (event as Event).message ?? '');
+
+  it('reports a system picker that throws and rethrows the same error', async () => {
+    const failure = new Error(SECRET);
+    mockGetDocumentAsync.mockRejectedValueOnce(failure);
+
+    await expect(pickFacturaDocument()).rejects.toBe(failure);
+
+    expect(reported()).toEqual(['factura.pick_document.unexpected']);
+    expect(JSON.stringify(mockCaptureEvent.mock.calls)).not.toMatch(/SECRET|Ferreter|user\/0/);
+  });
+
+  it('reports a file that cannot be read and rethrows the same error', async () => {
+    const failure = new Error(SECRET);
+    mockGetDocumentAsync.mockResolvedValueOnce(asset());
+    mockReadAsStringAsync.mockRejectedValueOnce(failure);
+
+    await expect(pickFacturaDocument()).rejects.toBe(failure);
+
+    expect(reported()).toEqual(['factura.pick_document.unexpected']);
+  });
+
+  it('does not report a cancel, an oversized file or a successful pick', async () => {
+    mockGetDocumentAsync.mockResolvedValueOnce({ canceled: true, assets: null });
+    await expect(pickFacturaDocument()).resolves.toBeNull();
+
+    mockGetDocumentAsync.mockResolvedValueOnce(asset({ size: MAX_DOCUMENT_BYTES + 1 }));
+    await expect(pickFacturaDocument()).resolves.toEqual({ ok: false, error: 'El archivo supera el límite de 10 MB' });
+
+    mockGetDocumentAsync.mockResolvedValueOnce(asset());
+    mockReadAsStringAsync.mockResolvedValueOnce('JVBERi0x');
+    await expect(pickFacturaDocument()).resolves.toMatchObject({ ok: true, nombre: 'factura.pdf' });
+
+    expect(mockCaptureEvent).not.toHaveBeenCalled();
+  });
+
+  it('rethrows the original error even when Sentry itself fails', async () => {
+    const failure = new Error(SECRET);
+    mockGetDocumentAsync.mockRejectedValueOnce(failure);
+    mockCaptureEvent.mockImplementationOnce(() => {
+      throw new Error('sentry down');
+    });
+
+    await expect(pickFacturaDocument()).rejects.toBe(failure);
   });
 });
