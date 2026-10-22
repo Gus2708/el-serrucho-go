@@ -338,7 +338,7 @@ The badge state is computed from `MAX(productos.actualizado_en)`:
 14. **Automatic Version Bumping & Releases**: Whenever completing a feature, fix, or release:
     - Bump the app version using `npm run bump:patch` (or `minor`/`major`). This synchronizes `package.json`, `app.json`, `app/_layout.tsx` query persister buster, and `src/lib/appUpdater.ts`.
     - Build the APK via `npm run build:apk`.
-    - Once the EAS build completes, publish the APK to GitHub Releases with `npm run release:publish` (or `npm run release:publish -- --wait`).
+    - Publish the APK to GitHub Releases with `npm run release:publish`. It waits for the EAS build to finish by default and starts a new build itself when there is none, or when the latest one is for another version and no longer running. Flags: `--no-wait` returns while the build is still running, `--build` forces a new build, and a build ID argument targets that build.
 
 ---
 

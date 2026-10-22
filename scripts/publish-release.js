@@ -12,7 +12,8 @@ const apkName = `el-serrucho-go-${tagName}.apk`;
 const tempApkPath = path.join(rootDir, apkName);
 
 const args = process.argv.slice(2);
-const shouldWait = args.includes('--wait');
+const noWait = args.includes('--no-wait');
+const forceNewBuild = args.includes('--build');
 const explicitBuildId = args.find((a) => !a.startsWith('--'));
 
 function runCommand(cmd) {
@@ -39,6 +40,19 @@ function parseEasJson(output) {
   }
 
   throw new Error('No se pudo parsear la respuesta JSON de EAS:\n' + output);
+}
+
+function startEasBuild() {
+  console.log('[EAS] Iniciando compilación de APK en la nube de Expo...');
+  const out = runCommand('npx eas build -p android --profile preview --non-interactive --no-wait');
+  const match = out.match(/builds\/([a-f0-9-]{36})/i);
+  if (!match) {
+    throw new Error('No se pudo obtener el ID del nuevo build de EAS:\n' + out);
+  }
+  const newBuildId = match[1];
+  console.log(`[EAS] ¡Build encolado exitosamente! ID: ${newBuildId}`);
+  console.log(`Logs: https://expo.dev/accounts/gusdev27/projects/el-serrucho-go/builds/${newBuildId}\n`);
+  return newBuildId;
 }
 
 async function getBuildInfo(buildId, retries = 3) {
@@ -93,9 +107,37 @@ async function main() {
   console.log(` Versión objetivo: ${version} (${tagName})`);
   console.log(`========================================\n`);
 
-  let build = await getBuildInfo(explicitBuildId);
+  let build;
+
+  if (explicitBuildId) {
+    console.log(`Consultando build especificado: ${explicitBuildId}...`);
+    build = await getBuildInfo(explicitBuildId);
+  } else {
+    console.log(`Consultando estado de builds en EAS...`);
+    const latest = await getBuildInfo();
+
+    const isSameVersion = latest && latest.appVersion === version;
+    const isRunning = latest && (latest.status === 'IN_QUEUE' || latest.status === 'IN_PROGRESS');
+
+    if (!forceNewBuild && latest && !isSameVersion && isRunning) {
+      console.error(`El build en curso (${latest.id}) es de la versión ${latest.appVersion}, no de ${version}.`);
+      console.error('Esperá a que termine o pasá --build para encolar uno de esta versión.');
+      process.exit(1);
+    }
+
+    if (forceNewBuild || !latest || (!isSameVersion && !isRunning)) {
+      if (!isSameVersion && latest) {
+        console.log(`El último build en EAS es de la versión ${latest.appVersion}, pero el proyecto está en ${version}.`);
+      }
+      const newBuildId = startEasBuild();
+      build = await getBuildInfo(newBuildId);
+    } else {
+      build = latest;
+    }
+  }
+
   if (!build) {
-    console.error('No se encontró ningún build en EAS.');
+    console.error('No se pudo obtener información del build de EAS.');
     process.exit(1);
   }
 
@@ -108,11 +150,9 @@ async function main() {
   let lastStatus = build.status;
 
   while (build.status === 'IN_QUEUE' || build.status === 'IN_PROGRESS') {
-    if (!shouldWait) {
+    if (noWait) {
       console.log(`El build aún no termina (Estado: ${build.status}).`);
       console.log(`Podés ver los logs en: https://expo.dev/accounts/gusdev27/projects/el-serrucho-go/builds/${build.id}`);
-      console.log(`\nPara esperar automáticamente a que termine, ejecutá:`);
-      console.log(`  npm run release:publish -- --wait\n`);
       return;
     }
 
