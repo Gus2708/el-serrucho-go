@@ -29,6 +29,7 @@ import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
 import { useTazas } from '../../src/hooks/useTazas';
 import { usePresupuestoConfig } from '../../src/hooks/usePresupuestoConfig';
 import { BarcodeScannerModal } from '../../src/components/BarcodeScannerModal';
+import { ProveedoresDisponibilidad } from '../../src/components/ProveedoresDisponibilidad';
 import { isDemoActive } from '../../src/demo/useDemoStore';
 import { demoProductos, demoVentas } from '../../src/demo/demoData';
 
@@ -316,6 +317,11 @@ export default function ProductoDetail() {
               </View>
             )}
           </View>
+
+          {/* Supplier availability: sold-out or low-stock products that rotate well (decided inside) */}
+          {!isDemoActive() && (
+            <ProveedoresDisponibilidad codigoInterno={producto.codigo_interno} existencia={producto.existencia} />
+          )}
 
           {/* Last sync */}
           <Text style={[styles.syncNote, { color: colors.textDim }]}>
