@@ -28,3 +28,12 @@ jobs:
 
       - name: Tests
         run: npm test -- --ci
+
+      # Las pruebas de UI usan su propia config (RNTL 13.3.3 sobre react-test-renderer
+      # 19.0.0) y el jest raiz las ignora, por eso corren en un paso aparte.
+      - name: UI tests
+        run: npm run test:ui -- --ci
+
+      # PGlite corre en proceso: no necesita base de datos ni secretos de staging.
+      - name: SQL tests
+        run: npm run test:sql -- --ci
