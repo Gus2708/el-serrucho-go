@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { StyleSheet } from 'react-native';
+import type { StyleProp, TextStyle, ViewStyle } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { ProveedorDisponibilidad } from './ProveedorDisponibilidad';
@@ -67,8 +68,8 @@ function renderTarjeta() {
   );
 }
 
-function estilo(node: { props: { style?: unknown } }) {
-  return StyleSheet.flatten(node.props.style as never) ?? {};
+function estilo(node: { props: { style?: unknown } }): ViewStyle & TextStyle {
+  return StyleSheet.flatten(node.props.style as StyleProp<ViewStyle & TextStyle>) ?? {};
 }
 
 beforeEach(() => {

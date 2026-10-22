@@ -29,18 +29,21 @@ export function useConsultaProveedor<C>(tabla: TablaConsulta, codigoInterno: str
   const [startedAt, setStartedAt]   = useState(0);
 
   const solicitar = useMutation({
-    mutationFn: async (): Promise<string> => {
-      const desde = new Date(Date.now() - REUSE_MINUTES * 60_000).toISOString();
-      const { data: reciente } = await supabase
-        .from(tabla)
-        .select('id')
-        .eq('codigo_interno', codigoInterno)
-        .eq('status', 'listo')
-        .gte('creado_en', desde)
-        .order('creado_en', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (reciente) return reciente.id;
+    // `nueva` skips the reuse window: a retry must ask the supplier again.
+    mutationFn: async (nueva: boolean): Promise<string> => {
+      if (!nueva) {
+        const desde = new Date(Date.now() - REUSE_MINUTES * 60_000).toISOString();
+        const { data: reciente } = await supabase
+          .from(tabla)
+          .select('id')
+          .eq('codigo_interno', codigoInterno)
+          .eq('status', 'listo')
+          .gte('creado_en', desde)
+          .order('creado_en', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (reciente) return reciente.id;
+      }
 
       const { data, error } = await supabase
         .from(tabla)
@@ -81,19 +84,19 @@ export function useConsultaProveedor<C>(tabla: TablaConsulta, codigoInterno: str
   // A timer (not Date.now() in render): once polling stops nothing re-renders on its own.
   const [timedOut, setTimedOut] = useState(false);
   useEffect(() => {
+    setTimedOut(false); // on every change, so a retry never inherits the old timeout
     if (!consultaId) return;
-    setTimedOut(false);
     const t = setTimeout(() => setTimedOut(true), GIVE_UP_MS);
     return () => clearTimeout(t);
   }, [consultaId]);
   const vencida = timedOut && !terminada;
 
   return {
-    consultar: () => solicitar.mutate(),
-    reiniciar: () => { setConsultaId(null); setStartedAt(0); },
-    consulta:  row,
-    enviando:  solicitar.isPending,
-    esperando: !!consultaId && !terminada && !vencida,
+    consultar:  () => solicitar.mutate(false),
+    reintentar: () => { setConsultaId(null); solicitar.mutate(true); },
+    consulta:   row,
+    enviando:   solicitar.isPending,
+    esperando:  !!consultaId && !terminada && !vencida,
     vencida,
     errorEnvio: solicitar.error as Error | null,
   };

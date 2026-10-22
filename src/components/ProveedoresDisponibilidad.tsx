@@ -25,7 +25,7 @@ export function ProveedoresDisponibilidad(
 
   if (!data.elegible) {
     return (
-      <Text style={[styles.note, { color: colors.textDim }]}>
+      <Text style={[styles.note, { color: colors.textMuted }]}>
         Rotación baja ({data.facturas} {data.facturas === 1 ? 'factura' : 'facturas'} en los
         últimos 90 días): no se consulta a los proveedores.
       </Text>
@@ -41,5 +41,5 @@ export function ProveedoresDisponibilidad(
 }
 
 const styles = StyleSheet.create({
-  note: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular', lineHeight: scaleFont(18) },
+  note: { marginHorizontal: 16, fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular', lineHeight: scaleFont(18) },
 });

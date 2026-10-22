@@ -33,14 +33,17 @@ type Props<C extends CandidatoBase> = {
  */
 export function ProveedorDisponibilidad<C extends CandidatoBase>(p: Props<C>) {
   const { colors, formatUSD } = useTheme();
-  const { consultar, reiniciar, consulta, enviando, esperando, vencida, errorEnvio } =
+  const { consultar, reintentar, consulta, enviando, esperando, vencida, errorEnvio } =
     useConsultaProveedor<C>(p.tabla, p.codigoInterno);
 
   const resultado = consulta?.status === 'listo' ? consulta.resultado : null;
   const falloListener = consulta?.status === 'error';
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+    <View
+      testID="proveedor-disponibilidad"
+      style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
+    >
       <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{p.titulo}</Text>
 
       {!consulta && !esperando && !enviando && (
@@ -49,6 +52,8 @@ export function ProveedorDisponibilidad<C extends CandidatoBase>(p: Props<C>) {
           <PressableScale
             style={[styles.btn, { backgroundColor: colors.primaryFaded, borderColor: colors.primary }]}
             onPress={consultar}
+            accessibilityRole="button"
+            accessibilityLabel="Consultar"
           >
             <Feather name="search" size={16} color={colors.primary} />
             <Text style={[styles.btnText, { color: colors.primary }]}>Consultar</Text>
@@ -75,7 +80,7 @@ export function ProveedorDisponibilidad<C extends CandidatoBase>(p: Props<C>) {
           <Text style={[styles.hint, { color: colors.warning }]}>
             No hubo respuesta a tiempo. Puede que el backend de la tienda esté apagado.
           </Text>
-          <RetryButton colors={colors} onPress={reiniciar} />
+          <RetryButton colors={colors} onPress={reintentar} />
         </>
       )}
 
@@ -84,14 +89,14 @@ export function ProveedorDisponibilidad<C extends CandidatoBase>(p: Props<C>) {
           <Text style={[styles.hint, { color: colors.danger }]}>
             {consulta?.error ?? 'No se pudo completar la consulta.'}
           </Text>
-          <RetryButton colors={colors} onPress={reiniciar} />
+          <RetryButton colors={colors} onPress={reintentar} />
         </>
       )}
 
       {resultado && resultado.candidatos.length === 0 && (
         <>
           <Text style={[styles.hint, { color: colors.textMuted }]}>{p.sinResultado}</Text>
-          <RetryButton colors={colors} onPress={reiniciar} />
+          <RetryButton colors={colors} onPress={reintentar} />
         </>
       )}
 
@@ -125,12 +130,12 @@ export function ProveedorDisponibilidad<C extends CandidatoBase>(p: Props<C>) {
               </View>
             );
           })}
-          <Text style={[styles.hint, { color: colors.textDim }]}>
+          <Text style={[styles.hint, { color: colors.textMuted }]}>
             Consultado{' '}
             {new Date(resultado.consultado_en).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}
             {'  ·  '}{p.nota}
           </Text>
-          <RetryButton colors={colors} onPress={reiniciar} label="Consultar de nuevo" />
+          <RetryButton colors={colors} onPress={reintentar} label="Consultar de nuevo" />
         </>
       )}
     </View>
@@ -168,6 +173,8 @@ function RetryButton({ colors, onPress, label = 'Reintentar' }: { colors: any; o
     <PressableScale
       style={[styles.btn, { backgroundColor: 'transparent', borderColor: colors.border }]}
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
     >
       <Feather name="refresh-cw" size={14} color={colors.textMuted} />
       <Text style={[styles.btnText, { color: colors.textMuted }]}>{label}</Text>
@@ -176,11 +183,11 @@ function RetryButton({ colors, onPress, label = 'Reintentar' }: { colors: any; o
 }
 
 const styles = StyleSheet.create({
-  card:         { borderRadius: 16, borderWidth: 0.5, padding: 16, gap: 12 },
+  card:         { marginHorizontal: 16, borderRadius: 14, borderWidth: 0.5, padding: 16, gap: 12 },
   sectionLabel: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.8 },
   hint:         { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_400Regular', lineHeight: scaleFont(19) },
   row:          { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  btn:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 12, borderWidth: 0.5, paddingVertical: 12 },
+  btn:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 12, borderWidth: 0.5, paddingVertical: 12, minHeight: 44 },
   btnText:      { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
   candidato:    { borderTopWidth: 0.5, paddingTop: 12 },
   fila:         { flexDirection: 'row', gap: 12 },
@@ -189,6 +196,6 @@ const styles = StyleSheet.create({
   fotoImg:      { width: '100%', height: '100%' },
   nombre:       { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
   meta:         { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular' },
-  badge:        { alignSelf: 'flex-start', borderRadius: 999, borderWidth: 0.5, paddingVertical: 4, paddingHorizontal: 12 },
+  badge:        { alignSelf: 'flex-start', maxWidth: '100%', borderRadius: 999, borderWidth: 0.5, paddingVertical: 4, paddingHorizontal: 12 },
   badgeText:    { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_500Medium' },
 });
