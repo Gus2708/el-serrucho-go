@@ -17,13 +17,15 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx --max-warnings 9999",
     "test": "jest",
+    "test:ui": "jest --config jest.ui.config.js",
     "test:sql": "node --experimental-vm-modules node_modules/jest/bin/jest.js supabase/tests --runInBand --testPathIgnorePatterns=/node_modules/"
   },
   "jest": {
     "testEnvironment": "node",
     "testPathIgnorePatterns": [
       "/node_modules/",
-      "/supabase/tests/"
+      "/supabase/tests/",
+      "\\.ui\\.test\\.tsx$"
     ],
     "transform": {
       "\\.[jt]sx?$": [
@@ -97,7 +99,7 @@
     "@babel/core": "^7.25.0",
     "@babel/plugin-transform-class-static-block": "^7.29.7",
     "@electric-sql/pglite": "^0.5.10",
-    "@testing-library/react-native": "^14.0.0",
+    "@testing-library/react-native": "13.3.3",
     "@types/jest": "^29.5.14",
     "@types/react": "~19.0.10",
     "@typescript-eslint/eslint-plugin": "^8.62.0",
@@ -106,6 +108,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "jest": "^29.7.0",
     "jest-expo": "^56.0.5",
+    "react-test-renderer": "19.0.0",
     "typescript": "~5.8.3"
   }
 }
