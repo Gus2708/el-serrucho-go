@@ -15,6 +15,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../src/lib/supabase';
 import { clearRoleCache } from '../src/hooks/useUserRole';
+import { publishFacturaSession } from '../src/hooks/useFacturasProveedor';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
 import { elSerrucho } from '../src/theme/brands/el-serrucho';
 import { MOBILE_FRAME_WIDTH, FRAMED_BODY_CLASS, FRAME_WIDTH_CSS_VAR } from '../src/theme/layout';
@@ -403,9 +404,11 @@ function RootLayout() {
           logBreadcrumb('auth: getSession error', { error: error.message });
           supabase.auth.signOut().catch(() => {});
           setSession(null);
+          publishFacturaSession(null);
         } else {
           logBreadcrumb('auth: getSession resuelto', { haySesion: !!data.session });
           setSession(data.session);
+          publishFacturaSession(data.session);
         }
       })
       .catch((err) => {
@@ -413,6 +416,7 @@ function RootLayout() {
         console.warn('Supabase initialization error (clearing dead session):', err?.message || err);
         supabase.auth.signOut().catch(() => {});
         setSession(null);
+        publishFacturaSession(null);
       })
       .finally(() => {
         setAuthReady(true);
@@ -422,6 +426,8 @@ function RootLayout() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       logBreadcrumb(`auth: evento ${event}`);
       setSession(s);
+      // The invoice editors check this account before every send and local write.
+      publishFacturaSession(s);
       
       // Al entrar o recuperar sesión, invalidamos solo lo relacionado con auth
       // para que AuthGuard y useUserRole obtengan datos frescos inmediatamente.
