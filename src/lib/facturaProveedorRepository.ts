@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildDocumentPath, displayNameFor, validateDocumentBytes } from './facturaDocumento';
 import type { FacturaRecord, FacturaDocumento, SavePayload } from './facturaProveedor';
+import { reportFacturaThrown, type FacturaOperation } from './facturaTelemetry';
 
 const BUCKET = 'facturas_proveedores';
 const LIST_LIMIT = 50;
@@ -134,51 +135,56 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return (whole ? bytes.buffer : bytes.slice().buffer) as ArrayBuffer;
 }
 
+/** Reports a mapped error when it is unexpected (see facturaTelemetry) and hands it back to be thrown unchanged. */
+function observed(operation: FacturaOperation, error: FacturaError): FacturaError {
+  reportFacturaThrown(operation, error);
+  return error;
+}
+
 function parseGuardarResult(data: unknown): GuardarResult {
   const row = data as { factura_id?: unknown; version?: unknown; replay?: unknown } | null;
   if (!row || typeof row.factura_id !== 'string' || typeof row.version !== 'number') {
-    throw new FacturaError('desconocido');
+    throw observed('save', new FacturaError('desconocido'));
   }
   return { facturaId: row.factura_id, version: row.version, replay: row.replay === true };
 }
 
-async function attempt<T>(operation: () => PromiseLike<T>): Promise<T> {
+async function attempt<T>(operation: FacturaOperation, call: () => PromiseLike<T>): Promise<T> {
   try {
-    return await operation();
+    return await call();
   } catch (error) {
-    if (error instanceof FacturaError) throw error;
-    throw mapFacturaError(error as ErrorLike);
+    throw observed(operation, error instanceof FacturaError ? error : mapFacturaError(error as ErrorLike));
   }
 }
 
 export function createFacturaRepository(client: FacturaClient) {
   return {
     async listar(): Promise<FacturaResumen[]> {
-      const { data, error } = await attempt(() =>
+      const { data, error } = await attempt('list', () =>
         client
           .from('facturas_proveedores')
           .select('id, version, proveedor_nombre, numero_documento, fecha_documento, actualizado_en, documento_mime')
           .order('actualizado_en', { ascending: false })
           .limit(LIST_LIMIT),
       );
-      if (error) throw mapFacturaError(error);
+      if (error) throw observed('list', mapFacturaError(error));
       return (data ?? []) as FacturaResumen[];
     },
 
     async abrir(facturaId: string): Promise<FacturaRecord | null> {
-      const { data, error } = await attempt(() =>
+      const { data, error } = await attempt('open', () =>
         client
           .from('facturas_proveedores')
           .select('*, lineas:facturas_proveedores_lineas(*)')
           .eq('id', facturaId)
           .maybeSingle(),
       );
-      if (error) throw mapFacturaError(error);
+      if (error) throw observed('open', mapFacturaError(error));
       return (data ?? null) as FacturaRecord | null;
     },
 
     async guardar({ facturaId, version, key, payload }: GuardarInput): Promise<GuardarResult> {
-      const { data, error, status } = await attempt(() =>
+      const { data, error, status } = await attempt('save', () =>
         client.rpc('guardar_factura_proveedor', {
           p_factura_id: facturaId,
           p_version_esperada: version,
@@ -187,7 +193,7 @@ export function createFacturaRepository(client: FacturaClient) {
           p_lineas: payload.lineas,
         }),
       );
-      if (error) throw mapFacturaError(error, status);
+      if (error) throw observed('save', mapFacturaError(error, status));
       return parseGuardarResult(data);
     },
 
@@ -196,13 +202,13 @@ export function createFacturaRepository(client: FacturaClient) {
       if (!validation.ok) throw new FacturaError('datos_invalidos');
 
       const path = buildDocumentPath(input.ownerId, input.facturaId, input.documentId, validation.mime);
-      const { error } = await attempt(() =>
+      const { error } = await attempt('upload', () =>
         client.storage.from(BUCKET).upload(path, toArrayBuffer(input.bytes), {
           contentType: validation.mime,
           upsert: false,
         }),
       );
-      if (error) throw mapFacturaError(error as ErrorLike);
+      if (error) throw observed('upload', mapFacturaError(error as ErrorLike));
 
       return {
         path,
@@ -214,10 +220,10 @@ export function createFacturaRepository(client: FacturaClient) {
     },
 
     async urlDocumento(path: string): Promise<string> {
-      const { data, error } = await attempt(() =>
+      const { data, error } = await attempt('download', () =>
         client.storage.from(BUCKET).createSignedUrl(path, SIGNED_URL_SECONDS),
       );
-      if (error || !data?.signedUrl) throw mapFacturaError(error as ErrorLike | null);
+      if (error || !data?.signedUrl) throw observed('download', mapFacturaError(error as ErrorLike | null));
       return data.signedUrl;
     },
 
@@ -225,8 +231,10 @@ export function createFacturaRepository(client: FacturaClient) {
     async limpiarHuerfano(path: string): Promise<boolean> {
       try {
         const { error } = await client.storage.from(BUCKET).remove([path]);
+        if (error) observed('cleanup', mapFacturaError(error as ErrorLike));
         return !error;
-      } catch {
+      } catch (error) {
+        observed('cleanup', mapFacturaError(error as ErrorLike));
         return false;
       }
     },

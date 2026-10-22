@@ -1,9 +1,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Event } from '@sentry/react-native';
 import {
   FacturaError,
   createFacturaRepository,
   mapFacturaError,
 } from './facturaProveedorRepository';
+
+const mockCaptureEvent = jest.fn();
+jest.mock('@sentry/react-native', () => ({
+  withScope: (callback: (scope: unknown) => void) => callback({ addEventProcessor: jest.fn() }),
+  captureEvent: (event: unknown) => mockCaptureEvent(event),
+}));
 
 const OWNER = '11111111-1111-4111-8111-111111111111';
 const FACTURA = 'f0000000-0000-4000-8000-000000000001';
@@ -286,5 +293,167 @@ describe('urlDocumento y limpieza', () => {
     await expect(createFacturaRepository(failing.client).limpiarHuerfano('p')).resolves.toBe(false);
     await expect(createFacturaRepository(ok.client).limpiarHuerfano('p')).resolves.toBe(true);
     expect(ok.bucket.remove).toHaveBeenCalledWith(['p']);
+  });
+});
+
+describe('reporte de fallos inesperados', () => {
+  const save = { facturaId: FACTURA, version: 1, key: KEY, payload };
+  const SECRET = 'SECRET proveedor Ferreteria Norte 1234.56 https://x.supabase.co/storage/v1/sign/doc.pdf?token=abc';
+  // Every clock read lands a minute after the last, so the reporter's per-failure throttle never hides a report.
+  let clock = Date.now() + 86_400_000;
+
+  beforeEach(() => {
+    mockCaptureEvent.mockReset();
+    jest.spyOn(Date, 'now').mockImplementation(() => (clock += 61_000));
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  const reported = (): Event[] => mockCaptureEvent.mock.calls.map(([event]) => event as Event);
+  const failingRpc = (rpc: unknown) => {
+    const fake = fakeClient();
+    fake.raw.rpc.mockResolvedValueOnce(rpc as never);
+    return createFacturaRepository(fake.client);
+  };
+
+  it('guardar: un 500 sin mapa se reporta una vez con SQLSTATE y estado, sin el mensaje', async () => {
+    const repo = failingRpc({ data: null, error: { code: 'XX000', message: SECRET }, status: 500 });
+
+    await expect(repo.guardar(save)).rejects.toMatchObject({ code: 'desconocido', sqlState: 'XX000', httpStatus: 500 });
+
+    expect(reported()).toHaveLength(1);
+    expect(reported()[0]).toMatchObject({
+      message: 'factura.save.desconocido',
+      tags: { operation: 'save', code: 'desconocido', sql_state: 'XX000', http_status: '500' },
+    });
+    expect(JSON.stringify(reported())).not.toContain('SECRET');
+  });
+
+  it('guardar: un 200 con cuerpo malformado se reporta', async () => {
+    const repo = failingRpc({ data: { version: SECRET }, error: null, status: 200 });
+
+    await expect(repo.guardar(save)).rejects.toMatchObject({ code: 'desconocido' });
+
+    expect(reported().map(event => event.message)).toEqual(['factura.save.desconocido']);
+    expect(JSON.stringify(reported())).not.toContain('SECRET');
+  });
+
+  it('guardar: una excepcion no tipada del cliente se reporta sin su mensaje', async () => {
+    const fake = fakeClient();
+    fake.raw.rpc.mockRejectedValueOnce(new TypeError(SECRET));
+
+    await expect(createFacturaRepository(fake.client).guardar(save)).rejects.toMatchObject({ code: 'desconocido' });
+
+    expect(reported().map(event => event.message)).toEqual(['factura.save.desconocido']);
+    expect(JSON.stringify(reported())).not.toContain('SECRET');
+  });
+
+  it.each([
+    ['42501', 403],
+    ['PV409', 400],
+    ['PI409', 400],
+    ['22023', 400],
+    ['23505', 409],
+    ['P0002', 404],
+  ])('guardar: el rechazo esperado %s no se reporta', async (code, status) => {
+    const repo = failingRpc({ data: null, error: { code, message: SECRET }, status });
+
+    await expect(repo.guardar(save)).rejects.toBeInstanceOf(FacturaError);
+
+    expect(mockCaptureEvent).not.toHaveBeenCalled();
+  });
+
+  it('guardar: estar sin conexion no se reporta', async () => {
+    const fake = fakeClient();
+    fake.raw.rpc.mockRejectedValueOnce(new TypeError('Network request failed'));
+
+    await expect(createFacturaRepository(fake.client).guardar(save)).rejects.toMatchObject({ code: 'red' });
+
+    expect(mockCaptureEvent).not.toHaveBeenCalled();
+  });
+
+  it('listar y abrir: un error de lectura sin mapa se reporta con su operacion', async () => {
+    const list = fakeClient({ query: { data: null, error: { code: 'XX000', message: SECRET } } });
+    const open = fakeClient({ query: { data: null, error: { message: SECRET } } });
+
+    await expect(createFacturaRepository(list.client).listar()).rejects.toMatchObject({ code: 'desconocido' });
+    await expect(createFacturaRepository(open.client).abrir(FACTURA)).rejects.toMatchObject({ code: 'desconocido' });
+
+    expect(reported().map(event => event.message)).toEqual(['factura.list.desconocido', 'factura.open.desconocido']);
+    expect(JSON.stringify(reported())).not.toContain('SECRET');
+  });
+
+  it('listar y abrir: un error de lectura de autorizacion o de red no se reporta', async () => {
+    const denied = fakeClient({ query: { data: null, error: { code: '42501', message: SECRET } } });
+    const offline = fakeClient();
+    offline.chain.maybeSingle = jest.fn(async () => {
+      throw new TypeError('Network request failed');
+    });
+
+    await expect(createFacturaRepository(denied.client).listar()).rejects.toMatchObject({ code: 'no_autorizado' });
+    await expect(createFacturaRepository(offline.client).abrir(FACTURA)).rejects.toMatchObject({ code: 'red' });
+
+    expect(mockCaptureEvent).not.toHaveBeenCalled();
+  });
+
+  it('subirDocumento: un fallo 5xx de Storage se reporta; los rechazos esperados y el archivo invalido no', async () => {
+    const down = fakeClient({ upload: { data: null, error: { message: SECRET, statusCode: '500' } } });
+    const tooBig = fakeClient({ upload: { data: null, error: { message: SECRET, statusCode: '413' } } });
+    const denied = fakeClient({ upload: { data: null, error: { message: SECRET, statusCode: '403' } } });
+    const input = { ownerId: OWNER, facturaId: FACTURA, documentId: DOC, bytes: PDF, nombre: 'a.pdf', sha256: 'h' };
+
+    await expect(createFacturaRepository(down.client).subirDocumento(input)).rejects.toMatchObject({ code: 'desconocido' });
+    await expect(createFacturaRepository(tooBig.client).subirDocumento(input)).rejects.toMatchObject({ code: 'datos_invalidos' });
+    await expect(createFacturaRepository(denied.client).subirDocumento(input)).rejects.toMatchObject({ code: 'no_autorizado' });
+    await expect(
+      createFacturaRepository(down.client).subirDocumento({ ...input, bytes: Uint8Array.from([1, 2, 3]) }),
+    ).rejects.toMatchObject({ code: 'datos_invalidos' });
+
+    expect(reported().map(event => event.message)).toEqual(['factura.upload.desconocido']);
+    expect(JSON.stringify(reported())).not.toContain('SECRET');
+  });
+
+  it('urlDocumento: un fallo sin mapa se reporta como descarga; un documento ausente no', async () => {
+    const broken = fakeClient({ signed: { data: null, error: { message: SECRET } } });
+    const missing = fakeClient({ signed: { data: null, error: { message: SECRET, statusCode: '404' } as never } });
+
+    await expect(createFacturaRepository(broken.client).urlDocumento(SECRET)).rejects.toMatchObject({ code: 'desconocido' });
+    await expect(createFacturaRepository(missing.client).urlDocumento(SECRET)).rejects.toMatchObject({ code: 'no_encontrada' });
+
+    expect(reported().map(event => event.message)).toEqual(['factura.download.desconocido']);
+    expect(JSON.stringify(reported())).not.toContain('SECRET');
+  });
+
+  it('limpiarHuerfano: un fallo inesperado se reporta como aviso y sigue devolviendo false', async () => {
+    const broken = fakeClient({ remove: { data: null, error: { message: SECRET } } });
+    const thrown = fakeClient();
+    thrown.bucket.remove.mockRejectedValueOnce(new Error(SECRET));
+    const offline = fakeClient();
+    offline.bucket.remove.mockRejectedValueOnce(new TypeError('Network request failed'));
+    const missing = fakeClient({ remove: { data: null, error: { message: SECRET, statusCode: '404' } as never } });
+
+    await expect(createFacturaRepository(broken.client).limpiarHuerfano(SECRET)).resolves.toBe(false);
+    await expect(createFacturaRepository(thrown.client).limpiarHuerfano(SECRET)).resolves.toBe(false);
+    await expect(createFacturaRepository(offline.client).limpiarHuerfano(SECRET)).resolves.toBe(false);
+    await expect(createFacturaRepository(missing.client).limpiarHuerfano(SECRET)).resolves.toBe(false);
+
+    expect(reported().map(event => [event.message, event.level])).toEqual([
+      ['factura.cleanup.desconocido', 'warning'],
+      ['factura.cleanup.desconocido', 'warning'],
+    ]);
+    expect(JSON.stringify(reported())).not.toContain('SECRET');
+  });
+
+  it('un Sentry que falla no cambia el resultado ni el error de guardar', async () => {
+    mockCaptureEvent.mockImplementation(() => {
+      throw new Error('sentry down');
+    });
+    const repo = failingRpc({ data: null, error: { code: 'XX000', message: SECRET }, status: 500 });
+
+    await expect(repo.guardar(save)).rejects.toMatchObject({
+      name: 'FacturaError',
+      code: 'desconocido',
+      sqlState: 'XX000',
+      httpStatus: 500,
+    });
   });
 });

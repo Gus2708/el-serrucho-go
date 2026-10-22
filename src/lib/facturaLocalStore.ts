@@ -6,6 +6,7 @@ import {
   type FacturaLineaDraft,
   type SavePayload,
 } from './facturaProveedor';
+import { reportFacturaThrown, type FacturaOperation } from './facturaTelemetry';
 
 /**
  * Durable, account-scoped local store for supplier-invoice drafts and the immutable retry
@@ -173,6 +174,12 @@ function classifyFailure(cause: unknown, operation: 'read' | 'write'): FacturaSt
     if (QUOTA_PATTERN.test(`${name} ${message}`)) return new FacturaStoreError('quota');
   }
   return new FacturaStoreError('unavailable');
+}
+
+/** Reports a store failure when it is unexpected (see facturaTelemetry) and hands it back to be returned unchanged. */
+function observed(operation: FacturaOperation, error: FacturaStoreError): FacturaStoreError {
+  reportFacturaThrown(operation, error);
+  return error;
 }
 
 // --- Validation of untrusted data (storage content and write input) ---------------------
@@ -398,14 +405,16 @@ export function createFacturaLocalStore(storage: StorageLike): FacturaLocalStore
   async function quarantine(key: string, raw: string, removeOriginal: boolean): Promise<boolean> {
     try {
       await storage.setItem(`${key}${QUARANTINE_SUFFIX}`, raw);
-    } catch {
+    } catch (cause) {
+      observed('local_quarantine', classifyFailure(cause, 'write'));
       return false;
     }
     if (removeOriginal) {
       try {
         await storage.removeItem(key);
-      } catch {
+      } catch (cause) {
         // The copy exists and the original stays; the next hydration reports it again.
+        observed('local_quarantine', classifyFailure(cause, 'write'));
       }
     }
     return true;
@@ -417,7 +426,7 @@ export function createFacturaLocalStore(storage: StorageLike): FacturaLocalStore
     try {
       raw = await storage.getItem(key);
     } catch (cause) {
-      return { status: 'error', error: classifyFailure(cause, 'read'), quarantined: false };
+      return { status: 'error', error: observed('local_read', classifyFailure(cause, 'read')), quarantined: false };
     }
     if (raw === null) return { status: 'empty' };
 
@@ -427,7 +436,7 @@ export function createFacturaLocalStore(storage: StorageLike): FacturaLocalStore
       return { status: 'restored', record: { ...parsed.record, intent: deepFreeze(parsed.record.intent) } };
     }
     const quarantined = await quarantine(key, raw, parsed.kind === 'corrupt');
-    return { status: 'error', error: new FacturaStoreError(parsed.kind), quarantined };
+    return { status: 'error', error: observed('local_read', new FacturaStoreError(parsed.kind)), quarantined };
   }
 
   function hydrate(uid: string, facturaId: string): Promise<HydrateOutcome> {
@@ -449,7 +458,7 @@ export function createFacturaLocalStore(storage: StorageLike): FacturaLocalStore
       try {
         validated = parseRecord(record);
       } catch {
-        return { status: 'error', error: new FacturaStoreError('corrupt') };
+        return { status: 'error', error: observed('local_write', new FacturaStoreError('corrupt')) };
       }
       const key = facturaKey(validated.uid, validated.facturaId);
       const state = stateFor(storage, key);
@@ -461,7 +470,7 @@ export function createFacturaLocalStore(storage: StorageLike): FacturaLocalStore
         try {
           await storage.setItem(key, JSON.stringify(validated));
         } catch (cause) {
-          return { status: 'error', error: classifyFailure(cause, 'write') };
+          return { status: 'error', error: observed('local_write', classifyFailure(cause, 'write')) };
         }
         return { status: 'written', seq: validated.seq };
       });
@@ -473,7 +482,7 @@ export function createFacturaLocalStore(storage: StorageLike): FacturaLocalStore
       try {
         keys = await storage.getAllKeys();
       } catch (cause) {
-        return { status: 'error', error: classifyFailure(cause, 'read') };
+        return { status: 'error', error: observed('local_list', classifyFailure(cause, 'read')) };
       }
       const facturaIds = keys
         .filter(key => key.startsWith(prefix))

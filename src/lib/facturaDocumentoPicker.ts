@@ -4,6 +4,7 @@ import * as FileSystem from 'expo-file-system';
 import * as Crypto from 'expo-crypto';
 import { decode } from 'base64-arraybuffer';
 import { MAX_DOCUMENT_BYTES, bytesToHex } from './facturaDocumento';
+import { reportFacturaThrown } from './facturaTelemetry';
 
 /** Device-only adapters (system picker, file reads, hashing). Rules and limits live in facturaDocumento. */
 
@@ -28,19 +29,24 @@ async function readAssetBytes(asset: DocumentPicker.DocumentPickerAsset): Promis
 
 /** Opens the system picker for one PDF or image. Returns null when the user cancels. */
 export async function pickFacturaDocument(): Promise<PickResult | null> {
-  const result = await DocumentPicker.getDocumentAsync({
-    type: ['application/pdf', 'image/*'],
-    copyToCacheDirectory: true,
-    multiple: false,
-    base64: false,
-  });
-  if (result.canceled) return null;
+  try {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['application/pdf', 'image/*'],
+      copyToCacheDirectory: true,
+      multiple: false,
+      base64: false,
+    });
+    if (result.canceled) return null;
 
-  const asset = result.assets[0];
-  if (asset.size !== undefined && asset.size > MAX_DOCUMENT_BYTES) {
-    return { ok: false, error: 'El archivo supera el límite de 10 MB' };
+    const asset = result.assets[0];
+    if (asset.size !== undefined && asset.size > MAX_DOCUMENT_BYTES) {
+      return { ok: false, error: 'El archivo supera el límite de 10 MB' };
+    }
+    return { ok: true, bytes: await readAssetBytes(asset), nombre: asset.name };
+  } catch (error) {
+    reportFacturaThrown('pick_document', error);
+    throw error;
   }
-  return { ok: true, bytes: await readAssetBytes(asset), nombre: asset.name };
 }
 
 export async function sha256Hex(bytes: Uint8Array): Promise<string> {

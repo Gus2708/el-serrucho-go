@@ -114,6 +114,22 @@ Not verified, do not assume:
 4. Run the attach → save → reopen path on a device and on web, with an employee account to confirm denial.
 5. Decide retention for orphaned and detached objects (cleanup job).
 
+## Unexpected-failure reporting (Sentry)
+
+`src/lib/facturaTelemetry.ts` reports failures nobody handled, and nothing else. The existing `Sentry.init`/`Sentry.wrap` is unchanged; no PII setting, dependency or init option was touched.
+
+**Reported** (one event each, `factura.<operation>.<code>`): `list`, `open`, `save`, `upload`, `download`, `cleanup` (a warning, the orphan is harmless), `pick_document`, `hash_document`, `local_read`, `local_write`, `local_list`, `local_quarantine`. Codes: `desconocido` (a server answer with no typed mapping, including a malformed 2xx), `unexpected` (anything thrown that is not typed), and the local-store failures `unavailable`, `quota`, `corrupt`.
+
+**Never reported**: `no_autorizado`, `version_obsoleta`, `clave_reutilizada`, `datos_invalidos`, `no_encontrada`, `red` (offline or timeout), a newer-schema draft (`unsupported_schema`), a lost response classified as ambiguous, an account change, the user cancelling the picker or picking a file over 10 MB, and stale or empty local reads.
+
+**Where it hooks in.** The repository and the local store report at the point they build the typed error, using the existing `mapFacturaError` and `FacturaStoreError`. The controller and the picker only report values thrown by their injected dependencies (submit, upload, remove, hash, store write, system picker), which the repository and the store never throw. One error object is reported once however many layers it crosses, and one failure kind is reported at most once a minute (a full device would otherwise report on every keystroke).
+
+**What an event contains.** Only the static message, `level`, the tags `feature`, `operation`, `code` and, when they have the expected shape, `sql_state` (five characters) and `http_status` (100-599), a fingerprint of those values, and the client's `release`, `environment` and `dist`. The event is rebuilt by a scope event processor, which Sentry runs after integration processing and scope merge, removing scope-derived user, request, contexts, extra, modules, breadcrumbs, exceptions, attachments, the trace context and the sampling context (which can carry a replay id). The platform SDK can add transport metadata afterward; live reception still needs verification. There is no `exception`, so mobile replay does not capture a recording for it. Error messages, payloads, supplier or money data, document and local paths, signed URLs, ids and credentials are never read.
+
+**Failure of the reporter changes nothing.** The Sentry module is loaded on first use inside a `try`, every report is wrapped, and the original error is still thrown or returned exactly as before.
+
+**Limits.** Anything Sentry derives on the server from the connection itself (for example IP address inference) follows the project settings and was not verified here; `sendDefaultPii: true` stays global and unchanged, and changing it is an init decision outside this change. Live arrival in the Sentry project is verified separately from the unit tests, which run the real `@sentry/core` pipeline with a recording transport.
+
 ## Not in this feature slice
 
 OCR/extraction, alias and candidate matching, quantity/factor reconciliation, transfer to `compras_app`, multi-page documents (one document per invoice today), duplicate-invoice policy (the SHA-256 is stored, not enforced), invoice deletion.

@@ -16,6 +16,7 @@ import {
   type FacturaDraft,
 } from './facturaProveedor';
 import type { GuardarInput, SubirDocumentoInput } from './facturaProveedorRepository';
+import { reportFacturaThrown } from './facturaTelemetry';
 
 /**
  * Save core of the supplier-invoice editor: framework-free, no timers, no network of its own.
@@ -342,7 +343,8 @@ export async function hydrateFacturaEditor(
     let outcome: WriteOutcome;
     try {
       outcome = await store.write(asTombstone ? tombstone() : snapshot());
-    } catch {
+    } catch (error) {
+      reportFacturaThrown('local_write', error);
       outcome = { status: 'error', error: new FacturaStoreError('unavailable') };
     }
     if (outcome.status === 'written') {
@@ -423,7 +425,8 @@ export async function hydrateFacturaEditor(
         key: frozen.key,
         payload: cloneJson(frozen.payload),
       });
-    } catch {
+    } catch (error) {
+      reportFacturaThrown('save', error);
       result = { kind: 'ambiguous' };
     }
 
@@ -512,7 +515,8 @@ export async function hydrateFacturaEditor(
     let sha256: string;
     try {
       sha256 = await deps.documents.sha256(bytes);
-    } catch {
+    } catch (error) {
+      reportFacturaThrown('hash_document', error);
       return { status: 'upload_failed', message: MESSAGES.upload_failed };
     }
 
@@ -533,7 +537,8 @@ export async function hydrateFacturaEditor(
     let stored: FacturaDocumento | null = null;
     try {
       stored = await deps.documents.upload({ ownerId: uid, facturaId, documentId, bytes, nombre, sha256 });
-    } catch {
+    } catch (error) {
+      reportFacturaThrown('upload', error);
       stored = null;
     }
     if (stored === null || stored.path !== path) return failUpload(path);
@@ -576,7 +581,8 @@ export async function hydrateFacturaEditor(
       let gone = false;
       try {
         gone = await deps.documents.remove(path);
-      } catch {
+      } catch (error) {
+        reportFacturaThrown('cleanup', error);
         gone = false;
       }
       (gone ? removed : kept).push(path);
