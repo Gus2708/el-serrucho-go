@@ -614,6 +614,8 @@ export async function hydrateFacturaEditor(
   }
 
   if (!isOwnerCurrent()) {
+    // The stored entry was never read, so this editor must not write over it once the owner returns.
+    writesBlocked = true;
     feedback = feedbackFor('cuenta_cambiada');
   } else {
     const hydrated = await store.hydrate(uid, facturaId);

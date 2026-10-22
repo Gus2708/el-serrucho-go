@@ -721,6 +721,75 @@ describe('account binding', () => {
     expect(storage.setCount).toBe(0);
   });
 
+  describe('an editor opened while the signed-in account is not its owner', () => {
+    /** The owner's disk holds an edited draft and an unresolved intent; the next runtime starts on another account. */
+    async function openMismatched(current: string | null) {
+      const first = await open({ server: new FakeServer() });
+      first.server.script = ['commit-but-lose-response'];
+      first.controller.edit(withNotas('guardado en disco'));
+      expect(await first.controller.save()).toMatchObject({ status: 'pending' });
+      const storage = restart(first.storage);
+      const original = storage.data.get(facturaKey(UID_A, FACTURA));
+      const getItem = jest.spyOn(storage, 'getItem');
+      const session = { current };
+      const opened = await open({ storage, session, initial: createDraft({ facturaId: FACTURA }) });
+      return { ...opened, original, getItem, session };
+    }
+
+    it('never reads the owner entry, and stays unable to write or send after the owner signs back in', async () => {
+      const { controller, storage, server, session, original, getItem } = await openMismatched(UID_B);
+      expect(getItem).not.toHaveBeenCalled();
+      expect(controller.getState().feedback?.kind).toBe('cuenta_cambiada');
+
+      session.current = UID_A;
+      controller.edit(withNotas('sobrescribe'));
+      await controller.persisted();
+      const outcome = await controller.save();
+
+      expect(outcome).toMatchObject({ status: 'blocked' });
+      expect(server.log).toHaveLength(0);
+      expect(storage.data.get(facturaKey(UID_A, FACTURA))).toBe(original);
+      expect(controller.getState().writesBlocked).toBe(true);
+      expect(await controller.attach(new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d]), 'f.pdf')).toMatchObject({
+        status: 'blocked',
+      });
+      expect(await controller.discard(true)).toMatchObject({ status: 'blocked' });
+      expect(storage.data.get(facturaKey(UID_A, FACTURA))).toBe(original);
+    });
+
+    it('also stays read-free and write-free when nobody is signed in at first', async () => {
+      const { controller, storage, server, session, original, getItem } = await openMismatched(null);
+      expect(getItem).not.toHaveBeenCalled();
+
+      session.current = UID_A;
+      controller.edit(withNotas('sobrescribe'));
+      await controller.persisted();
+
+      expect(await controller.save()).toMatchObject({ status: 'blocked' });
+      expect(server.log).toHaveLength(0);
+      expect(storage.data.get(facturaKey(UID_A, FACTURA))).toBe(original);
+    });
+
+    it('is replaced by a fresh owner editor that restores the draft and intent and replays the same key', async () => {
+      const first = await openMismatched(UID_B);
+      const originalRecord = JSON.parse(first.original ?? '{}') as FacturaLocalRecord;
+      expect(originalRecord.intent).not.toBeNull();
+      first.session.current = UID_A;
+      const freshServer = new FakeServer();
+      const fresh = await open({ storage: restart(first.storage), server: freshServer });
+
+      expect(fresh.controller.getState()).toMatchObject({ retryPending: true, writesBlocked: false });
+      expect(fresh.controller.getState().draft.notas).toBe('guardado en disco');
+      expect(await fresh.controller.save()).toMatchObject({ status: 'saved' });
+      expect(freshServer.log).toHaveLength(1);
+      expect(freshServer.log[0]).toMatchObject({
+        key: originalRecord.intent?.key,
+        version: originalRecord.intent?.baseVersion,
+        payload: originalRecord.intent?.payload,
+      });
+    });
+  });
+
   it('applies a late acknowledgement to the original owner record only', async () => {
     const { controller, storage, server, session } = await open();
     const rpcGate = deferred();
