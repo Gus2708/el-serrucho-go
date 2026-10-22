@@ -34,6 +34,9 @@ import { pressScale } from '../theme/motion';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import RegistroProveedorModal from './RegistroProveedorModal';
 import GuardarBorradorModal from './GuardarBorradorModal';
+import FacturasProveedorModal from './FacturasProveedorModal';
+import FacturaBorradoresBadge from './FacturaBorradoresBadge';
+import { isDemoActive } from '../demo/useDemoStore';
 
 // Ficha de Inventario de HybridLite trunca la descripción a los 60 caracteres
 // (confirmado en compras.log 2026-07-17: "PUERTA MULTILOCK...QUINTE" != "...QUINTERO",
@@ -84,6 +87,7 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
   const [productoModalVisible, setProductoModalVisible] = useState(false);
   const [productoNuevoModalVisible, setProductoNuevoModalVisible] = useState(false);
   const [borradorModalVisible, setBorradorModalVisible] = useState(false);
+  const [facturasModalVisible, setFacturasModalVisible] = useState(false);
 
   // Existencia fresca de los ítems ya existentes: los que están en negativo se
   // cargan con unidades extra al emitir (ver compensarExistenciasNegativas en
@@ -443,6 +447,29 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
           <Feather name="chevron-right" size={18} color={colors.textDim} />
         </PressableScale>
 
+        {isPrivileged && !isDemoActive() ? (
+          <PressableScale
+            style={[
+              styles.proveedorBtn,
+              { borderColor: colors.border, backgroundColor: colors.surface },
+            ]}
+            activeScale={pressScale.row}
+            onPress={() => setFacturasModalVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Facturas de proveedor"
+          >
+            <Feather name="paperclip" size={16} color={colors.primary} />
+            <View style={styles.proveedorBtnText}>
+              <Text style={[styles.proveedorLabel, { color: colors.textMuted }]}>FACTURAS DE PROVEEDOR</Text>
+              <Text style={[styles.proveedorValue, { color: colors.text }]} numberOfLines={1}>
+                Adjuntar y guardar
+              </Text>
+            </View>
+            <FacturaBorradoresBadge />
+            <Feather name="chevron-right" size={18} color={colors.textDim} />
+          </PressableScale>
+        ) : null}
+
         </View>
 
         {/* Agregar producto CTAs — quedan fijos arriba al hacer scroll, así se
@@ -645,6 +672,12 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
         isSaving={isLoading}
         onClose={() => setBorradorModalVisible(false)}
         onSave={handleSaveDraft}
+      />
+      <FacturasProveedorModal
+        visible={facturasModalVisible}
+        proveedorCodigo={proveedorCodigo}
+        proveedorNombre={proveedorNombre}
+        onClose={() => setFacturasModalVisible(false)}
       />
     </View>
   );

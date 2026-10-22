@@ -1,18 +1,16 @@
 # Supplier-invoice persistence
 
-Status: this branch (schema block) carries the invoice schema migration and its SQL tests only.
+Status: this branch carries the full client feature on top of the schema: migration and SQL
+tests, domain/repository, local recovery, the editor controller and flow, and the UI (hook,
+editor, modal, drafts badge, `ComprasView` entry and the session publication in the auth root).
 The migration was applied earlier under the authorized rollout (see
-[SUPPLIER-INVOICE-REVIEW.md](SUPPLIER-INVOICE-REVIEW.md)). This block does not re-apply it and
+[SUPPLIER-INVOICE-REVIEW.md](SUPPLIER-INVOICE-REVIEW.md)). This branch does not re-apply it and
 makes no fresh read of any remote database. Scope: attach a source document, save an invoice
 with its original lines, reopen it. Nothing here does OCR, creates a purchase, writes
 `compras_app`, changes stock or emits to the POS. The negative-stock compensation already
-lives in the purchase hook (`src/hooks/useCompra.ts`) and is not touched by this block.
+lives in the purchase hook (`src/hooks/useCompra.ts`) and is not touched by this feature.
 
-**Staging.** The domain, repository, local-recovery, controller and UI code described below
-ships in later blocks of the same feature; those files do not exist on this branch. Sections
-that describe them are the target design of the full feature, not code present here.
-
-Entry point (later UI block): **ComprasView → "Facturas de proveedor"** (admin/superempleado only, hidden in demo mode).
+Entry point: **ComprasView → "Facturas de proveedor"** (admin/superempleado only, hidden in demo mode).
 
 ## Data model
 
@@ -38,11 +36,11 @@ printed on the document is stored read-only. VES-original storage exists, conver
 - `p_version_esperada = 0` creates; `N >= 1` updates from version `N`. The payload is the full desired state: lines not sent are deleted, `documento: null` detaches the file.
 - One transaction: header, lines and ledger row commit together or not at all. A per-invoice advisory lock serializes concurrent saves, creation included.
 - Same key + same content → returns the original result with `replay: true`, even after the invoice advanced. Same key + different content → `PI409`.
-- Errors a client maps (repository, later block): `42501` not authorized · `PV409` stale version · `PI409` key reused · `22023/23514/22P02/22003/23505` invalid data · `P0002` not found.
+- Errors a client maps (`facturaProveedorRepository.ts`): `42501` not authorized · `PV409` stale version · `PI409` key reused · `22023/23514/22P02/22003/23505` invalid data · `P0002` not found.
 - A document is accepted only if its path is `<caller uid>/<this factura id>/…`, the Storage object exists, and its Storage-recorded `mimetype` and `size` equal the declared ones.
 
-The app (later blocks) keeps the idempotency key of a failed attempt and reuses it while the content is
-unchanged, so a lost response cannot apply a save twice.
+The app keeps the idempotency key of a failed attempt and reuses it while the content is
+unchanged (`resolveSaveKey`), so a lost response cannot apply a save twice.
 
 ## Authorization
 
@@ -51,7 +49,7 @@ unchanged, so a lost response cannot apply a save twice.
 - Storage policies on the bucket: `INSERT` (own folder, strict name pattern), `SELECT` (own folder), `DELETE` (own folder, only objects no invoice references). No `UPDATE`, so an existing object cannot be overwritten; each attachment gets a fresh path.
 - Document binding and deletion are serialized (migration `20261022020000`): a trigger on `facturas_proveedores.documento_path` and a `BEFORE DELETE` trigger on the bucket's objects take the same advisory lock (keyed on the object path) and re-check under it. A delete that loses the race to a save is skipped; a save that loses the race to a delete fails with `22023 payload_invalido: documento`. A saved invoice therefore never points at a deleted document.
 
-## Interruption and recovery (target behavior; client parts ship in later blocks)
+## Interruption and recovery
 
 | Interruption | Result | Recovery |
 |---|---|---|
@@ -61,12 +59,12 @@ unchanged, so a lost response cannot apply a save twice.
 | Another device saved first | `PV409` | Banner offers "Recargar versión del servidor" (discards local edits after confirmation). |
 | Document replaced | Old object is unreferenced only after the new save commits | Deleted after that save succeeds. |
 
-## Money, manual entry and optional document (editor ships in a later block)
+## Money, manual entry and optional document
 
 - Every amount the editor captures and shows is **USD**. Typed amounts are explicitly USD values: nothing is converted, and the UI does not claim they reproduce another currency. The currency printed on the source document is stored read-only.
 - Attaching an image or PDF is **optional**. An invoice can be entered and saved manually with no attachment, and the existing manual purchase path in `ComprasView` is unchanged.
 
-## Local recovery and account isolation (later block, not on this branch)
+## Local recovery and account isolation
 
 - The editor binds to a durable controller (`useSyncExternalStore`). Each edit is written to a local record keyed `serrucho-factura-v1:{uid}:{facturaId}` **before** any save RPC. If that write fails, no RPC is sent and the UI shows a "not durable" banner.
 - A draft or unresolved retry survives unmounting, a page reload or an app restart and is restored for the **same account** only: header fields, lines with stable IDs and order, and acknowledged attachment references. Raw file bytes and signed URLs are never stored locally.
@@ -74,40 +72,37 @@ unchanged, so a lost response cannot apply a save twice.
 - The modal lists "BORRADORES EN ESTE DISPOSITIVO" first and `ComprasView` shows a badge with the pending count. Nothing opens automatically. Unreadable or newer-schema records are reported and writes to them are blocked.
 - Closing with unsaved changes asks for confirmation and keeps the draft locally. Discarding is a separate action with its own confirmation.
 
-## Frozen retry limits (later block, not on this branch)
+## Frozen retry limits
 
 - A pending retry holds the exact payload and idempotency key of the failed attempt. Pressing save again, or "Reintentar", sends that frozen payload, not the latest edits.
 - Edits typed while a save is pending stay in the draft and go out in a later save; the acknowledgement does not overwrite them.
 - Changing content under a reused key is rejected with `PI409`. A stale version (`PV409`) offers a reload of the server version after confirmation, which discards local edits.
 - Close is blocked while a save or upload is in flight.
 
-## Single-runtime guarantee, and what it does not give (later block)
+## Single-runtime guarantee, and what it does not give
 
 Serialization of local writes is guaranteed **inside one JavaScript runtime** (one tab or one app process): a per-key queue outlives controllers and sequence numbers never decrease. There is **no cross-tab, cross-window or cross-process coordination**. Two tabs editing the same invoice can overwrite each other's local record; the server's version check (`PV409`) is the only cross-device guard.
 
 ## What was verified, and what was not
 
-Current isolated block (this branch, base `refactor/supplier-invoice-quantities`): **56 SQL
-tests** (`npm run test:sql`) on a throwaway PGlite PostgreSQL engine (WASM Postgres, single
-connection) applying the real migration: save/reopen, stable IDs, repeated lines, atomic
-rollback, replay, key reuse with other content, stale version, foreign line IDs, document
-binding, owner isolation, employee/inactive/invalid-session/anon denial, direct DML denial,
-Storage policy matrix, no `SECURITY DEFINER` function in `public`. The tests call the public
-RPC; no real database is used.
+This branch, offline with fakes, in one JavaScript runtime:
 
-Historical full working tree (before slicing, not isolated-branch proof): 521 unit, 33 UI and
-56 SQL tests. Each later block records its own totals.
+- **UI flows (30 tests, `npm run test:ui`, 3 suites):** React Native Testing Library 13.3.3 over the real controller, local store, flow and repository; Supabase, AsyncStorage, document picker, file system and crypto are faked. Covered: manual entry with USD amounts and no attachment, optional attachment (including an upload that fails while the invoice stays savable), save with a pending response and frozen retry, a lost response retried with the same intent, close/discard confirmations, unsaved content kept after leaving without pressing Close, local drafts listed before server invoices (also offline), per-account drafts, the drafts badge, and fail-closed behavior without a published session or after an account change. "Reconstruction" means unmount and remount from persisted records, **not** a process restart.
+- **Unit tests (`npm test`):** 27 suites / 524 tests, including the hook (`useFacturasProveedor.test.ts`). The `*.ui.test.tsx` files are excluded from the root Jest config and run only through `test:ui`.
+- **SQL (60 tests, `npm run test:sql`)** on a throwaway PGlite PostgreSQL engine (WASM Postgres, single connection) applying the real migrations: save/reopen, stable IDs, repeated lines, atomic rollback, replay, key reuse with other content, stale version, foreign line IDs, document binding and its delete race, owner isolation, employee/inactive/invalid-session/anon denial, direct DML denial, Storage policy matrix, no `SECURITY DEFINER` function in `public`. The tests call the public RPC; no real database is used.
+
+No test in this feature writes inventory: nothing here touches `productos`, the POS, `compras_app`, orders, queues or sync. Typecheck exits 0; lint exits 0 with 0 errors (warnings are not classified against a baseline).
 
 Purchase quantities: the baseline hook already compensates negative stock (stock -3 with
 invoice quantity 10 sends 13; stock +5 sends 10); that is covered by the purchase-quantity
-tests on the base branch. This block changes no stock.
+tests on the base branch. This feature changes no stock.
 
 Not verified, do not assume:
 
-- **No fresh remote read.** Nothing in this block queried staging or production, and the migration is not re-applied.
+- **No fresh remote read.** Nothing in this feature queried staging or production, and the migration is not re-applied.
 - **The harness is a model of Supabase, not Supabase.** `auth.uid()`, `storage.*`, roles and default privileges are minimal fixtures; `validate_session()` is a stub (its production body is not in this repository); `is_privileged()` is copied from migration 026. Storage objects are inserted by direct SQL in tests only; production objects must come from the Storage API.
 - **Concurrency is proven only on a throwaway Postgres, not on hosted Supabase.** PGlite has one connection, so `npm run test:sql` covers the triggers sequentially. `supabase/tests/facturasProveedores.concurrent.probe.ts` drives two real connections (bind-first and delete-first) against a disposable Supabase Postgres container; it is run by hand (see its header), never against a real project. Hosted proof stays deferred. The per-invoice save lock is still only reasoned, not exercised under contention.
-- **No real browser, native, Storage upload or PostgREST run** for the full feature; live acceptance is deferred.
+- **No real browser, device, native restart, real-session, Storage upload or PostgREST run** for the full feature. The UI proof is source-level with fakes; live acceptance (real session enforcement, cross-device conflict, native picker and restart, hosted grants) is deferred and has not passed. No clean-install (`npm ci`) run was done here; the installed `node_modules` came from a shared junction.
 - **Server-side content inspection does not exist.** Storage enforces declared MIME and real size; a modified client could upload mislabeled bytes into its own private folder. Impact is limited to that user's own invoice (private bucket, short-lived signed URLs, fixed content type).
 - PostgREST returns `numeric` as JSON numbers, so a client should limit input to 15 significant digits to avoid binary rounding on reopen.
 
@@ -132,12 +127,13 @@ Most new products need a barcode before they are ready in Hybrid. Confirmed futu
 ## Commands
 
 ```
-npm test                 # unit tests (SQL tests excluded)
+npm test                 # unit tests (SQL and *.ui.test.tsx excluded)
+npm run test:ui          # UI flows (RNTL 13.3.3 + react-test-renderer 19.0.0)
 npm run test:sql         # SQL + Storage policies on PGlite
 npm run typecheck
 ```
 
 `test:sql` runs Jest with `--experimental-vm-modules` (PGlite loads its WASM through dynamic
 import) and is excluded from the default `npm test` so a missing flag cannot crash that run.
-CI (`.github/workflows/ci.yml`) runs typecheck, `npm test` and `npm run test:sql`. These are
+CI (`.github/workflows/ci.yml`) runs typecheck, `npm test`, `npm run test:ui` and `npm run test:sql`. These are
 source-level checks; none replaces live-runtime proof.
