@@ -1,4 +1,4 @@
-import type { FacturaMime } from './facturaDocumento';
+import type { FacturaMime } from './facturaDocumento.ts';
 
 /**
  * Supplier-invoice draft model. Persistence only: nothing here creates purchases,
