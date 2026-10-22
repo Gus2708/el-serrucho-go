@@ -4,6 +4,13 @@ const config = getSentryExpoConfig(__dirname, {
   autoWrapExpoRouterErrorBoundary: true,
 });
 
+// E2E CLI links can be unreadable on Windows and are not application dependencies.
+const blockList = config.resolver.blockList || [];
+config.resolver.blockList = [
+  ...(Array.isArray(blockList) ? blockList : [blockList]),
+  /[/\\]e2e[/\\]node_modules(?:[/\\].*)?$/,
+];
+
 // Asegurarse de que Metro maneje correctamente los archivos estáticos en la carpeta public
 config.resolver.sourceExts.push('mjs');
 
