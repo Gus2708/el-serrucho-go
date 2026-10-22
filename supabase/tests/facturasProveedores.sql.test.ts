@@ -732,3 +732,59 @@ describe('Storage: bucket facturas_proveedores', () => {
     expect(foreign.affectedRows).toBe(0);
   });
 });
+
+// The race itself needs two connections: see facturasProveedores.concurrent.probe.ts.
+// These cover the single-connection behavior of the lock-and-recheck triggers.
+describe('documento fuente: coordinacion guardado/borrado', () => {
+  it('un guardado no puede enlazar un documento cuyo objeto ya fue borrado (recheck bajo el lock)', async () => {
+    const id = uuid();
+    const path = docPath(ADMIN, id);
+    await subirObjeto(path);
+    await db.query('delete from storage.objects where bucket_id = $1 and name = $2', [BUCKET, path]);
+
+    // Writers other than the RPC are covered too: the invariant lives in a trigger.
+    await actAsOwner(db);
+    await db.query("insert into public.facturas_proveedores (id, creado_por, version) values ($1, $2, 1)", [id, ADMIN]);
+    await expect(
+      db.query('update public.facturas_proveedores set documento_path = $1 where id = $2', [path, id]),
+    ).rejects.toMatchObject({ code: '22023' });
+  });
+
+  it('un objeto que una factura ya referencia no se borra ni siquiera sin pasar por la politica', async () => {
+    const id = uuid();
+    const path = docPath(ADMIN, id);
+    await subirObjeto(path);
+    await save({ id, expected: 0, cab: cabecera({ documento: documento(path) }) });
+
+    await actAsOwner(db);
+    const removed = await db.query('delete from storage.objects where bucket_id = $1 and name = $2', [BUCKET, path]);
+
+    expect(removed.affectedRows).toBe(0);
+    expect((await cabeceraDe(id)).documento_path).toBe(path);
+  });
+
+  it('al desvincular el documento, el objeto vuelve a poder borrarse', async () => {
+    const id = uuid();
+    const path = docPath(ADMIN, id);
+    await subirObjeto(path);
+    await save({ id, expected: 0, cab: cabecera({ documento: documento(path) }) });
+    await save({ id, expected: 1, cab: cabecera({ documento: null }) });
+
+    const removed = await db.query('delete from storage.objects where bucket_id = $1 and name = $2', [BUCKET, path]);
+
+    expect(removed.affectedRows).toBe(1);
+  });
+
+  it('los triggers no son invocables ni expuestos al Data API', async () => {
+    await actAsOwner(db);
+
+    const exposed = await db.query<{ proname: string; can_run: boolean }>(
+      `select p.proname, has_function_privilege('authenticated', p.oid, 'execute') as can_run
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'facturas_privado' and p.proname in ('bloquear_documento', 'exigir_documento_existente', 'proteger_documento_referenciado')`,
+    );
+
+    expect(exposed.rows).toHaveLength(3);
+    expect(exposed.rows.every(row => !row.can_run)).toBe(true);
+  });
+});

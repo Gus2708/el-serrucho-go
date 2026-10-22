@@ -49,6 +49,7 @@ unchanged, so a lost response cannot apply a save twice.
 - Every read and write requires `is_privileged()` (active admin/superempleado) **and** `validate_session()`, and ownership. Other privileged users cannot read or modify someone else's invoice.
 - `authenticated` has `SELECT` only on the two data tables; all writes go through the RPC. `anon` has no access.
 - Storage policies on the bucket: `INSERT` (own folder, strict name pattern), `SELECT` (own folder), `DELETE` (own folder, only objects no invoice references). No `UPDATE`, so an existing object cannot be overwritten; each attachment gets a fresh path.
+- Document binding and deletion are serialized (migration `20261022020000`): a trigger on `facturas_proveedores.documento_path` and a `BEFORE DELETE` trigger on the bucket's objects take the same advisory lock (keyed on the object path) and re-check under it. A delete that loses the race to a save is skipped; a save that loses the race to a delete fails with `22023 payload_invalido: documento`. A saved invoice therefore never points at a deleted document.
 
 ## Interruption and recovery (target behavior; client parts ship in later blocks)
 
@@ -105,7 +106,7 @@ Not verified, do not assume:
 
 - **No fresh remote read.** Nothing in this block queried staging or production, and the migration is not re-applied.
 - **The harness is a model of Supabase, not Supabase.** `auth.uid()`, `storage.*`, roles and default privileges are minimal fixtures; `validate_session()` is a stub (its production body is not in this repository); `is_privileged()` is copied from migration 026. Storage objects are inserted by direct SQL in tests only; production objects must come from the Storage API.
-- **No concurrency proof.** PGlite has one connection: stale-version and replay are tested sequentially. The advisory lock is reasoned, not exercised under contention.
+- **Concurrency is proven only on a throwaway Postgres, not on hosted Supabase.** PGlite has one connection, so `npm run test:sql` covers the triggers sequentially. `supabase/tests/facturasProveedores.concurrent.probe.ts` drives two real connections (bind-first and delete-first) against a disposable Supabase Postgres container; it is run by hand (see its header), never against a real project. Hosted proof stays deferred. The per-invoice save lock is still only reasoned, not exercised under contention.
 - **No real browser, native, Storage upload or PostgREST run** for the full feature; live acceptance is deferred.
 - **Server-side content inspection does not exist.** Storage enforces declared MIME and real size; a modified client could upload mislabeled bytes into its own private folder. Impact is limited to that user's own invoice (private bucket, short-lived signed URLs, fixed content type).
 - PostgREST returns `numeric` as JSON numbers, so a client should limit input to 15 significant digits to avoid binary rounding on reopen.

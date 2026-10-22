@@ -80,10 +80,19 @@ export function findMigrationSql(): string {
   return readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
 }
 
+// Forward migrations of the same feature, applied after the original in filename order.
+export function findFollowUpMigrationsSql(): string[] {
+  return readdirSync(MIGRATIONS_DIR)
+    .filter(name => name.endsWith('_fix_factura_documento_delete_race.sql'))
+    .sort()
+    .map(name => readFileSync(join(MIGRATIONS_DIR, name), 'utf8'));
+}
+
 export async function createMigratedDb(): Promise<PGlite> {
   const db = new PGlite();
   await db.exec(SUPABASE_FIXTURE);
   await db.exec(findMigrationSql());
+  for (const sql of findFollowUpMigrationsSql()) await db.exec(sql);
   return db;
 }
 
