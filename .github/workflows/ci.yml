@@ -28,3 +28,7 @@ jobs:
 
       - name: Tests
         run: npm test -- --ci
+
+      # PGlite corre en proceso: no necesita base de datos ni secretos de staging.
+      - name: SQL tests
+        run: npm run test:sql -- --ci
