@@ -17,6 +17,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { pressScale } from '../theme/motion';
 import { notify, confirm } from '../lib/notify';
 import { PressableScale } from './PressableScale';
+import FacturaRevisionView from './FacturaRevisionView';
 import {
   addLinea,
   createDraft,
@@ -200,6 +201,8 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
   const [notice, setNotice] = useState<Banner | null>(null);
   const [busyDocument, setBusyDocument] = useState<boolean>(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [revisionOpen, setRevisionOpen] = useState<boolean>(false);
+  const [revisionDirty, setRevisionDirty] = useState<boolean>(false);
 
   function refreshLists(): void {
     void queryClient.invalidateQueries({ queryKey: [...facturasQueryKey, 'lista'] });
@@ -294,13 +297,15 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
   }
 
   function handleClose(): void {
-    if (state.saving || state.uploading || !state.dirty) {
+    if (state.saving || state.uploading || (!state.dirty && !revisionDirty)) {
       void finishClose();
       return;
     }
     confirm({
       title: 'Cerrar con cambios sin guardar',
-      message: 'Los cambios se conservan como borrador en este dispositivo.',
+      message: revisionDirty
+        ? 'La revisión asistida tiene cambios sin guardar que se perderán al cerrar. Guárdalos en la revisión antes de salir.'
+        : 'Los cambios se conservan como borrador en este dispositivo.',
       confirmText: 'Cerrar',
       cancelText: 'Seguir editando',
       onConfirm: finishClose,
@@ -473,6 +478,27 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
         <Text style={[styles.hint, { color: colors.textDim }]}>
           Cada renglón se guarda tal como aparece en la factura, aunque el SKU se repita.
         </Text>
+
+        <Text style={[styles.section, { color: colors.primary }]}>REVISIÓN ASISTIDA</Text>
+        {draft.version < 1 ? (
+          <Text style={[styles.hint, { color: colors.textDim }]}>
+            Guarda la factura para habilitar la revisión asistida. La captura manual no la necesita.
+          </Text>
+        ) : revisionOpen ? (
+          <FacturaRevisionView
+            facturaId={draft.facturaId}
+            ownerId={ownerId}
+            facturaVersion={draft.version}
+            documento={draft.documento}
+            editorDirty={state.dirty}
+            onDirtyChange={setRevisionDirty}
+          />
+        ) : (
+          <PressableScale onPress={() => setRevisionOpen(true)} style={[styles.attachBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }]} accessibilityRole="button" testID="factura-abrir-revision">
+            <Feather name="check-square" size={16} color={colors.primary} />
+            <Text style={[styles.attachText, { color: colors.primary }]}>Abrir revisión asistida</Text>
+          </PressableScale>
+        )}
       </ScrollView>
 
       <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.bg }]}>
