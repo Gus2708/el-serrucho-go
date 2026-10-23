@@ -25,6 +25,21 @@ import {
 } from '../test-utils/facturaUiHarness';
 
 jest.mock('../lib/supabase', () => ({ supabase: require('../test-utils/facturaUiHarness').backend.client }));
+// The review panel has its own suite; here only the editor's wiring around it is exercised.
+jest.mock('./FacturaRevisionView', () => {
+  const { Pressable, Text } = require('react-native');
+  return {
+    __esModule: true,
+    default: (props: { onDirtyChange?: (dirty: boolean) => void }) => {
+      (globalThis as unknown as { __revisionProps: unknown }).__revisionProps = props;
+      return (
+        <Pressable testID="revision-stub" onPress={() => props.onDirtyChange?.(true)}>
+          <Text>revision-stub</Text>
+        </Pressable>
+      );
+    },
+  };
+});
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: require('../test-utils/facturaUiHarness').asyncStorage,
@@ -496,5 +511,96 @@ describe('identificadores para pruebas de extremo a extremo', () => {
     expect(screen.getByTestId('factura-attach')).toBeTruthy();
     expect(screen.getByTestId('factura-field-numeroDocumento')).toBeTruthy();
     expect(screen.getByTestId('factura-linea-0-cantidad')).toBeTruthy();
+  });
+});
+
+describe('revisión asistida (puente con el editor)', () => {
+  const SHA = 'c'.repeat(64);
+  const record = (facturaId: string, withDocument = true) => ({
+    id: facturaId,
+    version: 2,
+    proveedor_codigo: null,
+    proveedor_nombre: 'Proveedor Uno',
+    numero_documento: 'A-1',
+    numero_control: null,
+    fecha_documento: null,
+    moneda: 'USD',
+    notas: null,
+    documento_path: withDocument ? `${OWNER_A}/${facturaId}/d.pdf` : null,
+    documento_nombre: withDocument ? 'factura.pdf' : null,
+    documento_mime: withDocument ? ('application/pdf' as const) : null,
+    documento_bytes: withDocument ? 2048 : null,
+    documento_sha256: withDocument ? SHA : null,
+    lineas: [],
+  });
+  const revisionProps = (): Record<string, unknown> => (globalThis as unknown as { __revisionProps: Record<string, unknown> }).__revisionProps;
+
+  async function openSaved(withDocument = true) {
+    const facturaId = nextFactura();
+    const onClose = jest.fn();
+    const view = renderWithProviders(
+      <FacturaProveedorEditor facturaId={facturaId} record={record(facturaId, withDocument)} ownerId={OWNER_A} onClose={onClose} onReload={jest.fn()} />,
+    );
+    await screen.findByLabelText('Número de factura');
+    return { facturaId, onClose, ...view };
+  }
+
+  it('does not offer the review for an unsaved invoice, and manual entry stays complete', async () => {
+    await openEditor();
+    expect(screen.queryByTestId('factura-abrir-revision')).toBeNull();
+    expect(screen.getByText(/Guarda la factura para habilitar la revisión asistida/)).toBeTruthy();
+    type('Número de factura', 'A-1');
+    expect(value('Número de factura')).toBe('A-1');
+    expect(screen.queryByTestId('revision-stub')).toBeNull();
+  });
+
+  it('opens the review only on request and hands it the saved version, document SHA and manual dirty state', async () => {
+    const { facturaId } = await openSaved();
+    expect(screen.queryByTestId('revision-stub')).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-abrir-revision'));
+    });
+    expect(screen.getByTestId('revision-stub')).toBeTruthy();
+    expect(revisionProps()).toMatchObject({ facturaId, ownerId: OWNER_A, facturaVersion: 2, editorDirty: false, documento: expect.objectContaining({ sha256: SHA }) });
+
+    type('Notas', 'cambio manual sin guardar');
+    expect(revisionProps()).toMatchObject({ editorDirty: true });
+  });
+
+  it('hands the review no document when the saved invoice has none', async () => {
+    await openSaved(false);
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-abrir-revision'));
+    });
+    expect(revisionProps()).toMatchObject({ documento: null, facturaVersion: 2 });
+  });
+
+  it('guards closing while the review has unsaved changes, without touching the manual draft flow', async () => {
+    const { onClose } = await openSaved();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-abrir-revision'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('revision-stub'));
+    });
+    await pressLabel('Cerrar factura');
+    expect(onClose).not.toHaveBeenCalled();
+    const [title, message] = alert.mock.calls[alert.mock.calls.length - 1] as [string, string];
+    expect(title).toBe('Cerrar con cambios sin guardar');
+    expect(message).toMatch(/revisión asistida/);
+    await pressAlertButton(alert, 'Cerrar');
+    await settle();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes immediately when neither the manual form nor the review has unsaved changes', async () => {
+    const { onClose } = await openSaved();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-abrir-revision'));
+    });
+    await pressLabel('Cerrar factura');
+    await settle();
+    expect(alert).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
