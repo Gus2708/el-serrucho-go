@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Animated, Easing } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
@@ -67,12 +67,7 @@ export function ProveedorDisponibilidad<C extends CandidatoBase>(p: Props<C>) {
       )}
 
       {(enviando || esperando) && !vencida && (
-        <View style={styles.row}>
-          <ActivityIndicator color={colors.primary} />
-          <Text style={[styles.hint, { color: colors.textMuted, flex: 1 }]}>
-            Consultando… puede tardar unos segundos.
-          </Text>
-        </View>
+        <ProgresoConsulta status={consulta?.status} colors={colors} />
       )}
 
       {vencida && (
@@ -168,6 +163,60 @@ function Foto({ urls, colors }: { urls: string[]; colors: any }) {
   );
 }
 
+function ProgresoConsulta({ status, colors }: { status?: 'pendiente' | 'procesando' | 'listo' | 'error'; colors: any }) {
+  const [elapsed, setElapsed] = React.useState(0);
+  const progressAnim = React.useRef(new Animated.Value(0.05)).current;
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setElapsed((s) => s + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  React.useEffect(() => {
+    Animated.timing(progressAnim, {
+      toValue: 0.92,
+      duration: 35000,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [progressAnim]);
+
+  const etapa = status === 'pendiente'
+    ? 'Conectando con la tienda...'
+    : elapsed < 5
+      ? 'Buscando coincidencias en el catálogo...'
+      : elapsed < 16
+        ? 'Buscando equivalencias por similitud...'
+        : 'Consultando stock en vivo con el proveedor...';
+
+  const widthPercent = progressAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
+  });
+
+  return (
+    <View style={styles.progressContainer}>
+      <View style={styles.row}>
+        <ActivityIndicator size="small" color={colors.primary} />
+        <Text style={[styles.hint, { color: colors.textMuted, flex: 1 }]}>
+          Consultando… puede tardar unos segundos.
+        </Text>
+        <Text style={[styles.timerBadge, { color: colors.textDim }]}>
+          {elapsed}s
+        </Text>
+      </View>
+      <View style={[styles.progressBarBg, { backgroundColor: colors.border }]}>
+        <Animated.View style={[styles.progressBarFill, { width: widthPercent, backgroundColor: colors.primary }]} />
+      </View>
+      <Text style={[styles.stageHint, { color: colors.textDim }]}>
+        {etapa}
+      </Text>
+    </View>
+  );
+}
+
 function RetryButton({ colors, onPress, label = 'Reintentar' }: { colors: any; onPress: () => void; label?: string }) {
   return (
     <PressableScale
@@ -187,6 +236,11 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium', textTransform: 'uppercase', letterSpacing: 0.8 },
   hint:         { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_400Regular', lineHeight: scaleFont(19) },
   row:          { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  progressContainer: { gap: 8 },
+  progressBarBg:    { height: 4, borderRadius: 2, overflow: 'hidden', width: '100%' },
+  progressBarFill:  { height: '100%', borderRadius: 2 },
+  stageHint:        { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular' },
+  timerBadge:       { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium' },
   btn:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 12, borderWidth: 0.5, paddingVertical: 12, minHeight: 44 },
   btnText:      { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
   candidato:    { borderTopWidth: 0.5, paddingTop: 12 },
