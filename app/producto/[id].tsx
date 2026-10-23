@@ -318,7 +318,7 @@ export default function ProductoDetail() {
             )}
           </View>
 
-          {/* Supplier availability: sold-out or low-stock products that rotate well (decided inside) */}
+          {/* Supplier availability: user-triggered on-demand query for all products */}
           {!isDemoActive() && (
             <ProveedoresDisponibilidad codigoInterno={producto.codigo_interno} existencia={producto.existencia} />
           )}

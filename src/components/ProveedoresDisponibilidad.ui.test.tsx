@@ -1,10 +1,8 @@
 import * as React from 'react';
-import { StyleSheet } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react-native';
 import { ProveedoresDisponibilidad } from './ProveedoresDisponibilidad';
 import { ThemeProvider } from '../theme/ThemeContext';
-import { elSerrucho } from '../theme/brands/el-serrucho';
 
 const mockRpc = jest.fn();
 const mockFrom = jest.fn();
@@ -37,31 +35,23 @@ afterEach(() => {
 });
 
 describe('tarjetas de proveedores en el detalle del producto', () => {
-  it('con stock suficiente no muestra nada ni consulta la elegibilidad', () => {
-    renderProveedores(6);
-
-    expect(screen.toJSON()).toBeNull();
-    expect(mockRpc).not.toHaveBeenCalled();
-  });
-
-  it('un producto de rotación baja muestra una nota legible con margen lateral', async () => {
-    mockRpc.mockResolvedValue({ data: { elegible: false, motivo: 'baja_rotacion', facturas: 1, ultima_venta: null }, error: null });
-    renderProveedores(0);
-
-    const nota = await screen.findByText(/no se consulta a los proveedores/);
-    const estilo = StyleSheet.flatten(nota.props.style);
-    expect(estilo.marginHorizontal).toBe(16);
-    expect(estilo.color).toBe(elSerrucho.colors.textMuted);
-    expect(nota.props.children).toEqual(expect.arrayContaining(['factura']));
-  });
-
-  it('un producto elegible muestra ambas tarjetas sin consultar a los proveedores', async () => {
-    mockRpc.mockResolvedValue({ data: { elegible: true, motivo: 'rotacion', facturas: 8, ultima_venta: null }, error: null });
-    renderProveedores(2);
+  it('muestra ambas tarjetas para productos con stock suficiente sin consultar al proveedor', async () => {
+    renderProveedores(20);
 
     expect(await screen.findByText('Disponibilidad en Maxcam (BQ)')).toBeTruthy();
+    expect(await screen.findByText('Disponibilidad en Corporación Norte')).toBeTruthy();
     expect(screen.getAllByRole('button', { name: 'Consultar' })).toHaveLength(2);
-    expect(mockRpc).toHaveBeenCalledWith('proveedor_elegible', { p_codigo: 'P-1' });
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it('muestra ambas tarjetas para productos agotados sin consultar al proveedor en render', async () => {
+    renderProveedores(0);
+
+    expect(await screen.findByText('Disponibilidad en Maxcam (BQ)')).toBeTruthy();
+    expect(await screen.findByText('Disponibilidad en Corporación Norte')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Consultar' })).toHaveLength(2);
+    expect(mockRpc).not.toHaveBeenCalled();
     expect(mockFrom).not.toHaveBeenCalled();
   });
 });
