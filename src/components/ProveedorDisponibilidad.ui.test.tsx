@@ -115,6 +115,18 @@ describe('tarjeta de disponibilidad en un proveedor', () => {
     expect(mockDb.inserts).toBe(1);
   });
 
+  it('mientras espera muestra el avance en porcentaje y la etapa real, no segundos', async () => {
+    renderTarjeta();
+    fireEvent.press(screen.getByRole('button', { name: 'Consultar' }));
+    await screen.findByText('No se encontró un equivalente en el catálogo de Maxcam.');
+
+    fireEvent.press(screen.getByRole('button', { name: 'Reintentar' }));
+
+    expect(await screen.findByText(/^\d{1,2}%$/)).toBeTruthy();
+    expect(screen.queryByText(/^\d+s$/)).toBeNull();
+    expect(await screen.findByText('Esperando a que la tienda tome la consulta…')).toBeTruthy();
+  });
+
   it('respeta el margen lateral y el radio de las tarjetas vecinas', () => {
     renderTarjeta();
 

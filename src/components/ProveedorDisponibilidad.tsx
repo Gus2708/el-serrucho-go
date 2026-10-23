@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
@@ -163,38 +163,46 @@ function Foto({ urls, colors }: { urls: string[]; colors: any }) {
   );
 }
 
-function ProgresoConsulta({ status, colors }: { status?: 'pendiente' | 'procesando' | 'listo' | 'error'; colors: any }) {
-  const [elapsed, setElapsed] = React.useState(0);
-  const progressAnim = React.useRef(new Animated.Value(0.05)).current;
+type EstadoConsulta = 'pendiente' | 'procesando' | 'listo' | 'error';
+
+type Etapa = { texto: string; desde: number; hasta: number; tauSeg: number };
+
+/**
+ * The listener only reports pendiente -> procesando -> listo, so progress is driven by
+ * that real status: each stage fills its own band of the bar and eases towards its end
+ * (it never reaches 100% until the answer arrives and the card switches to the result).
+ */
+const ETAPAS: Record<'enviando' | 'pendiente' | 'procesando', Etapa> = {
+  enviando:   { texto: 'Enviando la consulta…',                       desde: 0,  hasta: 10, tauSeg: 1.5 },
+  pendiente:  { texto: 'Esperando a que la tienda tome la consulta…', desde: 10, hasta: 25, tauSeg: 3 },
+  procesando: { texto: 'La tienda está consultando al proveedor…',    desde: 25, hasta: 95, tauSeg: 12 },
+};
+const TICK_MS = 250;
+
+function etapaDe(status?: EstadoConsulta): keyof typeof ETAPAS {
+  if (status === 'pendiente') return 'pendiente';
+  if (status === 'procesando') return 'procesando';
+  return 'enviando';
+}
+
+function porcentaje(etapa: Etapa, segundos: number): number {
+  const avance = 1 - Math.exp(-segundos / etapa.tauSeg);
+  return Math.max(1, Math.round(etapa.desde + (etapa.hasta - etapa.desde) * avance));
+}
+
+function ProgresoConsulta({ status, colors }: { status?: EstadoConsulta; colors: any }): React.ReactElement {
+  const clave = etapaDe(status);
+  const etapa = ETAPAS[clave];
+  const [segundos, setSegundos] = React.useState(0);
 
   React.useEffect(() => {
-    const timer = setInterval(() => {
-      setElapsed((s) => s + 1);
-    }, 1000);
+    setSegundos(0); // each stage starts filling its band from the beginning
+    const inicio = Date.now();
+    const timer = setInterval(() => setSegundos((Date.now() - inicio) / 1000), TICK_MS);
     return () => clearInterval(timer);
-  }, []);
+  }, [clave]);
 
-  React.useEffect(() => {
-    Animated.timing(progressAnim, {
-      toValue: 0.92,
-      duration: 35000,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [progressAnim]);
-
-  const etapa = status === 'pendiente'
-    ? 'Conectando con la tienda...'
-    : elapsed < 5
-      ? 'Buscando coincidencias en el catálogo...'
-      : elapsed < 16
-        ? 'Buscando equivalencias por similitud...'
-        : 'Consultando stock en vivo con el proveedor...';
-
-  const widthPercent = progressAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0%', '100%'],
-  });
+  const pct = porcentaje(etapa, segundos);
 
   return (
     <View style={styles.progressContainer}>
@@ -203,16 +211,12 @@ function ProgresoConsulta({ status, colors }: { status?: 'pendiente' | 'procesan
         <Text style={[styles.hint, { color: colors.textMuted, flex: 1 }]}>
           Consultando… puede tardar unos segundos.
         </Text>
-        <Text style={[styles.timerBadge, { color: colors.textDim }]}>
-          {elapsed}s
-        </Text>
+        <Text style={[styles.timerBadge, { color: colors.textMuted }]}>{`${pct}%`}</Text>
       </View>
       <View style={[styles.progressBarBg, { backgroundColor: colors.border }]}>
-        <Animated.View style={[styles.progressBarFill, { width: widthPercent, backgroundColor: colors.primary }]} />
+        <View style={[styles.progressBarFill, { width: `${pct}%`, backgroundColor: colors.primary }]} />
       </View>
-      <Text style={[styles.stageHint, { color: colors.textDim }]}>
-        {etapa}
-      </Text>
+      <Text style={[styles.stageHint, { color: colors.textMuted }]}>{etapa.texto}</Text>
     </View>
   );
 }

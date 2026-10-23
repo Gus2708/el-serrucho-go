@@ -6,7 +6,7 @@ import { useConsultaProveedor } from './useConsultaProveedor';
 type Fila = Record<string, unknown> & { id: string; tabla: string };
 
 /** In-memory bridge table: only the calls useConsultaProveedor makes. The reuse window is not modeled. */
-const mockDb = { filas: [] as Fila[], inserts: 0 };
+const mockDb = { filas: [] as Fila[], inserts: 0, fallosRed: 0 };
 
 jest.mock('../lib/supabase', () => ({ supabase: { from: (tabla: string) => mockFrom(tabla) } }));
 
@@ -24,6 +24,12 @@ function mockFrom(tabla: string) {
     maybeSingle: async () => ({ data: buscar() ?? null, error: null }),
     single: async () => {
       if (!nueva) return { data: buscar(), error: null };
+      if (mockDb.fallosRed > 0) {
+        mockDb.fallosRed -= 1;
+        // What postgrest-js resolves (it does not throw) when Safari drops the request.
+        const error = { message: 'TypeError: Load failed', details: '', hint: '', code: '' };
+        return { data: null, error, status: 0 };
+      }
       const fila: Fila = { ...nueva, id: `nueva-${++mockDb.inserts}`, tabla, status: 'pendiente', error: null, resultado: null };
       mockDb.filas.push(fila);
       return { data: fila, error: null };
@@ -45,6 +51,7 @@ function renderConsulta() {
 
 beforeEach(() => {
   mockDb.inserts = 0;
+  mockDb.fallosRed = 0;
   mockDb.filas = [{
     id: 'reciente', tabla: 'consultas_maxcam', codigo_interno: 'P-1', status: 'listo', error: null,
     resultado: { metodo: 'codigo', candidatos: [], consultado_en: '2026-10-22T12:00:00Z' },
@@ -77,6 +84,17 @@ describe('useConsultaProveedor', () => {
     await waitFor(() => expect(result.current.consulta?.id).toBe('nueva-1'));
     expect(mockDb.inserts).toBe(1);
     expect(result.current.esperando).toBe(true);
+  });
+
+  it('un corte de red momentáneo al enviar se reintenta sin mostrar error', async () => {
+    mockDb.filas = [];
+    mockDb.fallosRed = 1;
+    const { result } = renderConsulta();
+
+    act(() => result.current.consultar());
+
+    await waitFor(() => expect(result.current.consulta?.id).toBe('nueva-1'));
+    expect(result.current.errorEnvio).toBeNull();
   });
 
   it('reintentar tras agotar el tiempo de espera vuelve a esperar una consulta nueva', async () => {

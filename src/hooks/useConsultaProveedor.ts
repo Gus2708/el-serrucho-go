@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { withSupabaseRetry } from '../lib/retry';
 
 /** Bridge tables: the app inserts a request, a listener in the store backend answers it. */
 export type TablaConsulta = 'consultas_maxcam' | 'consultas_corpnorte';
@@ -33,7 +34,7 @@ export function useConsultaProveedor<C>(tabla: TablaConsulta, codigoInterno: str
     mutationFn: async (nueva: boolean): Promise<string> => {
       if (!nueva) {
         const desde = new Date(Date.now() - REUSE_MINUTES * 60_000).toISOString();
-        const { data: reciente } = await supabase
+        const { data: reciente } = await withSupabaseRetry(() => supabase
           .from(tabla)
           .select('id')
           .eq('codigo_interno', codigoInterno)
@@ -41,15 +42,16 @@ export function useConsultaProveedor<C>(tabla: TablaConsulta, codigoInterno: str
           .gte('creado_en', desde)
           .order('creado_en', { ascending: false })
           .limit(1)
-          .maybeSingle();
+          .maybeSingle());
         if (reciente) return reciente.id;
       }
 
-      const { data, error } = await supabase
+      // Safari may drop a request outright ("Load failed"); a quick retry avoids a false error.
+      const { data, error } = await withSupabaseRetry(() => supabase
         .from(tabla)
         .insert({ codigo_interno: codigoInterno })
         .select('id')
-        .single();
+        .single());
       if (error) throw error;
       return data.id;
     },
