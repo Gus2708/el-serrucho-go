@@ -74,6 +74,9 @@ function fakeRepo(over: Partial<Mocks> = {}): Mocks {
 let idCounter = 0;
 const newId = () => `90000000-0000-4000-8000-${String(++idCounter).padStart(12, '0')}`;
 
+// The review reads Hybrid stock once it has no blockers; this suite does not exercise stock, so the read is a local fake.
+const sinExistencias = async () => ({});
+
 const DOC = { path: `${OWNER_A}/${FACTURA_1}/d.pdf`, mime: 'application/pdf', sha256: SHA, nombre: 'factura.pdf' };
 
 function props(repo: Mocks, over: Partial<FacturaRevisionViewProps> = {}): FacturaRevisionViewProps {
@@ -86,6 +89,7 @@ function props(repo: Mocks, over: Partial<FacturaRevisionViewProps> = {}): Factu
     repository: repo as unknown as FacturaRevisionRepository,
     getSessionUid: () => OWNER_A,
     newId,
+    leerExistencias: sinExistencias,
     ...over,
   };
 }

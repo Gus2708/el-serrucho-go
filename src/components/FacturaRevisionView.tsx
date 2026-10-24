@@ -5,10 +5,11 @@ import { useTheme } from '../theme/ThemeContext';
 import { newUuid } from '../lib/facturaDocumentoPicker';
 import type { FacturaRevisionRepository } from '../lib/facturaRevisionRepository';
 import type { CodigoBloqueo, CorreccionesLinea, DecisionCabecera } from '../lib/facturaRevision';
-import { facturaRevisionRepository, useFacturaRevision } from '../hooks/useFacturaRevision';
+import { facturaRevisionRepository, useFacturaRevision, type UseFacturaRevisionParams } from '../hooks/useFacturaRevision';
 import { getFacturaSessionUid } from '../hooks/useFacturasProveedor';
 import FacturaRevisionCabecera, { Boton, Entrada, Texto, avisoImporteOculto, formatoUsdExacto } from './FacturaRevisionCabecera';
 import FacturaRevisionLinea from './FacturaRevisionLinea';
+import FacturaRevisionPos from './FacturaRevisionPos';
 
 export interface FacturaRevisionViewProps {
   facturaId: string;
@@ -22,6 +23,8 @@ export interface FacturaRevisionViewProps {
   getSessionUid?: () => string | null;
   newId?: () => string;
   onDirtyChange?: (dirty: boolean) => void;
+  /** Stock reader for the read-only Hybrid impact; defaults to the shared `fetchExistencias`. */
+  leerExistencias?: UseFacturaRevisionParams['leerExistencias'];
 }
 
 const BLOQUEOS: Record<CodigoBloqueo, string> = {
@@ -70,6 +73,7 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
     editorDirty,
     getSessionUid: props.getSessionUid ?? getFacturaSessionUid,
     newId: props.newId ?? newUuid,
+    leerExistencias: props.leerExistencias,
   });
   const [motivoGuardado, setMotivoGuardado] = useState('');
   const [motivoReemplazo, setMotivoReemplazo] = useState('');
@@ -247,6 +251,10 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
             ) : null}
             <Texto testID="revision-pos" small tone="muted">POS: no verificado. La precisión y la emisión al POS no están verificadas.</Texto>
           </View>
+
+          {control.representacionPos ? (
+            <FacturaRevisionPos representacion={control.representacionPos} estadoExistencias={control.estadoExistencias} moneda={calculo.moneda} />
+          ) : null}
 
           <View testID="revision-bloqueos" style={styles.bloque}>
             <Texto tone="primary">BLOQUEOS</Texto>
