@@ -2,7 +2,7 @@ import * as React from 'react';
 import { StyleSheet } from 'react-native';
 import type { StyleProp, TextStyle, ViewStyle } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { ProveedorDisponibilidad } from './ProveedorDisponibilidad';
 import { ThemeProvider } from '../theme/ThemeContext';
 import { elSerrucho } from '../theme/brands/el-serrucho';
@@ -49,9 +49,9 @@ function sembrarListo(candidatos: Candidato[]): void {
 const clients: QueryClient[] = [];
 
 function renderTarjeta() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false, gcTime: 0 } } });
   clients.push(client);
-  return render(
+  const rendered = render(
     <QueryClientProvider client={client}>
       <ThemeProvider>
         <ProveedorDisponibilidad<Candidato>
@@ -66,6 +66,15 @@ function renderTarjeta() {
       </ThemeProvider>
     </QueryClientProvider>,
   );
+  return { ...rendered, client };
+}
+
+/** Waits inside act's scope until react-query has no request in flight, so no update lands after the test. */
+async function esperarInactivo(client: QueryClient): Promise<void> {
+  await waitFor(() => {
+    expect(client.isMutating()).toBe(0);
+    expect(client.isFetching()).toBe(0);
+  });
 }
 
 function estilo(node: { props: { style?: unknown } }): ViewStyle & TextStyle {
@@ -92,7 +101,7 @@ describe('tarjeta de disponibilidad en un proveedor', () => {
   });
 
   it('un solo toque en Reintentar envía una consulta nueva', async () => {
-    renderTarjeta();
+    const { client } = renderTarjeta();
     fireEvent.press(screen.getByRole('button', { name: 'Consultar' }));
     await screen.findByText('No se encontró un equivalente en el catálogo de Maxcam.');
 
@@ -101,11 +110,12 @@ describe('tarjeta de disponibilidad en un proveedor', () => {
     expect(await screen.findByText('Consultando… puede tardar unos segundos.')).toBeTruthy();
     expect(mockDb.inserts).toBe(1);
     expect(screen.queryByText('No se encontró un equivalente en el catálogo de Maxcam.')).toBeNull();
+    await esperarInactivo(client);
   });
 
   it('un solo toque en Consultar de nuevo envía una consulta nueva', async () => {
     sembrarListo([{ sku: 'MX-1', nombre: LARGO, similitud: 1, disponible: true, precio: 12.5 }]);
-    renderTarjeta();
+    const { client } = renderTarjeta();
     fireEvent.press(screen.getByRole('button', { name: 'Consultar' }));
     await screen.findByText(LARGO);
 
@@ -113,6 +123,7 @@ describe('tarjeta de disponibilidad en un proveedor', () => {
 
     expect(await screen.findByText('Consultando… puede tardar unos segundos.')).toBeTruthy();
     expect(mockDb.inserts).toBe(1);
+    await esperarInactivo(client);
   });
 
   it('mientras espera muestra el avance en porcentaje y la etapa real, no segundos', async () => {
