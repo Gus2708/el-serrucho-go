@@ -28,6 +28,8 @@ Baseline: master d39e626e01d35aec047daca74c54d83dc06609fe includes delivered T3/
 
 - S17 — User, verbatim: "podemos usar el sistema del negocio para probar, puedes hacer ingresos con productos que esten en negativo para ponerlos en 0"; "si se necesita hacer la prueba puedes crear una factura con el proovedor que sea"; "dale dame las instrucciones". Acceptance: bounded business-system test using an existing negative-stock product ending0; a necessary existing-supplier purchase requires concrete amount/effect review. Use the business-PC agent and user-designated Hybrid session. No arbitrary values, price/cost changes, retries, cleanup or publication. Preserve S5 and the imported-emission block.
 
+- S18 — User, verbatim: "mira hay dos casos 30% + 16% iva y 30% sin iva"; "te explico bien, hay notas dfe entrega y factura, la nota de entrega no aplica iva y la factura si, solo vas a poner la suma como default en opacity bajo para que el usuario lo deje asi es placeholder o ponga el precio que quiera"; "si tenue como placeholder". Acceptance: suggest PVP using cost x1.30 for delivery notes and x1.30x1.16 for invoices (cost10:13/15.08). Show an editable subdued placeholder, use it if left empty on explicit save, and preserve a valid user price. Do not alter source invoice taxes/costs, infer unknown document type or enable emission.
+
 ## Tasks
 
 - T0 | S1,S8 | delegated: context backstop for this long-running feature; parent owns scope and acceptance | VERIFIED: documentation reset and structural spot check passed; no app behavior changes | commit: 72af86c (tracking document published).
@@ -52,7 +54,7 @@ Baseline: master d39e626e01d35aec047daca74c54d83dc06609fe includes delivered T3/
 - T5.10 | S2,S5-S7,S16 | delegated Sonnet under project multi-file rule; parent diff/focused check | VERIFIED LOCALLY: documentary purchase + separate adjustment projection; permissionfalse/manual untouched | RED7domain/7UI, GREEN11/24, writer964unit/163UI/typecheck0; parent11exit0; differential27 cases; commit60e2f49,124authored; Risk:none, medium/under_budget,RDD OFF; temp cleanup denied.
 - T6 | S2,S3,S5,S6,S7 | guard verified locally, no emission | financial materialization/client transfer pending; controlled emission only after full T5 | stale/replay/manual-preservation proof required.
 - T6.1 | S2,S6,S7,S16 | Sonnet + independent Opus, Risk1/2/3/4 | VERIFIED LOCALLY: parent73, writer328SQL/typecheck0, independent8 (old2fail), originalR1/D0 and manual33 pass | commite447539,1478authored cohesive guard+tests; RDD OFF; A7 metadata advisory; hosted/2conn unproven.
-- T6.2 | S2,S5-S7,S16 | read-only mapping beyond inline evidence budget | MAPPED; needs Q1: existing-product PVP prefill/confirmation policy. Keep server financial authority; no redundant mapper or client-trust shortcut accepted | report accepted as evidence, no code.
+- T6.2 | S2,S5-S7,S16,S18 | delegated Sonnet under project multi-file rule; independent Opus Risk1/2/3/4 | IMPLEMENTING connected editable PVP placeholder and optional review storage | manual unchanged/emission false; RED/GREEN, legacy fingerprints and UI/SQL proof required.
 - T7 | S2–S7 | planned | NOT STARTED: end-to-end document-to-reviewed-draft acceptance on web/native, with production guards and separately authorized operational POS proof | checks: study acceptance matrix, no inventory change from extraction/review, account isolation, restart/conflicts, measured extraction/matching quality | commit: none.
 - T7.1 | S13 | inline passive preparation | PREPARED: docs/SUPPLIER-INVOICE-EVALUATION.md defines private corpus, human labels, calibration/holdout split, metrics and no-write boundary; no invoices received or run | structural readback,3 links and diff check passed | commit: edb3784.
 
@@ -128,6 +130,12 @@ Linked headers/items are immutable through ordinary DML, including service_role;
 
 Use real existing invoice validators, grants, lock and PGlite fixtures. Verify exact persisted results and rejected-state hashes, replay/rebind/refusal matrix and baseline manual differential. Name any meaningful RED exception for a brand-new RPC instead of counting missing fixtures/exports as behavioral proof. Independent verifier follows writer checks for Risk1/2/3/4; single-connection/session-stub tests do not prove real two-connection or hosted behavior. Materialization and draft presentation remain later units; no live empty draft exists from this source-only work.
 
+### T6.2 PVP review contract
+
+Add optional, omitted-when-unset cabecera.tipoDocumento (factura/nota_entrega) and line.precioVenta (positive user decimal). Reuse Decimal/aplicarEdicion. Derive defaults from final net stock cost, never persisted financial authority. Blank uses default; override survives reload/cost changes. Unknown type/cost or non-USD exposes no suggestion. Source taxes, manual purchases and emission remain unchanged.
+
+Wire header/line/view with accessible subdued placeholder and normal typed text. Direct Save without blur retains the edit or refuses; invalid text never falls back. Preserve session/dirty/reload guards. Additive SQL retains legacy JSON/fingerprints, grants and warmed save/approval calls; new fields need updated clients. Forecast450-650 advisory, Risk1/2/3/4; own checks then independent verification. No hosted apply.
+
 ## Log
 
 - L1 — Original reset request, verbatim: "esta bien mira para seguir, lee de nuevo el estudio de implementacion y ten claro lo que se quiere y mira reinicia el proceso odd me parece que tenemos cosas de sdd guardadas aun, necesito que tengamos todo fresco".
@@ -145,7 +153,7 @@ Use real existing invoice validators, grants, lock and PGlite fixtures. Verify e
 - L12 — Parser correction passed105 focused tests; independent verification followed. Provider and extraction remained pending then.
 - L13 — Parser probes passed, but stray root duplicates broke global types. Files were preserved pending provenance checks.
 - L14 — Nested PowerShell expansion caused duplicates. Exact backed-up duplicates were removed;638tests/typecheck and187probes accepted T1.
-- L15 — Historical research2026-10-22, OpenRouter chosen(S9), directGoogle provisional. Listed USD/M input/output: Gemini3.1Lite0.25/1.50,3.5Lite0.30/2.50,3.8Flash0.75/3.75; Qwen3.7Flash0.03/0.13 lacks strictschema. Prices exclude reasoning/5.5%purchasefee, not accuracy/invoicecost. Parser/private-routing/logging/trialbudget mandatory; no expensivefallback. Sources: https://openrouter.ai/google/gemini-3.1-flash-lite ; https://openrouter.ai/google/gemini-3.5-flash-lite ; https://openrouter.ai/google/gemini-3.8-flash ; https://openrouter.ai/qwen/qwen3.7-flash ; https://openrouter.ai/docs/guides/features/structured-outputs . No paidcalls at thispoint; empirical evaluation/T2-T7 pending.
+- L15 — Historical2026-10-22 OpenRouter research compared Gemini Lite/Flash and Qwen; price was not accuracy evidence. Parser/privacy/capped evaluation required. Full table and primary URLs: Git20fc83d.
 - L16 — User authorized up to1USD OpenRouter syntheticcomparison only, no billingactivation/creditpurchase/realdocs. Designatedcredential stillpending then; never expose secrets or use EXPO_PUBLIC_. Exact literals: "dale".
 - L17 — User designated ignored.env.local OPENROUTER_API_KEY with1USDcap for OpenRouter keylimits/modelmetadata and capped syntheticGemini3.1Lite/3.8comparison. Max8sequentialattempts, enforcecap/responsebounds; no othercredential/endpoint/billing/realdocs. Parentpresencecheck only. Exact literals: "listo".
 - L18 — Evaluator prompt submission was initially unproven. One Enter recovered the same task; no duplicate requests or spend.
@@ -184,7 +192,7 @@ Use real existing invoice validators, grants, lock and PGlite fixtures. Verify e
 - L48 — Initial T5 projection preserved unknown identity/stock and distinguished ex-VAT base from debt. Full monetary proof remained pending.
 - L49 — T5 reader/timer corrections passed; independent same-user session-cache failure required sesionGen. External POS proof remained unavailable.
 - L50 — T5 source880811d/9cadeec/cc2a254 passed targeted checks. Remount depends on root cache clear, not proven production auth.
-- L51 — Authorized backend01be482 was cloned and source-hash checked. A blocked Luna attempt was replaced by already-authorized Sonnet, without updates or POS execution.
+- L51 — Backend01be482 cloned/hash-checked; authorized Sonnet replaced unavailable Luna. No POS.
 
 - L52 — Source showed the post-commit toggle requeue bug. T5.4 fixed only that behavior, with independent data/race verification.
 
@@ -192,24 +200,24 @@ Use real existing invoice validators, grants, lock and PGlite fixtures. Verify e
 
 - L54 — Independent307probes confirmed commit-once behavior. Locala5dec0e received terminal native acknowledgement; no publication or POS execution.
 
-- L55 — User server report:8clean tracked scripts,HEAD01be482; parent8fingerprints match (4filteredcheckout,4GitblobLF; newline conversion explains differences). Disk source identified, not running-module proof; mtime alone insufficient. Baseline listener0a0d1197 means locala5dec0e fix not installed in reported files. Process times user-reported only; no remote probe/restart. Clarify UI-only versus .DAT availability before further evidence.
+- L55 — Server disk8files match01be482 (newline-aware), not loaded-module proof; a5dec0e not installed. Process facts user-reported; no remote restart. Detail: Git20fc83d.
 
-- L56 — Reconciled server reports into the evidence contract above. Purchase statuses matched Hybrid's own lists, not sales assumptions. Currency labels/linkage distinction retained. Agent reported no saved/printed/cancelled document, blank draft closed with Salir, unchanged .DAT size/mtime; reported evidence, not cryptographic immutability proof. No remote operation or new transaction by coordinator.
+- L56 — Reported purchase statuses/currency matched tables/UI, not sales assumptions. Unchanged size/mtime is not cryptographic proof. No coordinator operation. Detail: Git20fc83d.
 - L57 — User question, verbatim: "que paso con el reporte que te pase?". Report was saved in Engram but had not reached this file or executable code. Corrected tracking gap without requesting repeated evidence. Runtime now holds the full T5 goal matching S5-S7,S14,S15; the earlier goal-edit blocker no longer applies. Code integration and remaining proof are pending, not completion.
 
-- L58 — Full T5 runtime goal confirmed. Opus5.5/high startup observed for the remaining POS representation/integration map, using the reconciled evidence. Parent owns Git/tracker; worker read-only in isolated trees, no production/POS/network operations. Pending completion event, not implementation acceptance.
+- L58 — T5 remaining-map startup observed; read-only/local, parent Git ownership. No implementation acceptance. Detail: Git20fc83d.
 
-- L59 — Accepted remaining map with parent corrections: adjustment-first is unproven candidate, not established neutrality; :g six significant digits alone is not lossless when exponent text occurs; unique lookup is not operation identity. Mapper retained by runtime user_takeover, never force-closed. U1 will use fresh isolated backend tree from accepted a5dec0e; no prod operations or publication.
+- L59 — Adjustment-first neutrality unproven; :g/exponents not lossless, lookup not identity. Retain user-owned mapper; U1 isolated from a5dec0e, no production/publication. Detail: Git20fc83d.
 
-- L60 — 2026-10-24 user reuse-first correction is quoted verbatim in S16. Stopped U1 at a safe checkpoint and preserved isolated uncommitted WIP; its completion/test claims were not accepted. Existing manual purchasing is the reuse boundary, not a feature to rebuild.
-- L61 — Four-skill source audits/finite gaps accepted; parent confirmed actual queueconstraints and clean trees. No appimports/runtime/POS/deployment. Corrected NULL/negative-row hypotheses against DDL; transportcompatibility is not fullT5proof. Workersreleased.
+- L60 — Reuse-first S16 stopped U1; preserve uncommitted WIP, tests unaccepted. Reuse existing manual purchases.
+- L61 — Finite source audits/queue DDL checked; NULL/negative-row hypotheses corrected. No runtime/POS proof; workers released.
 
 - L62 — 2026-10-25 user scope, verbatim: "podemos usar el sistema del negocio para probar, puedes hacer ingresos con productos que esten en negativo para ponerlos en 0"; "si se necesita hacer la prueba puedes crear una factura con el proovedor que sea"; "dale dame las instrucciones". Preparation read-only; necessarypurchase permission is bounded, not blanket authority.
-- L63 — Server preview accepted only at the scope above; parent CLI source confirms direct registrar_compra and commit only with --commit. No coordinator production action. Imported block and financial/operational gaps remain; no repeated historical diagnosis.
+- L63 — Preview evidence only: direct registrar_compra, commit requires --commit. No coordinator operation; emission blocked.
 
-- L64 — User reports separately authorized startup, one adjustment and cleanup; no coordinator session/process action. Stored IDs/costs retained; commercial evidence distinguished from internal valuation. No further transaction or activation requested.
+- L64 — User-reported authorized adjustment/cleanup only; commercial versus internal valuation distinct. No further operation.
 
-- L65 — User supplied the requested raw header588 values; document commercial-zero evidence closed. Stop further accounting/header requests for this adjustment. Prepare only the minimal existing-flow T5 integration and next testable unit; no production operation or activation follows from these fields.
+- L65 — Header588 closes that case's commercial-zero evidence. No repeat requests, operation or activation.
 
 - L66 — Accepted T5.9 projection, not snapshot-as-execution authority: S5 requires execution revalidation. Revision uniqueness is not invoice identity; queue proposals remain provisional. T5.10 changes no manual flow, schema, executor or production data. Earlier detail: Git e89b8f1.
 
@@ -220,3 +228,5 @@ Use real existing invoice validators, grants, lock and PGlite fixtures. Verify e
 - L69 — B1 parent fence: RED4/GREEN73, SQL328/typecheck0; parent73, independent8/old2fail/originalR1 verify fix/manual preservation. Source e447539,1478lines cohesive guard+tests; no apply/publication. A7 metadata advisory retained, real concurrency unproven. Detail: Git e89b8f1.
 - L70 — User, verbatim: "mira, haz lo que sea necesario para avanzar, tienes el permiso estamos en un entorno seguro donde no hay datos peligrosos por borrar, donde hay que tener cuidado es en la otra pc del negocio". Restore locked dependencies in isolated local scratch, preserve manual errors, finish checks. Business PC stays out of scope.
 - L71 — T6.2 map: linked guards require materialization before first binding; numeric target requires PVP absent from invoice. Parent confirmed manual current-PVP prefill/study4.5 approval. Ask Q1 before persisted mapping; server authority remains mandatory, not a user-facing architecture choice. Duplicate pure mapper/client-trusted amounts not accepted. Mapper released/acked; no code.
+- L72 — User pricing correction, verbatim: "mira hay dos casos 30% + 16% iva y 30% sin iva"; "te explico bien, hay notas dfe entrega y factura, la nota de entrega no aplica iva y la factura si, solo vas a poner la suma como default en opacity bajo para que el usuario lo deje asi es placeholder o ponga el precio que quiera"; "si tenue como placeholder". S18 replaces the pending current-PVP question; numeric13/15.08 example confirmed. Map actual UI/persistence first.
+- L73 — Accepted connected PVP map with direct-save/session/warm-validator compatibility checks. Mapper loaded skill headers only; no full-skill compliance claim. Writer must load full skills. No source accepted yet.
