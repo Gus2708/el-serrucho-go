@@ -132,6 +132,60 @@ Not covered by this slice: supplier alias scope, purchase transfer, native/devic
 browser proof (the RNTL suite is not native proof), and any deployed-function or
 real-extraction check.
 
+## Purchase binding and linked-draft guard (local, no caller yet)
+
+An approved revision can be tied to exactly one empty purchase draft. This is source identity
+only: it carries no amounts, items, provider or header mapping and is **not** purchase authority.
+
+- `public.facturas_proveedores_compras` (migration `*_facturas_proveedores_compras.sql`) is
+  the authoritative binding, keyed by the canonical invoice UUID (one purchase per invoice, not per
+  revision; physical-document duplicates are deliberately not deduplicated here). `compra_id` is
+  unique; invoice, revision and purchase are `ON DELETE RESTRICT`. It stores the revision,
+  server fingerprint, invoice version, document SHA-256, actor and timestamps. Authenticated users
+  can only read their own row (privileged owner with a valid session); nobody, `service_role`
+  included, has DML or TRUNCATE grants on it.
+- `preparar_compra_factura(p_factura_id, p_revision, p_fingerprint, p_factura_version)` (private
+  `SECURITY DEFINER` function behind an invoker wrapper, `authenticated` only) rechecks under the
+  shared per-invoice lock: caller is the privileged, session-valid invoice owner, revision exists,
+  fingerprint matches, it is the latest, invoice version and document still match, it is approved
+  and complete. Approval alone does not freeze the invoice, so a later edit or revision refuses.
+  The first valid call inserts one empty `borrador` (`creado_por` = caller, header fields NULL, no
+  items) and the binding in one transaction. The same request replays the same `compra_id`
+  (`replay: true`) without touching any row. A newer approved revision retargets only that same
+  still-pristine draft (`rebind: true`); a non-pristine draft refuses with `PC409`, an older
+  revision with `PR409`, an unapproved one with `22023 revision_no_aprobada`. Other errors reuse the
+  review codes (`42501`, `PI409`, `PV409`, `P0002`).
+- A linked purchase is locked for every role, `service_role` and the table owner included: any
+  header UPDATE, any item INSERT/UPDATE/DELETE (old and new parent are both checked, so items cannot
+  be moved in or out), header DELETE (RESTRICT) and TRUNCATE of either purchase table while any
+  link exists. `emitido` is therefore unreachable and the purchase listener never sees a linked
+  draft. Unlinked manual and legacy purchases are unchanged.
+- First-link guard: a draft and its binding commit together and the binding never changes
+  identity, so a draft cannot be seen unlinked and later become linked. That alone does not stop a
+  `BYPASSRLS` writer (`service_role`) whose item row reaches the BEFORE trigger while the target
+  draft is still uncommitted: the foreign key only runs at end of statement. An item that enters a
+  purchase (INSERT, or UPDATE that changes `compra_id`) therefore first requires the target to be
+  visible and takes `FOR KEY SHARE` on it (old and new target in id order), and only then reads the
+  binding. A target that is not visible is refused with the error the writer already got: `23503`
+  for a writer that bypasses RLS (`service_role`, the table owner) and `42501` (same message as the
+  RLS `WITH CHECK`) for an authenticated owner, so manual error behavior is unchanged. The writer is
+  read from the `SET ROLE`/login role: a table owner without `BYPASSRLS` would get `42501` instead of
+  `23503`, a different code for the same refusal. A NULL target still gets the NOT NULL error, and
+  item DELETE only checks its old binding, so an unlinked purchase's `ON DELETE CASCADE` is
+  unchanged.
+- Limits, stated plainly: the staged interleaving (an early row's BEFORE trigger, then the draft
+  and binding appearing, then the foreign key check) is reproduced on a single-connection PGlite
+  engine in one statement. That is a deterministic emulation, not a two-connection proof: real
+  lock queues, MVCC visibility between sessions and the early `FOR KEY SHARE` lock (the foreign
+  key takes the same lock at statement end) are **not** observed there, nor are the production
+  `validate_session()` body and hosted apply. A superuser or DDL access can still disable any
+  trigger or constraint. `TRUNCATE` of `compras_app` itself fails for client roles even with no
+  link (the binding's RESTRICT foreign key: `0A000` unless the statement also lists the binding,
+  `42501` with `CASCADE`); `TRUNCATE` of the items table alone is unchanged without links. No UI
+  or repository calls the function yet, so no live linked draft exists; a linked draft would
+  appear in the manual Borradores list and every edit there would fail by design (a product
+  decision for the UI unit).
+
 ## Delivery boundaries
 
 Changes will be grouped by behavior with their tests. Existing notification,
