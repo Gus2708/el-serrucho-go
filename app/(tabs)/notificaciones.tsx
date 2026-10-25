@@ -80,7 +80,12 @@ export default function Notificaciones() {
   const { data: atenciones = [], isLoading: atencionesLoading, refetch: refetchAtenciones } = useAtenciones();
   const { data: solicitudes = [], isLoading: solicitudesLoading, refetch: refetchSolicitudes } = useSolicitudes();
   const { data: alertasSpoof = [], isLoading: alertasSpoofLoading, refetch: refetchAlertasSpoof } = useAlertasSpoof();
-  const { descartarSolicitud, descartandoId } = useResolverSolicitud();
+  const {
+    descartarSolicitud,
+    descartarTodasSolicitudes,
+    isDescartandoTodas,
+    descartandoId,
+  } = useResolverSolicitud();
   const revisarAlerta = useRevisarAlertaSpoof();
   // Solo seleccionamos el setter (referencia estable). Suscribirse al valor
   // `scrollOffsetNotificaciones` re-renderizaba toda la pantalla en cada frame
@@ -268,6 +273,25 @@ export default function Notificaciones() {
     });
   }
 
+  function handleClearAllSolicitudes() {
+    if (isDescartandoTodas || solicitudes.length === 0) return;
+    confirm({
+      title: '¿Limpiar todas las solicitudes?',
+      message: `Hay ${solicitudes.length} solicitud(es) del bot. Se descartarán todas para vaciar la cola.`,
+      confirmText: 'Limpiar todas',
+      cancelText: 'Cancelar',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await descartarTodasSolicitudes(solicitudes.map((s) => s.id));
+          notify('Solicitudes limpiadas', 'Se descartaron todas las solicitudes del bot.');
+        } catch (e: any) {
+          notify('Error', e.message || 'No se pudieron descartar las solicitudes.');
+        }
+      },
+    });
+  }
+
   async function handleRetry(id: number) {
     if (retryingId !== null) return;
     setRetryingId(id);
@@ -334,6 +358,30 @@ export default function Notificaciones() {
           <Text style={[styles.title, { color: colors.text }]}>
             Notificaciones
           </Text>
+          {activeTab === 'solicitudes' && solicitudes.length > 0 && (
+            <PressableScale
+              style={[
+                styles.clearAllBtn,
+                { borderColor: colors.border, backgroundColor: colors.surface },
+              ]}
+              activeScale={pressScale.row}
+              dimmed={isDescartandoTodas}
+              disabled={isDescartandoTodas}
+              onPress={handleClearAllSolicitudes}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel="Limpiar todas las solicitudes del bot"
+            >
+              {isDescartandoTodas ? (
+                <ActivityIndicator size={12} color={colors.danger} />
+              ) : (
+                <Feather name="trash-2" size={13} color={colors.danger} />
+              )}
+              <Text style={[styles.clearAllBtnText, { color: colors.danger }]}>
+                Limpiar todas ({solicitudes.length})
+              </Text>
+            </PressableScale>
+          )}
           {activeTab === 'atenciones' && atenciones.length > 0 && (
             <PressableScale
               style={[

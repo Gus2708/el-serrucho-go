@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '../lib/supabase';
+import { supabase, SolicitudAyuda } from '../lib/supabase';
 import { PresupuestoItem } from './usePresupuestoStore';
 import { isDemoActive } from '../demo/useDemoStore';
 
@@ -109,6 +109,9 @@ export function useResolverSolicitud() {
 
   const descartarMutation = useMutation({
     mutationFn: async (solicitudId: number) => {
+      if (isDemoActive()) {
+        return;
+      }
       const { error } = await supabase
         .from('solicitudes_ayuda')
         .update({ status: 'descartado' })
@@ -117,7 +120,34 @@ export function useResolverSolicitud() {
 
       if (error) throw error;
     },
+    onSuccess: (_, solicitudId) => {
+      queryClient.setQueryData<SolicitudAyuda[]>(['solicitudes-pendientes'], (prev) =>
+        prev ? prev.filter((item) => item.id !== solicitudId) : []
+      );
+      queryClient.invalidateQueries({ queryKey: ['solicitudes-pendientes'] });
+    },
+  });
+
+  const descartarTodasMutation = useMutation({
+    mutationFn: async (ids?: number[]) => {
+      if (isDemoActive()) {
+        return;
+      }
+      let query = supabase
+        .from('solicitudes_ayuda')
+        .update({ status: 'descartado' });
+
+      if (ids && ids.length > 0) {
+        query = query.in('id', ids);
+      } else {
+        query = query.in('status', ['pendiente', 'resuelto']);
+      }
+
+      const { error } = await query;
+      if (error) throw error;
+    },
     onSuccess: () => {
+      queryClient.setQueryData<SolicitudAyuda[]>(['solicitudes-pendientes'], []);
       queryClient.invalidateQueries({ queryKey: ['solicitudes-pendientes'] });
     },
   });
@@ -130,7 +160,10 @@ export function useResolverSolicitud() {
     isMarcandoNoDisponible: noDisponibleMutation.isPending,
     descartarSolicitud: (solicitudId: number) =>
       descartarMutation.mutateAsync(solicitudId),
+    descartarTodasSolicitudes: (ids?: number[]) =>
+      descartarTodasMutation.mutateAsync(ids),
     isDescartando: descartarMutation.isPending,
+    isDescartandoTodas: descartarTodasMutation.isPending,
     descartandoId: descartarMutation.isPending ? (descartarMutation.variables as number) : null,
     // El reenvío es automático (n8n reintenta solo cada 15s); esto solo refresca la lista.
     reintentarEnvio: async (_solicitudId: number) => {

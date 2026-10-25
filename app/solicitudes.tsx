@@ -58,7 +58,13 @@ export default function Solicitudes() {
   const { colors } = useTheme();
   const router = useRouter();
   const { data: solicitudes = [], isLoading, refetch } = useSolicitudes();
-  const { reintentarEnvio, descartarSolicitud, descartandoId } = useResolverSolicitud();
+  const {
+    reintentarEnvio,
+    descartarSolicitud,
+    descartarTodasSolicitudes,
+    isDescartandoTodas,
+    descartandoId,
+  } = useResolverSolicitud();
 
   const [retryingId, setRetryingId] = useState<number | null>(null);
 
@@ -74,6 +80,26 @@ export default function Solicitudes() {
           await descartarSolicitud(id);
         } catch (e: any) {
           notify('Error', e.message || 'No se pudo descartar la solicitud.');
+        }
+      },
+    });
+  }
+
+  function handleClearAll() {
+    if (isDescartandoTodas || solicitudes.length === 0) return;
+    confirm({
+      title: '¿Limpiar todas las solicitudes?',
+      message: `Hay ${solicitudes.length} solicitud(es) del bot. Se descartarán todas para vaciar la cola.`,
+      confirmText: 'Limpiar todas',
+      cancelText: 'Cancelar',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await descartarTodasSolicitudes(solicitudes.map((s) => s.id));
+          notify('Solicitudes limpiadas', 'Se descartaron todas las solicitudes del bot.');
+          refetch();
+        } catch (e: any) {
+          notify('Error', e.message || 'No se pudieron descartar las solicitudes.');
         }
       },
     });
@@ -117,7 +143,32 @@ export default function Solicitudes() {
         <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
           SOLICITUDES BOT
         </Text>
-        <View style={{ width: 38 }} />
+        {solicitudes.length > 0 ? (
+          <PressableScale
+            style={[
+              styles.clearAllBtn,
+              { borderColor: colors.border, backgroundColor: colors.surface },
+            ]}
+            activeScale={pressScale.icon}
+            dimmed={isDescartandoTodas}
+            disabled={isDescartandoTodas}
+            onPress={handleClearAll}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="Limpiar todas las solicitudes"
+          >
+            {isDescartandoTodas ? (
+              <ActivityIndicator size={12} color={colors.danger} />
+            ) : (
+              <Feather name="trash-2" size={13} color={colors.danger} />
+            )}
+            <Text style={[styles.clearAllBtnText, { color: colors.danger }]}>
+              Limpiar ({solicitudes.length})
+            </Text>
+          </PressableScale>
+        ) : (
+          <View style={{ width: 38 }} />
+        )}
       </View>
 
       {isLoading && solicitudes.length === 0 ? (
@@ -256,6 +307,19 @@ const styles = StyleSheet.create({
     fontSize: scaleFont(14),
     fontFamily: 'JetBrainsMono_700Bold',
     letterSpacing: 2,
+  },
+  clearAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 0.5,
+  },
+  clearAllBtnText: {
+    fontSize: scaleFont(11),
+    fontFamily: 'JetBrainsMono_600SemiBold',
   },
   // Card
   card: {
