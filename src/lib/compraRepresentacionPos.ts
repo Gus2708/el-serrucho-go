@@ -14,7 +14,7 @@ export type CodigoBloqueoPos =
   | 'existencia_no_leida'
   | 'producto_nuevo_identidad_no_verificada'
   | 'sku_repetido_costo_distinto'
-  | 'compensacion_altera_base'
+  | 'ajuste_compensacion_secuencia_no_probada'
   | 'cuantizacion_altera_base'
   | 'precision_pos_no_verificada'
   | 'control_fecha_no_transmisibles'
@@ -27,6 +27,17 @@ export interface BloqueoPos {
   readonly lineaIds: readonly string[];
 }
 
+/**
+ * Hypothetical read-only plan of the existing inventory adjustment that would bring a negative snapshot to zero.
+ * It is a display figure, not a queue payload or authority: execution must re-read stock and revalidate.
+ */
+export interface AjusteExistencia {
+  readonly existenciaActual: string;
+  readonly nuevaExistencia: '0';
+  /** The positive snapshot compensation. */
+  readonly cantidad: string;
+}
+
 /** One confirmed SKU (all its lines together) or one new-product line. Amounts are ex-VAT bases, not supplier debt. */
 export interface ProyeccionSku {
   /** null for a new product: it has no confirmed Hybrid identity yet. */
@@ -36,13 +47,16 @@ export interface ProyeccionSku {
   readonly cantidadDocumentoStock: string;
   readonly existenciaLeida: string | null;
   readonly compensacion: string | null;
+  /** Purchase quantity: the documentary quantity, never documentary plus compensation. Null while stock is unknown. */
   readonly cantidadPos: string | null;
   readonly existenciaEsperada: string | null;
+  /** Null when there is no known deficit, the stock is unknown or the product is new. */
+  readonly ajusteExistencia: AjusteExistencia | null;
   /** Sum of the lines' ex-VAT bases from the review calculation. */
   readonly baseDocumentalExIva: string;
   /** Net unit cost the POS would receive: the review cost, or the test-injected quantization of it. */
   readonly costoPosHipotetico: string | null;
-  /** costoPosHipotetico x cantidadPos. A hypothetical calculation, not what Hybrid books. */
+  /** costoPosHipotetico x the documentary purchase quantity. A hypothetical calculation, not what Hybrid books. */
   readonly baseHipoteticaPosExIva: string | null;
   /** baseDocumentalExIva minus baseHipoteticaPosExIva. */
   readonly diferenciaBase: string | null;
@@ -172,17 +186,24 @@ export function evaluarRepresentacionPos(input: {
     if (grupo.codigo === null) bloquear('producto_nuevo_identidad_no_verificada');
     else if (!existencia) bloquear('existencia_no_leida');
     const cantidades = existencia ? calcularCantidadesCompraDecimal(cantidadDocumento, existencia) : null;
-    if (cantidades && costo && !isZeroDecimal(costo) && !isZeroDecimal(cantidades.compensacionNegativo)) bloquear('compensacion_altera_base');
 
-    const baseHipotetica = costoPos && cantidades ? mulDecimal(costoPos, cantidades.cantidadPos) : null;
+    // The compensation is a separate adjustment, not extra purchased units; its sequencing with the purchase is unproven.
+    const ajuste: AjusteExistencia | null =
+      existencia && cantidades && !isZeroDecimal(cantidades.compensacionNegativo)
+        ? { existenciaActual: toDecimalString(existencia), nuevaExistencia: '0', cantidad: toDecimalString(cantidades.compensacionNegativo) }
+        : null;
+    if (ajuste) bloquear('ajuste_compensacion_secuencia_no_probada');
+
+    const baseHipotetica = costoPos && cantidades ? mulDecimal(costoPos, cantidadDocumento) : null;
     return {
       codigoProducto: grupo.codigo,
       lineaIds,
       cantidadDocumentoStock: toDecimalString(cantidadDocumento),
       existenciaLeida: existencia ? toDecimalString(existencia) : null,
       compensacion: cantidades ? toDecimalString(cantidades.compensacionNegativo) : null,
-      cantidadPos: cantidades ? toDecimalString(cantidades.cantidadPos) : null,
+      cantidadPos: cantidades ? toDecimalString(cantidadDocumento) : null,
       existenciaEsperada: cantidades ? toDecimalString(cantidades.existenciaEsperada) : null,
+      ajusteExistencia: ajuste,
       baseDocumentalExIva: toDecimalString(baseDocumental, 2),
       costoPosHipotetico: costoPos ? toDecimalString(costoPos, 2) : null,
       baseHipoteticaPosExIva: baseHipotetica ? toDecimalString(baseHipotetica, 2) : null,

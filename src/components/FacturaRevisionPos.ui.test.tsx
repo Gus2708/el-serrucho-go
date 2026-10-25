@@ -144,15 +144,17 @@ describe('Impacto en Hybrid (read-only view)', () => {
     expect(byId('revision-impacto-hybrid')).toBeTruthy();
     expect(textOf('revision-impacto-sku-SKU-1-cantidad')).toBe('Cantidad en factura: 10');
     expect(textOf('revision-impacto-sku-SKU-1-existencia')).toBe('Existencia leída: -3');
-    expect(textOf('revision-impacto-sku-SKU-1-compensacion')).toBe('Compensación por negativo: 3');
-    expect(textOf('revision-impacto-sku-SKU-1-envio')).toBe('Cantidad que se enviaría: 13');
+    expect(textOf('revision-impacto-sku-SKU-1-ajuste')).toBe('Ajuste previo de existencia (separado de la compra): -3 → 0 (+3)');
+    expect(textOf('revision-impacto-sku-SKU-1-envio')).toBe('Cantidad de compra (documental): 10');
     expect(textOf('revision-impacto-sku-SKU-1-esperada')).toBe('Existencia esperada tras la compra: 10');
     expect(textOf('revision-impacto-sku-SKU-1-base-documental')).toBe('Base documental sin IVA: $10.00');
-    expect(textOf('revision-impacto-sku-SKU-1-base-hipotetica')).toBe('Base hipotética POS sin IVA (costo × cantidad enviada, no es deuda observada): $13.00');
-    expect(textOf('revision-impacto-sku-SKU-1-diferencia')).toBe('Diferencia (documental − hipotética): -$3.00');
+    expect(textOf('revision-impacto-sku-SKU-1-base-hipotetica')).toBe('Base hipotética POS sin IVA (costo × cantidad de compra documental, no es deuda observada): $10.00');
+    expect(textOf('revision-impacto-sku-SKU-1-diferencia')).toBe('Diferencia (documental − hipotética): $0.00');
     expect(textOf('revision-impacto-total-documental')).toBe('Total documental con impuestos (revisión): $11.60');
     expect(textOf('revision-impacto-emision')).toBe('Emisión importada bloqueada');
     expect(textOf('revision-impacto-bloqueos')).toMatch(/precisión y el redondeo del POS no están verificados/);
+    expect(textOf('revision-impacto-bloqueos')).toMatch(/SKU-1: .*ajuste previo.*secuencia.*idempotencia.*recuperación probadas/);
+    expect(textOf('revision-impacto-bloqueos')).not.toMatch(/cambia la base/);
     expect(textOf('revision-impacto-bloqueos')).toMatch(/existencia se lee ahora/);
     expect(textOf('revision-impacto-existencias')).toMatch(/^Existencias leídas: \d{4}-\d{2}-\d{2}T/);
     expect(within(byId('revision-impacto-hybrid')).queryAllByRole('button')).toHaveLength(0);
@@ -163,8 +165,8 @@ describe('Impacto en Hybrid (read-only view)', () => {
   it('adds invoiced units to positive stock and still says imported emission is blocked', async () => {
     await openReview(fakeRepo(), lector({ 'SKU-1': 5 }));
 
-    expect(textOf('revision-impacto-sku-SKU-1-compensacion')).toBe('Compensación por negativo: 0');
-    expect(textOf('revision-impacto-sku-SKU-1-envio')).toBe('Cantidad que se enviaría: 10');
+    expect(textOf('revision-impacto-sku-SKU-1-ajuste')).toBe('Ajuste previo de existencia (separado de la compra): ninguno');
+    expect(textOf('revision-impacto-sku-SKU-1-envio')).toBe('Cantidad de compra (documental): 10');
     expect(textOf('revision-impacto-sku-SKU-1-esperada')).toBe('Existencia esperada tras la compra: 15');
     expect(textOf('revision-impacto-sku-SKU-1-diferencia')).toBe('Diferencia (documental − hipotética): $0.00');
     expect(textOf('revision-impacto-emision')).toBe('Emisión importada bloqueada');
@@ -176,13 +178,15 @@ describe('Impacto en Hybrid (read-only view)', () => {
 
     expect(textOf('revision-impacto-existencias')).toBe('Leyendo existencias de Hybrid…');
     expect(textOf('revision-impacto-sku-SKU-1-existencia')).toBe('Existencia leída: no leída');
-    expect(textOf('revision-impacto-sku-SKU-1-envio')).toBe('Cantidad que se enviaría: desconocida');
+    expect(textOf('revision-impacto-sku-SKU-1-envio')).toBe('Cantidad de compra (documental): desconocida');
+    expect(textOf('revision-impacto-sku-SKU-1-ajuste')).toBe('Ajuste previo de existencia (separado de la compra): desconocido');
     expect(textOf('revision-impacto-sku-SKU-1-base-documental')).toBe('Base documental sin IVA: $10.00');
     expect(textOf('revision-impacto-sku-SKU-1-base-hipotetica')).toMatch(/: desconocido$/);
 
     await act(async () => lectura.resolve({ 'SKU-1': -3 }));
     await settle();
-    expect(textOf('revision-impacto-sku-SKU-1-envio')).toBe('Cantidad que se enviaría: 13');
+    expect(textOf('revision-impacto-sku-SKU-1-envio')).toBe('Cantidad de compra (documental): 10');
+    expect(textOf('revision-impacto-sku-SKU-1-ajuste')).toBe('Ajuste previo de existencia (separado de la compra): -3 → 0 (+3)');
   });
 
   it('keeps stock unknown, never zero, when the read fails, and does not retry on its own', async () => {
@@ -193,7 +197,8 @@ describe('Impacto en Hybrid (read-only view)', () => {
 
     expect(textOf('revision-impacto-existencias')).toBe('No se pudo leer la existencia de Hybrid. Las cantidades quedan desconocidas; no se asume cero.');
     expect(textOf('revision-impacto-sku-SKU-1-existencia')).toBe('Existencia leída: no leída');
-    expect(textOf('revision-impacto-sku-SKU-1-compensacion')).toBe('Compensación por negativo: desconocida');
+    expect(textOf('revision-impacto-sku-SKU-1-ajuste')).toBe('Ajuste previo de existencia (separado de la compra): desconocido');
+    expect(textOf('revision-impacto-sku-SKU-1-envio')).toBe('Cantidad de compra (documental): desconocida');
     expect(textOf('revision-impacto-bloqueos')).toMatch(/no se pudo leer la existencia/i);
     expect(textOf('revision-impacto-emision')).toBe('Emisión importada bloqueada');
     await settle();
@@ -277,7 +282,8 @@ describe('stock snapshot in useFacturaRevision', () => {
     expect(current.representacionPos!.skus).toEqual([]);
     await edit({ tipo: 'linea_escalar', lineaId, campo: 'cantidad', valor: '12', motivo: 'Cantidad impresa' });
     expect(current.calculo!.sinBloqueos).toBe(true);
-    expect(current.representacionPos!.skus[0].cantidadPos).toBe('15');
+    expect(current.representacionPos!.skus[0].cantidadPos).toBe('12');
+    expect(current.representacionPos!.skus[0].ajusteExistencia).toEqual({ existenciaActual: '-3', nuevaExistencia: '0', cantidad: '3' });
     expect(leer).toHaveBeenCalledTimes(1);
   });
 
@@ -466,7 +472,7 @@ describe('stock snapshot is bound to the session generation', () => {
       }
       expect(leer).toHaveBeenCalledTimes(1);
       expect(current.estadoExistencias).toBe('listo');
-      expect(current.representacionPos!.skus[0]).toMatchObject({ existenciaLeida: '-3', cantidadPos: '13' });
+      expect(current.representacionPos!.skus[0]).toMatchObject({ existenciaLeida: '-3', cantidadPos: '10' });
     } finally {
       s.view.unmount();
       s.client.clear();
@@ -514,7 +520,7 @@ describe('default stock reader in useFacturaRevision', () => {
     await openReview(fakeRepo(), undefined);
 
     expect(textOf('revision-impacto-sku-SKU-1-existencia')).toBe('Existencia leída: no leída');
-    expect(textOf('revision-impacto-sku-SKU-1-envio')).toBe('Cantidad que se enviaría: desconocida');
+    expect(textOf('revision-impacto-sku-SKU-1-envio')).toBe('Cantidad de compra (documental): desconocida');
   });
 
   it('keeps a real zero stock as zero', async () => {
@@ -525,11 +531,17 @@ describe('default stock reader in useFacturaRevision', () => {
     expect(current.representacionPos!.emisionImportada.bloqueos.map(bloqueo => bloqueo.codigo)).not.toContain('existencia_no_leida');
   });
 
-  it('keeps a negative stock and compensates it', async () => {
+  it('keeps a negative stock and plans a separate adjustment to zero', async () => {
     filaStock(-3);
     await mountReview(fakeRepo());
 
-    expect(current.representacionPos!.skus[0]).toMatchObject({ existenciaLeida: '-3', compensacion: '3', cantidadPos: '13', existenciaEsperada: '10' });
+    expect(current.representacionPos!.skus[0]).toMatchObject({
+      existenciaLeida: '-3',
+      compensacion: '3',
+      cantidadPos: '10',
+      existenciaEsperada: '10',
+      ajusteExistencia: { existenciaActual: '-3', nuevaExistencia: '0', cantidad: '3' },
+    });
   });
 
   it('reads a rejected read as an error and leaves the stock unknown', async () => {

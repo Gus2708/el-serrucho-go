@@ -120,7 +120,7 @@ const codigos = (representacion: RepresentacionPos): CodigoBloqueoPos[] => repre
 const SIEMPRE: CodigoBloqueoPos[] = ['existencia_ejecucion_no_verificada', 'precision_pos_no_verificada'];
 
 describe('evaluarRepresentacionPos', () => {
-  it('keeps the invoiced quantity as final stock when negative stock is neutralized, and shows the two bases apart', () => {
+  it('buys the documentary quantity and plans the negative-stock adjustment apart, without inflating the purchase base', () => {
     const { calculo, efectiva } = escenario([{ cantidad: '10', precio: '1.00', sku: 'SKU-A' }]);
     const resultado = evaluarRepresentacionPos({ calculo, efectiva, existencias: { 'SKU-A': -3 }, lecturaExistenciasEn: '2026-10-23T12:00:00.000Z' });
 
@@ -131,20 +131,28 @@ describe('evaluarRepresentacionPos', () => {
         cantidadDocumentoStock: '10',
         existenciaLeida: '-3',
         compensacion: '3',
-        cantidadPos: '13',
+        cantidadPos: '10',
         existenciaEsperada: '10',
+        ajusteExistencia: { existenciaActual: '-3', nuevaExistencia: '0', cantidad: '3' },
         baseDocumentalExIva: '10.00',
         costoPosHipotetico: '1.00',
-        baseHipoteticaPosExIva: '13.00',
-        diferenciaBase: '-3.00',
+        baseHipoteticaPosExIva: '10.00',
+        diferenciaBase: '0.00',
       },
     ]);
     expect(resultado.baseDocumentalExIvaTotal).toBe('10.00');
-    expect(resultado.baseHipoteticaPosExIvaTotal).toBe('13.00');
+    expect(resultado.baseHipoteticaPosExIvaTotal).toBe('10.00');
     // The T4 documentary total including VAT stays its own figure (10.00 + 16 % VAT).
     expect(resultado.totalDocumentalConImpuestos).toBe('11.60');
     expect(resultado.lecturaExistenciasEn).toBe('2026-10-23T12:00:00.000Z');
-    expect(codigos(resultado)).toEqual(['compensacion_altera_base', ...SIEMPRE].sort());
+    expect(resultado.emisionImportada.bloqueos).toContainEqual({
+      codigo: 'ajuste_compensacion_secuencia_no_probada',
+      ambito: 'sku',
+      codigoProducto: 'SKU-A',
+      lineaIds: [calculo.lineas[0].lineaId],
+    });
+    expect(codigos(resultado)).toEqual(['ajuste_compensacion_secuencia_no_probada', ...SIEMPRE].sort());
+    expect(codigos(resultado)).not.toContain('compensacion_altera_base');
     expect(resultado.emisionImportada.permitida).toBe(false);
   });
 
@@ -157,6 +165,7 @@ describe('evaluarRepresentacionPos', () => {
       compensacion: '0',
       cantidadPos: '10',
       existenciaEsperada: '15',
+      ajusteExistencia: null,
       baseDocumentalExIva: '10.00',
       baseHipoteticaPosExIva: '10.00',
       diferenciaBase: '0.00',
@@ -169,11 +178,11 @@ describe('evaluarRepresentacionPos', () => {
     const { calculo, efectiva } = escenario([{ cantidad: '10', precio: '1.00', sku: 'SKU-A' }]);
     const resultado = evaluarRepresentacionPos({ calculo, efectiva, existencias: { 'SKU-A': 0 }, lecturaExistenciasEn: null });
 
-    expect(resultado.skus[0]).toMatchObject({ existenciaLeida: '0', compensacion: '0', cantidadPos: '10', existenciaEsperada: '10' });
+    expect(resultado.skus[0]).toMatchObject({ existenciaLeida: '0', compensacion: '0', cantidadPos: '10', existenciaEsperada: '10', ajusteExistencia: null });
     expect(codigos(resultado)).toEqual(SIEMPRE);
   });
 
-  it('groups repeated confirmed SKU lines once: one compensation, line IDs preserved in order', () => {
+  it('groups repeated confirmed SKU lines once: one adjustment, line IDs preserved in order', () => {
     const { calculo, efectiva } = escenario([
       { cantidad: '4', precio: '1.00', sku: 'SKU-A' },
       { cantidad: '6', precio: '1.00', sku: 'SKU-A' },
@@ -186,11 +195,13 @@ describe('evaluarRepresentacionPos', () => {
       lineaIds: calculo.lineas.map(l => l.lineaId),
       cantidadDocumentoStock: '10',
       compensacion: '3',
-      cantidadPos: '13',
+      cantidadPos: '10',
       existenciaEsperada: '10',
+      ajusteExistencia: { existenciaActual: '-3', nuevaExistencia: '0', cantidad: '3' },
       baseDocumentalExIva: '10.00',
-      baseHipoteticaPosExIva: '13.00',
+      baseHipoteticaPosExIva: '10.00',
     });
+    expect(resultado.emisionImportada.bloqueos.filter(b => b.codigo === 'ajuste_compensacion_secuencia_no_probada')).toHaveLength(1);
   });
 
   it('never invents an average when repeated SKU lines have different net costs', () => {
@@ -203,7 +214,8 @@ describe('evaluarRepresentacionPos', () => {
     expect(resultado.skus[0]).toMatchObject({
       cantidadDocumentoStock: '10',
       compensacion: '3',
-      cantidadPos: '13',
+      cantidadPos: '10',
+      ajusteExistencia: { existenciaActual: '-3', nuevaExistencia: '0', cantidad: '3' },
       baseDocumentalExIva: '13.00',
       costoPosHipotetico: null,
       baseHipoteticaPosExIva: null,
@@ -212,6 +224,7 @@ describe('evaluarRepresentacionPos', () => {
     expect(resultado.baseDocumentalExIvaTotal).toBe('13.00');
     expect(resultado.baseHipoteticaPosExIvaTotal).toBeNull();
     expect(codigos(resultado)).toContain('sku_repetido_costo_distinto');
+    expect(codigos(resultado)).toContain('ajuste_compensacion_secuencia_no_probada');
   });
 
   it('exposes no amounts or quantities while the review has blockers (non-USD, unknown conversion, pending decisions)', () => {
@@ -253,6 +266,7 @@ describe('evaluarRepresentacionPos', () => {
         compensacion: null,
         cantidadPos: null,
         existenciaEsperada: null,
+        ajusteExistencia: null,
         baseDocumentalExIva: '10.00',
         baseHipoteticaPosExIva: null,
         diferenciaBase: null,
@@ -278,6 +292,7 @@ describe('evaluarRepresentacionPos', () => {
       compensacion: null,
       cantidadPos: null,
       existenciaEsperada: null,
+      ajusteExistencia: null,
       baseDocumentalExIva: '10.00',
       costoPosHipotetico: null,
       baseHipoteticaPosExIva: null,

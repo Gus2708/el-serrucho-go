@@ -16,7 +16,7 @@ const BLOQUEOS_POS: Record<CodigoBloqueoPos, string> = {
   existencia_no_leida: 'No se pudo leer la existencia; no se asume cero.',
   producto_nuevo_identidad_no_verificada: 'Producto nuevo: su identidad y existencia en Hybrid no están verificadas; no se asume cero.',
   sku_repetido_costo_distinto: 'El mismo producto aparece en varios renglones con costos distintos; no se promedian.',
-  compensacion_altera_base: 'Compensar el negativo cambia la base que calcularía el POS (no verificado).',
+  ajuste_compensacion_secuencia_no_probada: 'El ajuste previo de existencia y la compra no tienen secuencia, idempotencia ni recuperación probadas (no verificado).',
   cuantizacion_altera_base: 'La precisión de costo del POS cambia la base (regla de prueba, no aprobada).',
   precision_pos_no_verificada: 'La precisión y el redondeo del POS no están verificados.',
   control_fecha_no_transmisibles: 'El número de control y la fecha impresos no se pueden transmitir con el esquema de compra actual.',
@@ -32,6 +32,14 @@ function textoBloqueo(bloqueo: BloqueoPos): string {
   return `• ${donde}${BLOQUEOS_POS[bloqueo.codigo]}`;
 }
 
+function textoAjuste(sku: ProyeccionSku): string {
+  if (sku.ajusteExistencia) {
+    const { existenciaActual, nuevaExistencia, cantidad } = sku.ajusteExistencia;
+    return `${existenciaActual} → ${nuevaExistencia} (+${cantidad})`;
+  }
+  return sku.compensacion === null ? 'desconocido' : 'ninguno';
+}
+
 function TarjetaSku({ sku }: { sku: ProyeccionSku }): React.JSX.Element {
   const { colors } = useTheme();
   const id = `revision-impacto-sku-${claveSku(sku)}`;
@@ -40,11 +48,11 @@ function TarjetaSku({ sku }: { sku: ProyeccionSku }): React.JSX.Element {
       <Texto tone="primary">{sku.codigoProducto ?? 'Producto nuevo (sin identidad en Hybrid)'}</Texto>
       <Texto testID={`${id}-cantidad`} small>{`Cantidad en factura: ${sku.cantidadDocumentoStock}`}</Texto>
       <Texto testID={`${id}-existencia`} small>{`Existencia leída: ${sku.existenciaLeida ?? 'no leída'}`}</Texto>
-      <Texto testID={`${id}-compensacion`} small>{`Compensación por negativo: ${sku.compensacion ?? 'desconocida'}`}</Texto>
-      <Texto testID={`${id}-envio`} small>{`Cantidad que se enviaría: ${sku.cantidadPos ?? 'desconocida'}`}</Texto>
+      <Texto testID={`${id}-ajuste`} small>{`Ajuste previo de existencia (separado de la compra): ${textoAjuste(sku)}`}</Texto>
+      <Texto testID={`${id}-envio`} small>{`Cantidad de compra (documental): ${sku.cantidadPos ?? 'desconocida'}`}</Texto>
       <Texto testID={`${id}-esperada`} small>{`Existencia esperada tras la compra: ${sku.existenciaEsperada ?? 'desconocida'}`}</Texto>
       <Texto testID={`${id}-base-documental`} small>{`Base documental sin IVA: ${formatoUsdExacto(sku.baseDocumentalExIva)}`}</Texto>
-      <Texto testID={`${id}-base-hipotetica`} small>{`Base hipotética POS sin IVA (costo × cantidad enviada, no es deuda observada): ${formatoUsdExacto(sku.baseHipoteticaPosExIva)}`}</Texto>
+      <Texto testID={`${id}-base-hipotetica`} small>{`Base hipotética POS sin IVA (costo × cantidad de compra documental, no es deuda observada): ${formatoUsdExacto(sku.baseHipoteticaPosExIva)}`}</Texto>
       <Texto testID={`${id}-diferencia`} small>{`Diferencia (documental − hipotética): ${formatoUsdExacto(sku.diferenciaBase)}`}</Texto>
     </View>
   );
