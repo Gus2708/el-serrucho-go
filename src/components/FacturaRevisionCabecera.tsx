@@ -10,6 +10,7 @@ import type {
   DecisionCabecera,
   Edicion,
   FacturaEfectiva,
+  TipoDocumento,
   ValorEfectivo,
 } from '../lib/facturaRevision';
 
@@ -66,14 +67,26 @@ export function Boton({ testID, label, onPress, disabled = false, selected = fal
   );
 }
 
-export function Entrada({ testID, label, value, onChangeText, keyboardType = 'default' }: { testID: string; label: string; value: string; onChangeText: (text: string) => void; keyboardType?: 'default' | 'decimal-pad' }): React.JSX.Element {
+export function Entrada(props: {
+  testID: string;
+  label: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  keyboardType?: 'default' | 'decimal-pad';
+  /** Replaces the label as the placeholder; `legible` draws it with the muted token so it stays readable. */
+  placeholder?: string;
+  legible?: boolean;
+  hint?: string;
+}): React.JSX.Element {
   const { colors } = useTheme();
+  const { testID, label, value, onChangeText, keyboardType = 'default', placeholder = label, legible = false, hint } = props;
   return (
     <TextInput
       testID={testID}
       accessibilityLabel={label}
-      placeholder={label}
-      placeholderTextColor={colors.textDim}
+      accessibilityHint={hint}
+      placeholder={placeholder}
+      placeholderTextColor={legible ? colors.textMuted : colors.textDim}
       value={value}
       onChangeText={onChangeText}
       keyboardType={keyboardType}
@@ -316,13 +329,20 @@ const DECISIONES: ReadonlyArray<{ campo: DecisionCabecera; label: string }> = [
   { campo: 'precioIncluyeIva', label: 'Los precios incluyen IVA' },
 ];
 
+const TIPOS_DOCUMENTO: ReadonlyArray<{ valor: TipoDocumento | null; testID: string; label: string }> = [
+  { valor: 'factura', testID: 'revision-tipo-factura', label: 'Factura' },
+  { valor: 'nota_entrega', testID: 'revision-tipo-nota_entrega', label: 'Nota de entrega' },
+  { valor: null, testID: 'revision-tipo-sin-definir', label: 'Sin definir' },
+];
+
 export default function FacturaRevisionCabecera(props: {
   efectiva: FacturaEfectiva;
   decisiones: Readonly<Record<DecisionCabecera, boolean | null>>;
+  tipoDocumento: TipoDocumento | null;
   calculo: CalculoRevision;
   onEditar: (edicion: Edicion) => void;
 }): React.JSX.Element {
-  const { efectiva, decisiones, calculo, onEditar } = props;
+  const { efectiva, decisiones, tipoDocumento, calculo, onEditar } = props;
   const oculto = calculo.moneda === 'USD' ? null : avisoImporteOculto(calculo.moneda);
   return (
     <View style={styles.seccion}>
@@ -358,6 +378,16 @@ export default function FacturaRevisionCabecera(props: {
         efectivo={efectiva.impuestos}
         onAplicar={(valor, motivo) => onEditar({ tipo: 'cabecera_impuestos', valor: valor as ExtraidoImpuesto[], motivo })}
       />
+      <Texto tone="primary">PRECIO DE VENTA SUGERIDO</Texto>
+      <Texto small tone="muted">Nota de entrega: costo + 30 %. Factura: costo + 30 % y luego + 16 % de IVA. Solo sugiere un precio de venta; no cambia los impuestos ni los costos del documento.</Texto>
+      <View style={styles.fila}>
+        {TIPOS_DOCUMENTO.map(({ valor, testID, label }) => (
+          <Boton key={testID} testID={testID} label={label} selected={tipoDocumento === valor} onPress={() => onEditar({ tipo: 'tipo_documento', valor })} />
+        ))}
+      </View>
+      <Texto testID="revision-tipo-estado" small tone={tipoDocumento === null ? 'warning' : 'muted'}>
+        {tipoDocumento === null ? 'Tipo de documento sin definir: no hay precio sugerido.' : `Tipo de documento: ${tipoDocumento === 'factura' ? 'factura' : 'nota de entrega'}.`}
+      </Texto>
       <Texto tone="primary">CONFIRMACIONES</Texto>
       {DECISIONES.map(({ campo, label }) => (
         <Triestado key={campo} base={`revision-decision-${campo}`} label={label} valor={decisiones[campo]} onChange={valor => onEditar({ tipo: 'decision_cabecera', campo, valor })} />

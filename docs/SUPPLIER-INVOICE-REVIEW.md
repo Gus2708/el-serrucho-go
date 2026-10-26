@@ -132,6 +132,53 @@ Not covered by this slice: supplier alias scope, purchase transfer, native/devic
 browser proof (the RNTL suite is not native proof), and any deployed-function or
 real-extraction check.
 
+## Sale price (PVP) suggestion in the review (local, no purchase effect)
+
+The review shows an editable sale price per line. It is a review aid: nothing here
+changes the invoice taxes or costs, creates a purchase, changes stock or enables emission.
+
+- **Document type** is a human choice in the header (`Factura`, `Nota de entrega`, or
+  `Sin definir`). It is never inferred from tax arrays, file names or extraction data.
+- **Suggestion**: a markup of 30 % on the calculated net unit cost per stock unit
+  (`costoNetoUnitarioStock`), not a margin. A delivery note (no VAT) suggests
+  `cost x 1.30`; an invoice suggests `cost x 1.30 x 1.16`, applied in sequence. Cost `10.00`
+  gives `13.00` and `15.08`; cost `0.1234` gives `0.16042` and `0.1860872`. The
+  multiplication is exact (decimal strings, no binary floating point) and no rounding rule is
+  approved, so none is applied; an unknown type, unknown or inexact cost, or a zero result
+  gives no suggestion. An invoice always carries the 1.16 factor, including for an exempt line.
+- **Placeholder**: the suggestion is the placeholder of an empty price field, drawn with the
+  muted theme token (not an opacity on the input), so typed text keeps the normal color.
+  A short Spanish hint says that an empty field uses the suggestion.
+- **Typed price wins**. Valid text is stored at once (no blur needed), so pressing
+  Guardar right after typing keeps it. Clearing the field removes the stored price and the
+  suggestion applies again. Invalid text (comma, zero, negative, letters, too many digits)
+  stays visible, blocks Guardar and Aprobar with a message, and is never replaced by the
+  suggestion. It counts as unsaved work for the close guard. It is dropped on reload, another
+  invoice, a lost session or a currency whose amounts are hidden.
+- **Hidden amounts**: with a non-USD or unknown currency the field, the placeholder, the
+  suggestion and any stored price are hidden, like every other amount.
+- **Persisted shape** (`review_schema` 1, unchanged version): two optional keys, omitted
+  when unset. `cabecera.tipoDocumento` is `factura` or `nota_entrega`; `lineas[].precioVenta`
+  is a positive decimal string (up to 12 integer and 8 fraction digits). Only a typed price is
+  stored, never a computed suggestion. Content without the keys is byte-identical to before, so
+  existing revisions, fingerprints and attestations are unchanged; any other key, a `null`,
+  a blank, zero or negative value is refused. A price alone does not satisfy the manual-line
+  motive rule.
+- **Server**: migration `20261026000305_facturas_revisiones_pvp.sql` replaces
+  `facturas_privado.validar_contenido_revision` in place (same identity and no execute grant for
+  client roles) so save and approval calls that are already warmed in an open session see the new rules.
+  It validates only those two optional fields; no rows are rewritten and no amount is trusted.
+- **Rollout limit**: a client that sends the new keys needs that migration applied first
+  (an older server refuses them with `22023`). Old clients cannot open revisions containing
+  the new keys: their strict validator fails closed. Coordinate the client update and migration.
+  This migration has not been applied to any hosted project from this repository.
+- **Later purchase step**: the stored price is a person's input. A future materialization must
+  recompute the suggestion on the server from the approved content (`cost x 1.30 [x 1.16]`)
+  and treat a client value as a proposal, never as authority.
+  With an unresolved global discount, the displayed per-line cost and suggestion can still be
+  pre-discount. Approval remains blocked; a future purchase must not use that suggestion until
+  the financial calculation is complete.
+
 ## Purchase binding and linked-draft guard (local, no caller yet)
 
 An approved revision can be tied to exactly one empty purchase draft. This is source identity

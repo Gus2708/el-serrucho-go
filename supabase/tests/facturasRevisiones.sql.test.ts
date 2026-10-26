@@ -44,7 +44,8 @@ async function actAsServiceRole(database: PGlite): Promise<void> {
   await database.exec('set role service_role');
 }
 
-async function initTestDb(): Promise<PGlite> {
+// `withPvp` false stops at the revisions migration so a test can apply the PVP migration later in the same engine.
+async function initTestDb(withPvp = true): Promise<PGlite> {
   const database = await createMigratedDb();
   await database.exec(`
     create role service_role nologin bypassrls;
@@ -55,6 +56,7 @@ async function initTestDb(): Promise<PGlite> {
   `);
   await database.exec(migrationSql('_facturas_proveedores_extracciones.sql'));
   await database.exec(migrationSql('_facturas_proveedores_revisiones.sql'));
+  if (withPvp) await database.exec(migrationSql('_facturas_revisiones_pvp.sql'));
   return database;
 }
 
@@ -777,6 +779,25 @@ describe('facturas_proveedores_revisiones', () => {
       ['codigoBarras extra key', mutate(c => { c.lineas[0].codigoBarras = { usarCodigoFactura: true, codigo: '1' }; })],
       ['usarCodigoFactura string', mutate(c => { c.lineas[0].codigoBarras = { usarCodigoFactura: 'si' }; })],
       ['codigoBarras null', mutate(c => { c.lineas[0].codigoBarras = null; })],
+      ['tipoDocumento unknown value', mutate(c => { c.cabecera.tipoDocumento = 'otro'; })],
+      ['tipoDocumento null instead of omitted', mutate(c => { c.cabecera.tipoDocumento = null; })],
+      ['tipoDocumento empty', mutate(c => { c.cabecera.tipoDocumento = ''; })],
+      ['tipoDocumento wrong case', mutate(c => { c.cabecera.tipoDocumento = 'Factura'; })],
+      ['tipoDocumento number', mutate(c => { c.cabecera.tipoDocumento = 1; })],
+      ['tipoDocumento valid plus unknown header key', mutate(c => { c.cabecera.tipoDocumento = 'factura'; c.cabecera.otro = 1; })],
+      ['precioVenta comma decimal', mutate(c => { c.lineas[0].precioVenta = '12,5'; })],
+      ['precioVenta zero', mutate(c => { c.lineas[0].precioVenta = '0'; })],
+      ['precioVenta zero with decimals', mutate(c => { c.lineas[0].precioVenta = '0.00'; })],
+      ['precioVenta negative', mutate(c => { c.lineas[0].precioVenta = '-1'; })],
+      ['precioVenta blank', mutate(c => { c.lineas[0].precioVenta = ''; })],
+      ['precioVenta padded', mutate(c => { c.lineas[0].precioVenta = ' 20'; })],
+      ['precioVenta null instead of omitted', mutate(c => { c.lineas[0].precioVenta = null; })],
+      ['precioVenta number', mutate(c => { c.lineas[0].precioVenta = 20; })],
+      ['precioVenta 13 integer digits', mutate(c => { c.lineas[0].precioVenta = '1234567890123'; })],
+      ['precioVenta 9 decimals', mutate(c => { c.lineas[0].precioVenta = '1.123456789'; })],
+      ['precioVenta exponent', mutate(c => { c.lineas[0].precioVenta = '1e3'; })],
+      ['precioVenta valid plus unknown line key', mutate(c => { c.lineas[0].precioVenta = '20'; c.lineas[0].precio = '1'; })],
+      ['manual line whose only content is a price (no motive)', mutate(c => { c.lineas.push({ ...linea(null), precioVenta: '5' }); })],
     ];
 
     it.each(cases)('rejects %s', async (_name, build) => {
@@ -815,6 +836,45 @@ describe('facturas_proveedores_revisiones', () => {
       ]);
       const res = await save({ id: s.facturaId, extraccionId: s.extraccionId, content });
       expect(res.replay).toBe(false);
+    });
+  });
+
+  describe('optional PVP keys: tipoDocumento and precioVenta', () => {
+    const conPvp = (s: Scenario, tipoDocumento: string, precios: Array<string | undefined>): Json => {
+      const base = fullContent(s) as { cabecera: Json; lineas: Json[] };
+      return {
+        ...base,
+        cabecera: { ...base.cabecera, tipoDocumento },
+        lineas: base.lineas.map((l, i) => (precios[i] === undefined ? l : { ...l, precioVenta: precios[i] })),
+      };
+    };
+
+    it.each([
+      ['factura', ['20.5', '0.01', undefined]],
+      ['nota_entrega', ['123456789012', '12.12345678', '007']],
+    ] as const)('stores %s with valid prices exactly and fingerprints the jsonb text', async (tipo, precios) => {
+      const s = await scenario();
+      const content = conPvp(s, tipo, [...precios]);
+      const res = await save({ id: s.facturaId, content });
+      expect(res).toMatchObject({ revision: 1, replay: false });
+      const [row] = await revisions(s.facturaId);
+      expect(row.contenido).toEqual(content);
+      const expected = await db.query<{ f: string }>(
+        "select encode(sha256(convert_to(contenido::text, 'UTF8')), 'hex') as f from public.facturas_proveedores_revisiones where factura_id = $1",
+        [s.facturaId]
+      );
+      expect(expected.rows[0].f).toBe(res.fingerprint);
+      expect(await approve(s.facturaId, 1, String(res.fingerprint))).toMatchObject({ revision: 1, replay: false });
+    });
+
+    it('content without the keys keeps the exact fingerprint it had before the keys existed', async () => {
+      const s = await scenario();
+      const legacy = fullContent(s);
+      const first = await save({ id: s.facturaId, content: legacy });
+      const second = await save({ id: s.facturaId, expectedRevision: 1, content: conPvp(s, 'factura', ['20', undefined, undefined]) });
+      const third = await save({ id: s.facturaId, expectedRevision: 2, content: legacy });
+      expect(second.fingerprint).not.toBe(first.fingerprint);
+      expect(third.fingerprint).toBe(first.fingerprint);
     });
   });
 
@@ -1200,6 +1260,21 @@ describe('facturas_proveedores_revisiones', () => {
       }
     });
 
+    it('keeps a single non-executable content validator: no base or wrapper copy is left behind', async () => {
+      await actAsOwner(db);
+      const rows = await db.query<{ sig: string; proacl: string | null; proconfig: string[] | null }>(
+        `select p.oid::regprocedure::text as sig, p.proacl::text as proacl, proconfig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'facturas_privado' and proname like 'validar_contenido_revision%'`
+      );
+      expect(rows.rows.map(r => r.sig)).toEqual(['facturas_privado.validar_contenido_revision(jsonb,uuid,jsonb)']);
+      expect(rows.rows[0].proconfig).toContain('search_path=""');
+      expect(rows.rows[0].proacl ?? '').not.toMatch(/(^\{|,)=X/);
+      for (const role of ['anon', 'authenticated', 'service_role']) {
+        const r = await db.query<{ ok: boolean }>(`select has_function_privilege($1, $2::regprocedure, 'EXECUTE') as ok`, [role, rows.rows[0].sig]);
+        expect(r.rows[0].ok).toBe(false);
+      }
+    });
+
     it('only authenticated can execute the wrappers; helpers are not callable by app roles', async () => {
       await actAsOwner(db);
       const exec = async (role: string, fn: string) =>
@@ -1224,5 +1299,62 @@ describe('facturas_proveedores_revisiones', () => {
         expect(await exec('service_role', sig)).toBe(false);
       }
     });
+  });
+});
+
+describe('facturas_proveedores_revisiones: PVP migration applied to a warmed session', () => {
+  beforeAll(async () => {
+    db = await initTestDb(false);
+    await addUser(db, ADMIN, 'admin');
+  });
+
+  afterAll(async () => {
+    await db.close();
+  });
+
+  const validatorOid = async (): Promise<string> => {
+    await actAsOwner(db);
+    const r = await db.query<{ oid: string }>("select 'facturas_privado.validar_contenido_revision(jsonb,uuid,jsonb)'::regprocedure::oid::text as oid");
+    return r.rows[0].oid;
+  };
+
+  it('keeps stored revisions, fingerprints and warmed save/approve calls; accepts the new keys only afterwards', async () => {
+    const s = await scenario();
+    const legacy = fullContent(s) as { cabecera: Json; lineas: Json[] };
+    const withKeys: Json = {
+      ...legacy,
+      cabecera: { ...legacy.cabecera, tipoDocumento: 'factura' },
+      lineas: legacy.lineas.map((l, i) => (i === 0 ? { ...l, precioVenta: '20' } : l)),
+    };
+    const key = uuid();
+
+    // Warm the public save and approve RPCs on the old validator.
+    const first = await save({ id: s.facturaId, key, content: legacy });
+    expect(first).toMatchObject({ revision: 1, replay: false });
+    expect(await approve(s.facturaId, 1, String(first.fingerprint))).toMatchObject({ revision: 1, replay: false });
+    // The old validator refuses the new keys and leaves every table untouched.
+    await expectRejected(as(ADMIN), () => save({ id: s.facturaId, expectedRevision: 1, content: withKeys }), '22023', 'payload_invalido');
+    const rowsBefore = await revisions(s.facturaId);
+    const oidBefore = await validatorOid();
+
+    await actAsOwner(db);
+    await db.exec(migrationSql('_facturas_revisiones_pvp.sql'));
+    await actAs(db, ADMIN, true);
+
+    // Same function identity, stored revision byte-identical, same-key replay returns the old fingerprint.
+    expect(await validatorOid()).toBe(oidBefore);
+    expect(await revisions(s.facturaId)).toEqual(rowsBefore);
+    expect(await save({ id: s.facturaId, key, content: legacy })).toMatchObject({ revision: 1, replay: true, fingerprint: first.fingerprint });
+
+    // The very same session (no reconnect) now accepts the new keys through the warmed RPCs.
+    const second = await save({ id: s.facturaId, expectedRevision: 1, content: withKeys });
+    expect(second).toMatchObject({ revision: 2, replay: false });
+    const [, row2] = await revisions(s.facturaId);
+    expect(row2.contenido).toEqual(withKeys);
+    expect(await approve(s.facturaId, 2, String(second.fingerprint))).toMatchObject({ revision: 2, replay: false });
+
+    // Everything else is still refused, with the tables untouched.
+    const broken = { ...withKeys, cabecera: { ...(withKeys.cabecera as Json), otro: 1 } };
+    await expectRejected(as(ADMIN), () => save({ id: s.facturaId, expectedRevision: 2, content: broken }), '22023', 'payload_invalido');
   });
 });

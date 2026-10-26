@@ -4,7 +4,8 @@ import { StyleSheet, View } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 import type { ExtraidoDescuento } from '../lib/facturaExtractionContract';
 import type { LineMatch } from '../lib/facturaMatching';
-import type { CalculoLinea, Edicion, EstadoCodigoBarras, LineaCampoEscalar, LineaEfectiva } from '../lib/facturaRevision';
+import { precioVentaValido, resolverPrecioVenta } from '../lib/facturaRevision';
+import type { CalculoLinea, Edicion, EstadoCodigoBarras, LineaCampoEscalar, LineaEfectiva, TipoDocumento } from '../lib/facturaRevision';
 import { Boton, CampoCorregible, Entrada, FilasLista, Texto, avisoImporteOculto, etiquetaMonto, formatoUsdExacto } from './FacturaRevisionCabecera';
 
 const CAMPOS: ReadonlyArray<{ campo: LineaCampoEscalar; label: string; decimal?: boolean; monetario?: boolean }> = [
@@ -38,7 +39,14 @@ export interface FacturaRevisionLineaProps {
   moneda: string | null;
   esUsd: boolean;
   estadoBarras: EstadoCodigoBarras | undefined;
-  onEditar: (edicion: Edicion) => void;
+  /** Header document type chosen by the person (null = undecided). */
+  tipoDocumento: TipoDocumento | null;
+  /** PVP typed and stored for this line (null = none: the suggestion applies). */
+  precioVenta: string | null;
+  /** Typed PVP text that cannot be stored yet; the view blocks saving while it exists. */
+  borradorPrecio: string | undefined;
+  onBorradorPrecio: (lineaId: string, texto: string | null) => void;
+  onEditar: (edicion: Edicion) => { ok: boolean };
   onElegirCandidato: (codigoInterno: string) => void;
 }
 
@@ -51,7 +59,7 @@ function decisionTexto(efectiva: LineaEfectiva): string {
 
 export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): React.JSX.Element {
   const { colors } = useTheme();
-  const { llave, numero, pagina, efectiva, calculo, match, catalogoParcial, moneda, esUsd, estadoBarras, onEditar, onElegirCandidato } = props;
+  const { llave, numero, pagina, efectiva, calculo, match, catalogoParcial, moneda, esUsd, estadoBarras, tipoDocumento, precioVenta, borradorPrecio, onBorradorPrecio, onEditar, onElegirCandidato } = props;
   const id = `revision-linea-${llave}`;
   const lineaId = efectiva.lineaId;
   const [factor, setFactor] = useState('');
@@ -64,6 +72,32 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
   // Unconverted amounts stay internal: no figure is shown until a conversion to USD is approved.
   const oculto = esUsd ? null : avisoImporteOculto(moneda);
   const monto = (valor: string | null): string => oculto ?? formatoUsdExacto(valor);
+  const costoNetoUnitario = calculo?.costoNetoUnitarioStock ?? null;
+  const sugerido = resolverPrecioVenta({ tipoDocumento, costoNetoUnitario, precioVenta: null });
+  const aplicado = resolverPrecioVenta({ tipoDocumento, costoNetoUnitario, precioVenta });
+
+  // Valid text (or a blank, which restores the default) is stored at once, so Guardar never depends on a blur.
+  // Text that cannot be stored stays here as a draft the view uses to block saving: it is never replaced by the suggestion.
+  function cambiarPrecio(entrada: string): void {
+    const texto = entrada.trim();
+    if (texto !== '' && !precioVentaValido(texto)) {
+      onBorradorPrecio(lineaId, entrada);
+      return;
+    }
+    const { ok } = onEditar({ tipo: 'precio_venta', lineaId, valor: texto === '' ? null : texto });
+    onBorradorPrecio(lineaId, ok ? null : entrada);
+  }
+
+  function estadoPrecio(): { texto: string; tono: 'danger' | 'muted' | 'warning' } {
+    if (borradorPrecio !== undefined) {
+      return { texto: 'Precio no válido. Usa punto decimal, mayor que 0, hasta 12 enteros y 8 decimales. Corrígelo o bórralo para continuar.', tono: 'danger' };
+    }
+    if (aplicado?.origen === 'usuario') return { texto: `Se usará tu precio: ${formatoUsdExacto(aplicado.valor)}`, tono: 'muted' };
+    if (aplicado) return { texto: `Se usará el precio sugerido: ${formatoUsdExacto(aplicado.valor)}. Escribe un precio para cambiarlo.`, tono: 'muted' };
+    if (tipoDocumento === null) return { texto: 'Elige el tipo de documento (factura o nota de entrega) para ver un precio sugerido.', tono: 'warning' };
+    return { texto: 'Sin costo neto calculado para este renglón: no hay precio sugerido.', tono: 'warning' };
+  }
+  const estado = estadoPrecio();
 
   return (
     <View testID={id} style={[styles.tarjeta, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -111,6 +145,27 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
         <Texto testID={`${id}-base`} small>{esUsd ? `Base sin IVA: ${monto(calculo?.base ?? null)} · IVA: ${monto(calculo?.iva ?? null)}` : `Base sin IVA e IVA: ${oculto}`}</Texto>
         <Texto testID={`${id}-costo-unitario`}>{`Costo neto por unidad de inventario: ${monto(calculo?.costoNetoUnitarioStock ?? null)}`}</Texto>
         <Texto small tone="muted">{`Cantidad en inventario: ${calculo?.cantidadStock ?? 'desconocida'} · Cantidad del documento: ${calculo?.cantidadDocumento ?? 'sin dato'}`}</Texto>
+      </View>
+
+      <View style={[styles.caja, { borderColor: colors.border }]}>
+        <Texto small tone="muted">{etiquetaMonto('Precio de venta del renglón (USD)', esUsd)}</Texto>
+        {oculto ? (
+          <Texto testID={`${id}-pvp-oculto`} small tone="warning">{oculto}</Texto>
+        ) : (
+          <>
+            <Entrada
+              testID={`${id}-pvp-valor`}
+              label="Precio de venta (USD)"
+              hint="Déjalo vacío para usar el precio sugerido."
+              placeholder={sugerido ? formatoUsdExacto(sugerido.valor) : 'Sin precio sugerido'}
+              legible
+              value={borradorPrecio ?? precioVenta ?? ''}
+              keyboardType="decimal-pad"
+              onChangeText={cambiarPrecio}
+            />
+            <Texto testID={`${id}-pvp-estado`} small tone={estado.tono}>{estado.texto}</Texto>
+          </>
+        )}
       </View>
 
       <View style={[styles.caja, { borderColor: colors.border }]}>

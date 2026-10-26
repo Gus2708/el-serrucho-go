@@ -80,6 +80,7 @@ async function initDb(withBinding: boolean): Promise<PGlite> {
   `);
   await database.exec(migrationSql('_facturas_proveedores_extracciones.sql'));
   await database.exec(migrationSql('_facturas_proveedores_revisiones.sql'));
+  await database.exec(migrationSql('_facturas_revisiones_pvp.sql'));
   await database.exec(readFileSync(join(__dirname, 'support', 'comprasAppFixture.sql'), 'utf8'));
   for (const name of [
     '022_compras_app.sql',
@@ -483,6 +484,26 @@ describe('facturas_proveedores_compras', () => {
       await actAs(db, ADMIN, true);
       await db.query("update public.compras_app set nota = 'editable' where id = $1", [manualId]);
       expect(await rows('select nota from public.compras_app where id = $1', [manualId])).toEqual([{ nota: 'editable' }]);
+    });
+  });
+
+  describe('preparar_compra_factura: a revision with PVP keys', () => {
+    it('prepares the same empty borrador and never carries the typed price into the purchase', async () => {
+      const s = await scenario();
+      const base = contenido(s) as { cabecera: Json; lineas: Json[] };
+      const conPvp = { ...base, cabecera: { ...base.cabecera, tipoDocumento: 'factura' }, lineas: base.lineas.map(l => ({ ...l, precioVenta: '15.08' })) };
+      await actAs(db, s.owner, true);
+      const saved = await db.query<{ r: Json }>(
+        'select public.guardar_revision_factura($1::uuid, 0, $2::uuid, 1, $3::uuid, $4::jsonb, $5::text) as r',
+        [s.facturaId, uuid(), s.extraccionId, JSON.stringify(conPvp), 'Con PVP']
+      );
+      const fingerprint = String(saved.rows[0].r.fingerprint);
+      await approveRevision(s, 1, fingerprint);
+      const res = await prepare({ facturaId: s.facturaId, revision: 1, fingerprint, owner: s.owner });
+      const compras = await rows('select * from public.compras_app where id = $1', [res.compra_id]);
+      expect(compras).toHaveLength(1);
+      expect(compras[0]).toMatchObject({ status: 'borrador', proveedor_codigo: null, nota: null, titulo: null });
+      expect(await rows('select * from public.compras_app_items where compra_id = $1', [res.compra_id])).toHaveLength(0);
     });
   });
 

@@ -8,6 +8,7 @@ import {
   evaluarCodigoBarras,
   POLITICAS_PRODUCCION,
   resolverFactura,
+  resolverPrecioVenta,
   validarContenidoRevision,
   type CodigoBloqueo,
   type Edicion,
@@ -853,5 +854,155 @@ describe('estadoRevision', () => {
   it('a calculation that used test policies can never become validada', () => {
     const conPolitica = calcularRevision({ extraccion: ext, contenido: confirmada(ext), politicas: { tolerancia: '0.01' } });
     expect(estadoRevision({ calculo: conPolitica, ultima, atestacion: { ...ultima } })).toBe('con_bloqueos');
+  });
+});
+
+describe('PVP review fields: tipoDocumento and precioVenta (S18)', () => {
+  const ext = extraccion([linea(1, { cantidad: '1', precioUnitario: '10.00' })]);
+  const base = confirmada(ext);
+  const lineaId = base.lineas[0].lineaId;
+  const conTipo = (tipoDocumento: unknown): unknown => ({ ...base, cabecera: { ...base.cabecera, tipoDocumento } });
+  const conPrecio = (precioVenta: unknown): unknown => ({ ...base, lineas: [{ ...base.lineas[0], precioVenta }] });
+  const costoDe = (contenido: RevisionContenido): string | null => calcularRevision({ extraccion: ext, contenido }).lineas[0].costoNetoUnitarioStock;
+
+  describe('persisted shape: optional keys, omitted when unset', () => {
+    it('keeps legacy content valid and without the new keys', () => {
+      expect(validarContenidoRevision(base, ext).ok).toBe(true);
+      expect(Object.keys(base.cabecera)).not.toContain('tipoDocumento');
+      expect(Object.keys(base.lineas[0])).not.toContain('precioVenta');
+    });
+
+    it.each(['factura', 'nota_entrega'])('accepts cabecera.tipoDocumento %s', tipo => {
+      expect(validarContenidoRevision(conTipo(tipo), ext).ok).toBe(true);
+    });
+
+    it.each([
+      ['unknown type', 'otro'],
+      ['null instead of omitted', null],
+      ['empty', ''],
+      ['wrong case', 'Factura'],
+      ['number', 1],
+    ])('rejects tipoDocumento: %s', (_n, valor) => {
+      expect(validarContenidoRevision(conTipo(valor), ext).ok).toBe(false);
+    });
+
+    it.each(['20', '20.5', '0.01', '123456789012', '12.12345678', '007'])('accepts line.precioVenta %s', precio => {
+      expect(validarContenidoRevision(conPrecio(precio), ext).ok).toBe(true);
+    });
+
+    it.each([
+      ['comma decimal', '12,5'],
+      ['zero', '0'],
+      ['zero decimals', '0.00'],
+      ['negative', '-1'],
+      ['blank', ''],
+      ['padded', ' 20'],
+      ['null instead of omitted', null],
+      ['number', 20],
+      ['13 integer digits', '1234567890123'],
+      ['9 decimals', '1.123456789'],
+      ['exponent', '1e3'],
+    ])('rejects line.precioVenta: %s', (_n, valor) => {
+      expect(validarContenidoRevision(conPrecio(valor), ext).ok).toBe(false);
+    });
+
+    it('still rejects any other unknown key in the header or a line', () => {
+      expect(validarContenidoRevision({ ...base, cabecera: { ...base.cabecera, descuento: 'x' } }, ext).ok).toBe(false);
+      expect(validarContenidoRevision({ ...base, lineas: [{ ...base.lineas[0], precio: '5' }] }, ext).ok).toBe(false);
+      expect(validarContenidoRevision({ ...base, cabecera: { ...base.cabecera, tipoDocumento: 'factura', otro: 1 } }, ext).ok).toBe(false);
+    });
+
+    it('a price alone never satisfies the manual-line motive rule', () => {
+      const manual = { ...base, lineas: [{ ...base.lineas[0], origen: null, correcciones: {}, precioVenta: '5' }] };
+      expect(validarContenidoRevision(manual, null).ok).toBe(false);
+    });
+  });
+
+  describe('edits reuse aplicarEdicion', () => {
+    it('sets and clears the document type, deleting the key so the content equals the legacy content', () => {
+      const conTipoFactura = aplicar(base, ext, { tipo: 'tipo_documento', valor: 'factura' });
+      expect(conTipoFactura.cabecera.tipoDocumento).toBe('factura');
+      const limpio = aplicar(conTipoFactura, ext, { tipo: 'tipo_documento', valor: null });
+      expect(Object.keys(limpio.cabecera)).not.toContain('tipoDocumento');
+      expect(JSON.stringify(limpio)).toBe(JSON.stringify(base));
+    });
+
+    it('sets and clears a line price, deleting the key so the content equals the legacy content', () => {
+      const conPrecioUsuario = aplicar(base, ext, { tipo: 'precio_venta', lineaId, valor: '20' });
+      expect(conPrecioUsuario.lineas[0].precioVenta).toBe('20');
+      const limpio = aplicar(conPrecioUsuario, ext, { tipo: 'precio_venta', lineaId, valor: null });
+      expect(Object.keys(limpio.lineas[0])).not.toContain('precioVenta');
+      expect(JSON.stringify(limpio)).toBe(JSON.stringify(base));
+    });
+
+    it('treats clearing an unset value as a no-op that returns the same object', () => {
+      expect(aplicarEdicion(base, ext, { tipo: 'tipo_documento', valor: null })).toEqual({ ok: true, contenido: base, cambio: false });
+      expect(aplicarEdicion(base, ext, { tipo: 'precio_venta', lineaId, valor: null })).toEqual({ ok: true, contenido: base, cambio: false });
+    });
+
+    it.each([
+      ['zero', '0'],
+      ['comma', '12,5'],
+      ['negative', '-3'],
+      ['blank', ''],
+      ['padded', ' 2 '],
+    ])('refuses an invalid price (%s)', (_n, valor) => {
+      expect(aplicarEdicion(base, ext, { tipo: 'precio_venta', lineaId, valor }).ok).toBe(false);
+    });
+
+    it('refuses an unknown line and an unknown document type', () => {
+      expect(aplicarEdicion(base, ext, { tipo: 'precio_venta', lineaId: '99999999-9999-4999-8999-999999999999', valor: '5' }).ok).toBe(false);
+      expect(aplicarEdicion(base, ext, { tipo: 'tipo_documento', valor: 'otro' as never }).ok).toBe(false);
+    });
+
+    it('never mutates frozen inputs', () => {
+      const congelado = deepFreeze(JSON.parse(JSON.stringify(base)) as RevisionContenido);
+      const siguiente = aplicar(congelado, ext, { tipo: 'tipo_documento', valor: 'factura' }, { tipo: 'precio_venta', lineaId, valor: '20' });
+      expect(siguiente.lineas[0].precioVenta).toBe('20');
+      expect(congelado.lineas[0]).not.toHaveProperty('precioVenta');
+    });
+  });
+
+  describe('resolverPrecioVenta: derived suggestion, user price wins', () => {
+    const resolver = (tipoDocumento: 'factura' | 'nota_entrega' | null, costoNetoUnitario: string | null, precioVenta: string | null = null) =>
+      resolverPrecioVenta({ tipoDocumento, costoNetoUnitario, precioVenta });
+
+    it.each([
+      ['cost 10 delivery note: x1.30', 'nota_entrega', '10.00', '13.00'],
+      ['cost 10 invoice: x1.30 then x1.16', 'factura', '10.00', '15.08'],
+      ['cost 0.1234 delivery note, exact', 'nota_entrega', '0.1234', '0.16042'],
+      ['cost 0.1234 invoice, exact', 'factura', '0.1234', '0.1860872'],
+    ] as const)('%s', (_n, tipo, costo, esperado) => {
+      expect(resolver(tipo, costo)).toEqual({ valor: esperado, origen: 'sugerido' });
+    });
+
+    it('a typed price wins over the suggestion, with or without type and cost', () => {
+      expect(resolver('factura', '10.00', '20')).toEqual({ valor: '20', origen: 'usuario' });
+      expect(resolver(null, null, '20')).toEqual({ valor: '20', origen: 'usuario' });
+    });
+
+    it('yields no suggestion for an unknown type, an unknown cost or a zero cost', () => {
+      expect(resolver(null, '10.00')).toBeNull();
+      expect(resolver('factura', null)).toBeNull();
+      expect(resolver('nota_entrega', '0.00')).toBeNull();
+    });
+
+    it('a literal price survives a cost change while the suggestion follows the cost', () => {
+      expect(resolver('factura', '20.00')).toEqual({ valor: '30.16', origen: 'sugerido' });
+      expect(resolver('factura', '20.00', '20')).toEqual({ valor: '20', origen: 'usuario' });
+    });
+
+    it('is fed by the calculated net unit cost and does not change the calculation', () => {
+      const conTodo = aplicar(base, ext, { tipo: 'tipo_documento', valor: 'factura' }, { tipo: 'precio_venta', lineaId, valor: '20' });
+      expect(costoDe(base)).toBe('10.00');
+      expect(calcularRevision({ extraccion: ext, contenido: conTodo })).toEqual(calcularRevision({ extraccion: ext, contenido: base }));
+      expect(resolver('factura', costoDe(base))).toEqual({ valor: '15.08', origen: 'sugerido' });
+    });
+
+    it('never guesses the document type from the taxes: an invoice line with 16 % VAT and no choice has no suggestion', () => {
+      const calculo = calcularRevision({ extraccion: ext, contenido: base });
+      expect(calculo.lineas[0].tasaIva).toBe('16');
+      expect(resolver(base.cabecera.tipoDocumento ?? null, calculo.lineas[0].costoNetoUnitarioStock)).toBeNull();
+    });
   });
 });
