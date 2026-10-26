@@ -244,3 +244,4 @@ Move the unchanged Producto type to a pure module; retain its public Supabase re
 - L77 — User chose "2" for six hooks; same-Task retry passed; RDD unchanged.
 - L78 — Read-only recalculation from approved source; shared core, no writes or emission.
 - L79 — T6.3.2 report accepted (Temp/t632-design-mvY9tR); caller JWT/RLS + shared core, permission false. Embed/FK and hosted session/config unverified. Endpoint not built.
+- L80 — User, verbatim: "que hacemos ahora?". Next is T6.3.3, read-only server recomputation from stored approved revision; no client financial authority, writes or production activation.
