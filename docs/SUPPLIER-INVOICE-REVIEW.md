@@ -179,6 +179,22 @@ changes the invoice taxes or costs, creates a purchase, changes stock or enables
   pre-discount. Approval remains blocked; a future purchase must not use that suggestion until
   the financial calculation is complete.
 
+## Offline calculator portability proof (no server consumer yet)
+
+`src/lib/facturaRevision.ts` is the single calculation implementation used by the offline
+verifier. From the repository root, run:
+
+```sh
+deno check --no-config --cached-only --no-remote --no-npm src/lib/facturaRevision.ts scripts/verify-factura-calculator.ts
+deno run --no-config --cached-only --no-remote --no-npm scripts/verify-factura-calculator.ts
+node --experimental-strip-types scripts/verify-factura-calculator.ts
+```
+
+The script pins the existing PVP suggestions, exact decimal values, typed-price precedence, and
+unknown-currency block without policy injection. Passing these offline checks verifies the shared
+source module's Deno import/type graph and runtime only. No server endpoint or consumer is selected;
+no hosted approval, purchase authority, deployment, or production validation follows from this proof.
+
 ## Purchase binding and linked-draft guard (local, no caller yet)
 
 An approved revision can be tied to exactly one empty purchase draft. This is source identity

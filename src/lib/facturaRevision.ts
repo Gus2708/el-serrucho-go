@@ -22,15 +22,15 @@ import {
   toDecimalString,
   type Decimal,
   type RoundingMode,
-} from './facturaDecimal';
+} from './facturaDecimal.ts';
 import type {
   ExtraidaLinea,
   ExtraidoDescuento,
   ExtraidoImpuesto,
   FacturaExtraccionPayload,
-} from './facturaExtractionContract';
-import type { LineMatch } from './facturaMatching';
-import { normalizeDecimal } from './facturaProveedor';
+} from './facturaExtractionContract.ts';
+import type { LineMatch } from './facturaMatching.ts';
+import { normalizeDecimal } from './facturaProveedor.ts';
 
 export const REVIEW_SCHEMA = 1;
 export const CALCULO_VERSION = 'calc-v1';
