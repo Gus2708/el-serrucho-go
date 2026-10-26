@@ -55,7 +55,8 @@ Baseline: master d39e626e01d35aec047daca74c54d83dc06609fe includes delivered T3/
 - T6 | S2,S3,S5,S6,S7 | guard verified locally, no emission | financial materialization/client transfer pending; controlled emission only after full T5 | stale/replay/manual-preservation proof required.
 - T6.1 | S2,S6,S7,S16 | Sonnet + independent Opus, Risk1/2/3/4 | VERIFIED LOCALLY: parent73, writer328SQL/typecheck0, independent8 (old2fail), originalR1/D0 and manual33 pass | commite447539,1478authored cohesive guard+tests; RDD OFF; A7 metadata advisory; hosted/2conn unproven.
 - T6.2 | S2,S5-S7,S16,S18 | Sonnet + independent Opus Risk1/2/3/4 | VERIFIED LOCALLY: writer1010unit/190UI/353SQL/types0, parent161, independent161/72UI/259SQL and probes pass | source9b4231d,1084authored; A1 retained/A2 wording fixed; unapplied.
-- T6.3 | S2,S5-S7,S10,S16,S18 | Codex gpt-6-luna read-only map | PREPARING server calculator import/dependency seam; reuse, no client-trust shortcut or emission | no code.
+- T6.3 | S2,S5-S7,S10,S16,S18 | Luna read-only experiment | PROBED: runtime PASS, full check blocked by client type graph; Jest collected0 (preset unresolved) | no source patch or server authority yet.
+- T6.3.1 | S2,S5-S7,S10,S16,S18 | Luna writer: project multi-file rule; fresh Risk3 verifier | IMPLEMENTING pure Producto boundary, explicit imports and offline verifier | baseline RED/Deno/Jest/type parity required.
 - T7 | S2–S7 | planned | NOT STARTED: end-to-end document-to-reviewed-draft acceptance on web/native, with production guards and separately authorized operational POS proof | checks: study acceptance matrix, no inventory change from extraction/review, account isolation, restart/conflicts, measured extraction/matching quality | commit: none.
 - T7.1 | S13 | inline passive preparation | PREPARED: docs/SUPPLIER-INVOICE-EVALUATION.md defines private corpus, human labels, calibration/holdout split, metrics and no-write boundary; no invoices received or run | structural readback,3 links and diff check passed | commit: edb3784.
 
@@ -137,14 +138,18 @@ Add optional, omitted-when-unset cabecera.tipoDocumento (factura/nota_entrega) a
 
 Wire header/line/view with accessible subdued placeholder and normal typed text. Direct Save without blur retains the edit or refuses; invalid text never falls back. Preserve session/dirty/reload guards. Additive SQL retains legacy JSON/fingerprints, grants and warmed save/approval calls; new fields need updated clients. Forecast450-650 advisory, Risk1/2/3/4; own checks then independent verification. No hosted apply.
 
+### T6.3 calculator portability contract
+
+Move the unchanged Producto type to a pure module; retain its public Supabase re-export and use the pure type in matching. Make review/matching local imports explicit .ts. No math, matching outputs, fields, policies, data or SDK behavior changes. Add one offline smoke verifier for existing calculation/PVP/unknown blocks. Require clean Deno check/runtime, legacy Jest/UI/type parity and a fresh Risk3 verifier. New scratch caches/dependencies stay isolated. No endpoint, purchase authority or deployment.
+
 ## Log
 
 - L1 — Original reset request, verbatim: "esta bien mira para seguir, lee de nuevo el estudio de implementacion y ten claro lo que se quiere y mira reinicia el proceso odd me parece que tenemos cosas de sdd guardadas aun, necesito que tengamos todo fresco".
-- L2 — Shipped invoice header/lines/save-ledger/private optional attachment/manualeditor/accountrecovery/version/idempotency foundation. AsyncStorage/localStorage. Extraction/matching/transfer absent then. See [foundation](../../docs/SUPPLIER-INVOICE-REVIEW.md).
-- L3 — The user's historical read-only Hybrid diagnostic observed sent13, previous stock-3, resulting stock10, and financial valuation using all13 units at the recorded unit cost. Original commercial quantity was not independently recoverable. This is evidence of the representation risk, not validation of adjustment-first or free-line alternatives. Preserve the stock outcome and validate the financial path before enabling imported emission.
+- L2 — Persistence/header/lines/save-ledger/private attachment/recovery shipped; extraction and transfer absent then. Detail: Gitd93998d.
+- L3 — Historical sent13/stock-3->10 was valued at13; original invoiceqty unknown. Not adjustment-neutrality proof. Current S5/T5 contract governs; detail Gitd93998d.
 - L4 — No OCRchoice then; provider evidence required. Rejected mapper Gemini1.5/table/SQLite assumptions.
 - L5 — LegacySDD/OpenSpec evidence only, no runtime reset/deletion. CloneRDDOFF. Engramwriteidentity laterrestoredL8.
-- L6 — Unrelated PedidoFabshadow WIP preserved/unverified. WebSentry confirmed; native/productionbuild checks pending.
+- L6 — Unrelated shadow WIP preserved; webSentry checked, native/build proof pending.
 
 - L7 — T0 accepted2026-10-22,nine-doc roadmap/manual/optionalimage reset. Links/structurepass, pre-editsnapshotsabsent. Passiveonly; mirrorlaterrestored.
 - L8 — User, verbatim: "bueno sigue trabajando con la automatizacion, para sub agentes trabaja con luna y gemini 3.8 high". Engram registration is restored and attributed save/readback verified. Resume T1 with a bounded read-only implementation map and current provider research before selecting extraction behavior. Preserve manual entry, optional images and no inventory side effects. Earlier pending registration notes are historical, not current restrictions.
@@ -159,47 +164,47 @@ Wire header/line/view with accessible subdued placeholder and normal typed text.
 - L17 — User designated ignored.env.local OPENROUTER_API_KEY with1USDcap for OpenRouter keylimits/modelmetadata and capped syntheticGemini3.1Lite/3.8comparison. Max8sequentialattempts, enforcecap/responsebounds; no othercredential/endpoint/billing/realdocs. Parentpresencecheck only. Exact literals: "listo".
 - L18 — Evaluator prompt submission was initially unproven. One Enter recovered the same task; no duplicate requests or spend.
 - L19 — 8syntheticPDFcalls,0.059107USD. Lite4/4parservalid0.008242,3.8two/4valid0.050865;2JSONenderrors. Lite provisional; no scanaccuracy/retentionproof/furthercalls. Scorer/scriptlimits retained.
-- L20 — Extraction staging must preserve owner/session/version/save-ledger. User-context private storage read is authorized; no draft overwrite.
-- L21 — Parent rejected transport parser bypass, reflected secrets and wrong image parts; one bounded correction followed.
-- L22 — Transport correction passed128focused/661full/typecheck. Independent verification ran offline; no hosted approval.
-- L23 — Independent53probes and parent128/typecheck accepted local transport only; endpoint and hosted proof remained pending.
+- L20 — Staging preserves owner/session/version/save-ledger; private read only, no draft overwrite.
+- L21 — Transport parser/secret/image defects corrected; full evidence Gitd93998d.
+- L22 — Transport128focused/661unit/types passed locally; hosted unproven.
+- L23 — Independent53 plus parent128/types accepted local transport, not hosted.
 - L24 — Authorized local Supabase CLI/Deno installation only after absence checks. Official user-level sources/checksums and independent smoke check required, Risk5. No Docker, login, link, remote migration, deploy, credentials or inference authorization. User fragments, verbatim: "Dale".
 - L25 — Official user-level Supabase2.121.0/Deno2.9.8 installation was smoke-verified. No Docker/login/remote action; .ts/noEmit fix followed.
-- L26 — Extraction staging uses locked versioned source identity and service-only finalization; local migration only, no financial writes.
-- L27 — Parent RED exposed rounded cost, metadata replay and direct service INSERT. Exact precision, comparison and grants were corrected.
-- L28 — Corrected staging passed34focused/90SQL/661unit/typecheck. Independent data/security/race and Deno checks followed; RDD OFF.
-- L29 — Independent staging/Deno checks passed locally. Session stub limits remain; missing token usage needed a separate null-preserving fix.
-- L30 — Endpoint authenticates UUID/version-only requests, checks stored bytes before provider, avoids replayed inference and rechecks finalization.
-- L31 — Local staging/tooling accepted; hosted activation remained excluded. Endpoint implementation proceeded with strict nullable usage.
+- L26 — Staging locks source identity; service finalization only, no financial writes.
+- L27 — RED exposed cost rounding, replay and service INSERT; exact checks fixed them.
+- L28 — Staging34focused/90SQL/661unit/types passed; independent/Deno followed, RDD OFF.
+- L29 — Independent staging/Deno localPASS; session stubs and nullable-usage caveats.
+- L30 — Endpoint authenticates/version-checks, bounds stored bytes and rechecks finalization.
+- L31 — Local tooling/staging accepted, no hosted activation; nullable usage required.
 - L32 — Exact provider-cost precision was fixed and independently rechecked. Endpoint22/full684/typecheck/Deno passed locally; no hosted activation. Preserved verbatim fragments: "0.000000123"; "0.000850".
-- L33 — T3map scanner/catalog/invoicelines/aliases; preserve literalprintedcodes and distinguish OCR/identityconfidence. No mutations.
+- L33 — Literal codes, OCR evidence and product identity separated; offline matching only.
 
-- L34 — Scanner rawcodes and supplier/productcode separation confirmed. Offline suggestions only. T2 commitsd552c34/68dce5d/0832925/72af86c fast-forwardmaster72af86c withchecks; no forcepush/migration/deploy/inference/POS.
+- L34 — Raw-code separation confirmed; T2 d552c34/68dce5d/0832925/72af86c reached master, no POS/inference. Detail: Gitd93998d.
 - L35 — T3 isolated Sonnet/Haiku; proofs/ownership: Git1c3588d. User, verbatim: "dale, haz eso en paralelo y vamos ahora con el t3"; "termina el t3 usando agentes, tienes sonnet 5.5 para tareas complejas, haiku 5.5 para tareas de codigo basicas, luna 6 high, y modelos inteligentes como opus 5.5 y sol 6.1 para tareas de razonamiento desicion y diseno".
 - L36 — Teardown71a075c fixed GC/notification lifetime. T3 matching proof initially failed AWG, VAC/VDC and conflicting-evidence cases.
 - L37 — T3 correction passed45focused/729full/typecheck and parent UI checks. Suggestions remain unconsumed, offline and never identity authority.
 - L38 — T3 matcher58ed1fe was coherent but oversized; future PR needs an exception, not cosmetic splitting. No publication then.
 - L39 — T4 isolated, Luna map/Opus design; no hosted/POS authority. Detail: Git1c3588d. User, verbatim: "vamos con la siguiente gol el t4 igual que la t3 /goal".
 - L40 — Extraction-client code only, no hosted inference; storage/proof detail: Git1c3588d. User, verbatim: "si".
-- L41 — T4 storage B1 IDs-reset was corrected and independently checked, including rejected-state hashes. e0715fa local; PGlite/session limits remain.
+- L41 — StorageB1 reset-IDs corrected/rechecked, e0715fa local; session/PGlite limits retained.
 - L42 — Historical-invoice evaluation plan prepared while T4 ran. Real documents/labels/execution still pending; no training/upload consent or accuracy proof. Preserve holdout/literal codes/repeated lines.
-- L43 — Independent T4 probes found stale barcode/matches, currency leakage, omitted lines and session defects. One bounded correction followed.
+- L43 — T4 probes found stale barcode/matching, currency/line/session defects; one correction.
 - L44 — Opus takeover completed the final B3 correction and recheck. Original test-first deviation remains disclosed; no operational approval. Preserved verbatim fragments: "mira te queda solo 5% para no parar el trabajo manda a claupe opus 5.5 a terminar la coordinacion de este t4".
 
 - L45 — Offline Chrome DOM checked USD/currency hiding, omitted lines and motivated corrections. Screenshots failed; hydration also failed on baseline login. Preserved verbatim fragments: "si, usa claude in chrome".
 
 - L46 — T3/T4 PRs16-24 merged atd39e626 with verified CI. Hosted review migration/function and release/APK remained outside delivery.
 - L47 — T5 resumed from verified master in isolation; original edits were preserved. No live POS access or T4 restart. Preserved verbatim fragments: "Sigue con t5, pásaselo al coordinador principal lo que hiciste y lo que debemos seguir".
-- L48 — Initial T5 projection preserved unknown identity/stock and distinguished ex-VAT base from debt. Full monetary proof remained pending.
-- L49 — T5 reader/timer corrections passed; independent same-user session-cache failure required sesionGen. External POS proof remained unavailable.
-- L50 — T5 source880811d/9cadeec/cc2a254 passed targeted checks. Remount depends on root cache clear, not proven production auth.
+- L48 — Initial T5 projection preserved unknowns/ex-VAT versus debt; full monetary proof pending.
+- L49 — Reader/timer/session corrections checked; sessionGen needed; POS proof unavailable.
+- L50 — T5 880811d/9cadeec/cc2a254 checked; root cache-clear remount is not production auth proof.
 - L51 — Backend01be482 cloned/hash-checked; authorized Sonnet replaced unavailable Luna. No POS.
 
-- L52 — Source showed the post-commit toggle requeue bug. T5.4 fixed only that behavior, with independent data/race verification.
+- L52 — Post-commit toggle requeue source bug fixed narrowly in T5.4 with independent probes.
 
-- L53 — Backend fix RED/GREEN and differential passed. Worker skill-path failure was disclosed; independent verification used actual paths. Review switches unchanged.
+- L53 — Backend RED/GREEN/differential passed; skill-path failure disclosed; review switch unchanged.
 
-- L54 — Independent307probes confirmed commit-once behavior. Locala5dec0e received terminal native acknowledgement; no publication or POS execution.
+- L54 — Independent307 probes confirmed local a5dec0e commit-once; native acknowledgement burned, no POS/publication.
 
 - L55 — Server disk8files match01be482 (newline-aware), not loaded-module proof; a5dec0e not installed. Process facts user-reported; no remote restart. Detail: Git20fc83d.
 
@@ -232,3 +237,4 @@ Wire header/line/view with accessible subdued placeholder and normal typed text.
 - L72 — User pricing correction, verbatim: "mira hay dos casos 30% + 16% iva y 30% sin iva"; "te explico bien, hay notas dfe entrega y factura, la nota de entrega no aplica iva y la factura si, solo vas a poner la suma como default en opacity bajo para que el usuario lo deje asi es placeholder o ponga el precio que quiera"; "si tenue como placeholder". S18 replaces the pending current-PVP question; numeric13/15.08 example confirmed. Map actual UI/persistence first.
 - L73 — PVP RED19domain/5SQL/25UI, GREEN1010unit/190UI/353SQL/types0; parent161, independent161/72UI/259SQL +10domain/7UI/warm RPC probes PASS. Source9b4231d,1084authored coherent unit. A1 pre-discount suggestion approval-blocked; A2 rollout wording corrected, executable SQL unchanged. Verifier user-owned retained; RDD OFF/no apply.
 - L74 — User, verbatim: "usa workers con codex luna tambien". Use gpt-6-luna via Codex CLI for bounded T6.3 mapping, not gpt-6.1-luna. No production authority.
+- L75 — Deno runtime passed after two copied suffixes; full type-check hit the client SDK and Jest never collected. Select pure-type decoupling and full offline proof, not no-check acceptance. Earlier generated history: Gitd93998d; user quotes preserved.
