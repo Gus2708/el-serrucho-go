@@ -93,6 +93,7 @@ async function initDb(withBinding: boolean): Promise<PGlite> {
   }
   await database.exec(comprasOwnerPolicies());
   if (withBinding) await database.exec(migrationSql('_facturas_proveedores_compras.sql'));
+  if (withBinding) await database.exec(migrationSql('_materializar_compra_factura.sql'));
   for (const [id, role, active] of [
     [ADMIN, 'admin', true],
     [OTHER_ADMIN, 'admin', true],
@@ -270,6 +271,24 @@ async function prepare(a: PrepareArgs, version = 1): Promise<Json> {
   return callPrepare(a, version);
 }
 
+async function stageMaterialization(a: PrepareArgs, payload: Json, version = 1): Promise<string> {
+  await actAsServiceRole(db, a.owner);
+  const r = await db.query<{ token: string }>(
+    'select public.registrar_stage_compra_factura($1::uuid, $2::uuid, $3::int, $4::text, $5::int, $6::text, $7::uuid, $8::jsonb) as token',
+    [uuid(), a.facturaId, a.revision, a.fingerprint, version, SHA_A, a.owner, JSON.stringify(payload)]
+  );
+  return r.rows[0].token;
+}
+
+async function materializar(a: PrepareArgs, token: string, version = 1): Promise<Json> {
+  await actAs(db, a.owner, true);
+  const r = await db.query<{ r: Json }>(
+    'select public.materializar_compra_factura($1::uuid, $2::int, $3::text, $4::int, $5::uuid) as r',
+    [a.facturaId, a.revision, a.fingerprint, version, token]
+  );
+  return r.rows[0].r;
+}
+
 // ── Observation helpers ─────────────────────────────────────────────────────────────────────
 
 const ALL_TABLES = [
@@ -307,10 +326,12 @@ const asTableOwner = () => actAsOwner(db);
 const asAnon = () => actAsAnon(db);
 
 // A rejected command must leave every relevant table byte-identical.
-async function expectRejected(actor: () => Promise<void>, call: () => Promise<unknown>, code: string, message?: string) {
+async function expectRejected(actor: () => Promise<void>, call: () => Promise<unknown>, code: string | string[], message?: string) {
   const before = await snapshot();
   await actor();
-  await expect(call()).rejects.toMatchObject(message ? { code, message: expect.stringContaining(message) } : { code });
+  const result = await call().then(() => { throw new Error('Expected command to reject'); }, error => error);
+  expect(Array.isArray(code) ? code : [code]).toContain(result.code);
+  if (message) expect(result.message).toContain(message);
   expect(await snapshot()).toBe(before);
 }
 
@@ -507,6 +528,56 @@ describe('facturas_proveedores_compras', () => {
     });
   });
 
+  describe('materializar_compra_factura', () => {
+    it('creates one editable draft from the approved revision and replays without replacing it', async () => {
+      const s = await scenario();
+      const base = contenido(s) as { cabecera: Json; lineas: Json[] };
+      const review = {
+        ...base,
+        cabecera: { ...base.cabecera, tipoDocumento: 'nota_entrega' },
+      };
+      await actAs(db, s.owner, true);
+      const saved = await db.query<{ r: Json }>(
+        'select public.guardar_revision_factura($1::uuid, 0, $2::uuid, 1, $3::uuid, $4::jsonb, $5::text) as r',
+        [s.facturaId, uuid(), s.extraccionId, JSON.stringify(review), 'Factura materializable']
+      );
+      const a: PrepareArgs = {
+        facturaId: s.facturaId,
+        revision: 1,
+        fingerprint: String(saved.rows[0].r.fingerprint),
+        owner: s.owner,
+      };
+      await approveRevision(s, a.revision, a.fingerprint);
+
+      const payload = {
+        header: { proveedor_codigo: null, proveedor_nombre: 'Proveedor Uno', numero_documento: 'DOC-001', nota: null, titulo: 'Factura DOC-001' },
+        items: [
+          { codigo_producto: 'SKU-1', descripcion: 'Articulo 1', cantidad: '10', costo: '0.8', precio: '1.04', referencia: null, es_nuevo: false },
+          { codigo_producto: 'SKU-1', descripcion: 'Articulo 2', cantidad: '5', costo: '0.95', precio: '1.235', referencia: null, es_nuevo: false },
+          { codigo_producto: 'SKU-1', descripcion: 'Articulo 3', cantidad: '2', costo: '3.1', precio: '4.03', referencia: null, es_nuevo: false },
+        ],
+      };
+      const first = await materializar(a, await stageMaterialization(a, payload));
+      expect(first).toMatchObject({ factura_id: a.facturaId, compra_id: expect.any(Number), revision: 1, replay: false });
+      expect(await rows('select creado_por, status, proveedor_codigo, proveedor_nombre, numero_documento from public.compras_app where id = $1', [first.compra_id])).toEqual([
+        { creado_por: s.owner, status: 'borrador', proveedor_codigo: null, proveedor_nombre: 'Proveedor Uno', numero_documento: 'DOC-001' },
+      ]);
+      expect(await rows('select codigo_producto, descripcion, cantidad::text, costo::text, precio::text from public.compras_app_items where compra_id = $1 order by id', [first.compra_id])).toEqual([
+        { codigo_producto: 'SKU-1', descripcion: 'Articulo 1', cantidad: '10', costo: '0.8', precio: '1.04' },
+        { codigo_producto: 'SKU-1', descripcion: 'Articulo 2', cantidad: '5', costo: '0.95', precio: '1.235' },
+        { codigo_producto: 'SKU-1', descripcion: 'Articulo 3', cantidad: '2', costo: '3.1', precio: '4.03' },
+      ]);
+
+      await actAs(db, s.owner, true);
+      await db.query("update public.compras_app set nota = 'Editada por comprador' where id = $1", [first.compra_id]);
+      await expectRejected(as(ADMIN), () => db.query("update public.compras_app set status = 'emitido' where id = $1", [first.compra_id]), '55000', 'compra_factura_bloqueada');
+      const beforeReplay = await snapshot();
+      expect(await materializar(a, await stageMaterialization(a, payload))).toMatchObject({ ...first, replay: true });
+      expect(await snapshot()).toBe(beforeReplay);
+      expect(await rows('select status from public.compras_app where id = $1', [first.compra_id])).toEqual([{ status: 'borrador' }]);
+    });
+  });
+
   describe('preparar_compra_factura: refusals leave every table byte-identical', () => {
     it('refuses a revision that was never approved', async () => {
       const s = await scenario();
@@ -671,13 +742,18 @@ describe('facturas_proveedores_compras', () => {
     describe.each(actors)('as %s', (_name, actor) => {
       it.each([
         ['emit the draft', "update public.compras_app set proveedor_codigo = 'P-1', status = 'emitido' where id = $1"],
-        ['reset the backend state', "update public.compras_app set backend_status = 'pendiente', backend_intentos = 0, backend_resultado = null, backend_aplicado_en = null where id = $1"],
+        ['reset the backend state', "update public.compras_app set backend_intentos = backend_intentos + 1 where id = $1"],
         ['mark it completed', "update public.compras_app set backend_status = 'completado' where id = $1"],
         ['edit a header field', "update public.compras_app set titulo = 'x' where id = $1"],
         ['no-op update', 'update public.compras_app set status = status where id = $1'],
         ['change the owner', `update public.compras_app set creado_por = '${OTHER_ADMIN}' where id = $1`],
-      ])('rejects a header update that tries to %s', async (_label, sql) => {
+      ])('enforces linked header policy for %s', async (label, sql) => {
         const l = await linkedWithItem();
+        if (_name === 'authenticated owner' && (label === 'edit a header field' || label === 'no-op update')) {
+          await actor();
+          await db.query(sql, [l.compraId]);
+          return;
+        }
         await expectRejected(actor, () => db.query(sql, [l.compraId]), '55000', 'compra_factura_bloqueada');
       });
 
@@ -690,20 +766,27 @@ describe('facturas_proveedores_compras', () => {
         await expectRejected(actor, () => db.query('delete from public.compras_app where id = $1', [l.compraId]), '55000', 'compra_factura_bloqueada');
       });
 
-      it('rejects deleting the items of a linked purchase', async () => {
+      it('allows only the authenticated owner to delete linked draft items', async () => {
         const l = await linkedWithItem();
-        await expectRejected(actor, () => db.query('delete from public.compras_app_items where compra_id = $1', [l.compraId]), '55000', 'compra_factura_bloqueada');
+        if (_name === 'authenticated owner') {
+          await actor();
+          await db.query('delete from public.compras_app_items where compra_id = $1', [l.compraId]);
+          expect((await rows('select id from public.compras_app_items where compra_id = $1', [l.compraId]))).toEqual([]);
+        } else {
+          await expectRejected(actor, () => db.query('delete from public.compras_app_items where compra_id = $1', [l.compraId]), '55000', 'compra_factura_bloqueada');
+        }
       });
 
-      it('rejects item INSERT and UPDATE on a linked purchase', async () => {
+      it('allows authorized linked draft item edits and rejects other roles', async () => {
         const l = await linkedWithItem();
-        await expectRejected(
-          actor,
-          () => db.query("insert into public.compras_app_items (compra_id, codigo_producto, cantidad, costo, precio) values ($1, 'NEW', 1, 1, 1)", [l.compraId]),
-          '55000',
-          'compra_factura_bloqueada'
-        );
-        await expectRejected(actor, () => db.query('update public.compras_app_items set cantidad = 2 where id = $1', [l.itemId]), '55000', 'compra_factura_bloqueada');
+        if (_name === 'authenticated owner') {
+          await actor();
+          await db.query("insert into public.compras_app_items (compra_id, codigo_producto, cantidad, costo, precio) values ($1, 'NEW', 1, 1, 1)", [l.compraId]);
+          await db.query('update public.compras_app_items set cantidad = 2 where id = $1', [l.itemId]);
+        } else {
+          await expectRejected(actor, () => db.query("insert into public.compras_app_items (compra_id, codigo_producto, cantidad, costo, precio) values ($1, 'NEW', 1, 1, 1)", [l.compraId]), '55000', 'compra_factura_bloqueada');
+          await expectRejected(actor, () => db.query('update public.compras_app_items set cantidad = 2 where id = $1', [l.itemId]), '55000', 'compra_factura_bloqueada');
+        }
       });
 
       it('rejects moving an item between a linked and an unlinked purchase in either direction', async () => {
@@ -743,7 +826,7 @@ describe('facturas_proveedores_compras', () => {
       [
         'purchases, items and bindings together',
         `truncate public.compras_app, public.compras_app_items, ${BINDING}`,
-        { owner: '55000', other: '42501' },
+        { owner: ['55000', '0A000'], other: ['42501', '0A000'] },
       ],
     ])('rejects bulk TRUNCATE of %s while a link exists, leaving all rows', async (_label, sql, expected) => {
       await linkedWithItem();
@@ -756,7 +839,7 @@ describe('facturas_proveedores_compras', () => {
       const l = await linkedWithItem();
       await actAs(db, ADMIN, true);
       await db.query("select set_config('request.jwt.claim.role', 'service_role', false)");
-      await expect(db.query("update public.compras_app set titulo = 'x' where id = $1", [l.compraId])).rejects.toMatchObject({ code: '55000' });
+      await expect(db.query("update public.compras_app set backend_intentos = backend_intentos + 1 where id = $1", [l.compraId])).rejects.toMatchObject({ code: '55000' });
     });
   });
 

@@ -66,6 +66,7 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
     lastSavedAt,
     editingCompraId,
     borradorId,
+    facturaVinculada,
     setProveedor,
     addItem,
     removeItem,
@@ -279,7 +280,11 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
     });
   }
 
-  const canSubmit = isPrivileged && Boolean(proveedorCodigo) && items.length > 0 && !isLoading;
+  const canSubmit = isPrivileged && Boolean(proveedorCodigo) && items.length > 0 && !isLoading && !facturaVinculada;
+
+  useEffect(() => {
+    if (facturaVinculada && borradorId !== null) setFacturasModalVisible(false);
+  }, [facturaVinculada, borradorId]);
 
   function handleDismissEditing(): void {
     if (items.length === 0) {
@@ -589,7 +594,13 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
                 {items.length} ítem{items.length > 1 ? 's' : ''} · {formatUSD(total)}
               </Text>
             </View>
+            {facturaVinculada ? (
+              <View testID="factura-submit-block" style={styles.infoBanner}>
+                <Text style={{ color: colors.text }}>Esta compra vinculada sigue como borrador editable. La emisión está bloqueada hasta resolver la regla de inventario.</Text>
+              </View>
+            ) : null}
             <PressableScale
+              testID="compra-submit"
               style={[
                 styles.submitBtn,
                 { backgroundColor: colors.primary },
@@ -597,6 +608,7 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
               dimmed={!canSubmit}
               onPress={handleSubmit}
               disabled={!canSubmit}
+              accessibilityState={{ disabled: !canSubmit }}
             >
               {isLoading ? (
                 <ActivityIndicator color={colors.onPrimary} />

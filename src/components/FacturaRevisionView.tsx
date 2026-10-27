@@ -7,6 +7,9 @@ import type { FacturaRevisionRepository } from '../lib/facturaRevisionRepository
 import type { CodigoBloqueo, CorreccionesLinea, DecisionCabecera } from '../lib/facturaRevision';
 import { facturaRevisionRepository, useFacturaRevision, type UseFacturaRevisionParams } from '../hooks/useFacturaRevision';
 import { getFacturaSessionUid } from '../hooks/useFacturasProveedor';
+import { supabase } from '../lib/supabase';
+import { notify } from '../lib/notify';
+import { reanudarBorradorCompra } from '../hooks/useBorradores';
 import FacturaRevisionCabecera, { Boton, Entrada, Texto, avisoImporteOculto, formatoUsdExacto } from './FacturaRevisionCabecera';
 import FacturaRevisionLinea from './FacturaRevisionLinea';
 import FacturaRevisionPos from './FacturaRevisionPos';
@@ -75,11 +78,13 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
     newId: props.newId ?? newUuid,
     leerExistencias: props.leerExistencias,
   });
+  const [materializando, setMaterializando] = useState(false);
   const [motivoGuardado, setMotivoGuardado] = useState('');
   const [motivoReemplazo, setMotivoReemplazo] = useState('');
   const [nueva, setNueva] = useState({ descripcion: '', codigo: '', cantidad: '', unidad: '', precio: '', iva: '', motivo: '' });
 
   const { efectiva, calculo, contenido } = control;
+  const puedeMaterializar = control.estadoVisible === 'Validada' && !editorDirty && !control.sucio && calculo?.sinBloqueos === true && control.ultimaFila?.aprobadoEn !== null && control.ultimaFila !== null;
   const numeroPorLinea = new Map(calculo?.lineas.map((l, i) => [l.lineaId, l.numeroLinea ?? `m${i + 1}`]) ?? []);
   const bloqueos = (calculo?.bloqueos ?? []).map(b => {
     const base = BLOQUEOS[b.codigo];
@@ -122,6 +127,25 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
   useEffect(() => {
     onDirtyChange?.(control.sucio || hayBorradorPrecio);
   }, [control.sucio, hayBorradorPrecio, onDirtyChange]);
+
+  async function materializarCompra(): Promise<void> {
+    const revision = control.ultimaFila;
+    if (!revision || !puedeMaterializar || materializando) return;
+    setMaterializando(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('materializar-compra-factura', {
+        body: { facturaId, revision: revision.revision, fingerprint: revision.fingerprint, versionEsperada: revision.facturaVersion },
+      });
+      if (error) throw error;
+      if (!data || !Number.isSafeInteger(data.compraId)) throw new Error('El servidor no devolvi\u00f3 una compra vinculada v\u00e1lida.');
+      await reanudarBorradorCompra(data.compraId);
+      notify('Borrador de compra listo', 'La compra vinculada qued\u00f3 editable. La emisi\u00f3n requiere una acci\u00f3n expl\u00edcita y est\u00e1 bloqueada por la regla de inventario pendiente.');
+    } catch (error) {
+      notify('No se pudo preparar la compra', error instanceof Error ? error.message : 'Error desconocido.');
+    } finally {
+      setMaterializando(false);
+    }
+  }
 
   function agregarRenglonOmitido(): void {
     const motivo = nueva.motivo.trim();
@@ -310,6 +334,12 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
             />
             <Boton testID="revision-aprobar" label="Aprobar revisión" disabled={!control.puedeAprobar || hayBorradorPrecio} onPress={() => void control.aprobar()} />
             <Texto small tone="muted">La aprobación es solo un registro de revisión humana: no es autoridad de compra.</Texto>
+            <Boton
+              testID="revision-materializar"
+              label={materializando ? 'Preparando borrador…' : 'Preparar borrador de compra'}
+              disabled={!puedeMaterializar || materializando}
+              onPress={() => void materializarCompra()}
+            />
           </View>
         </>
       ) : null}
