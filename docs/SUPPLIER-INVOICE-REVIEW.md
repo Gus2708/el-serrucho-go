@@ -192,8 +192,26 @@ node --experimental-strip-types scripts/verify-factura-calculator.ts
 
 The script pins the existing PVP suggestions, exact decimal values, typed-price precedence, and
 unknown-currency block without policy injection. Passing these offline checks verifies the shared
-source module's Deno import/type graph and runtime only. No server endpoint or consumer is selected;
-no hosted approval, purchase authority, deployment, or production validation follows from this proof.
+source module's Deno import/type graph and runtime only. No hosted approval, purchase authority,
+deployment, or production validation follows from this proof.
+
+## Read-only approved-revision recalculation
+
+`POST recalcular-revision-factura` accepts only `facturaId`, `revision`, `fingerprint`, and
+`versionEsperada` (JSON body at most 4 KiB). The function validates the Bearer identity through
+`/auth/v1/user`, then makes one PostgREST `GET` with that caller JWT and `SUPABASE_ANON_KEY`; the
+existing owner, privileged-role, and valid-session RLS policies govern the invoice, latest
+revision, and referenced extraction. It checks the requested identity, approval, invoice/revision
+version and document SHA, extraction identity/status/hash/parse, and the stored revision shape
+before calling `validarContenidoRevision` and `calcularRevision` with production defaults.
+
+The response contains only source identity, calculation version, currency/totals, blockers, and a
+read-time snapshot marker. It omits document lines and supplier details, sets `Cache-Control:
+no-store`, and always returns `permisoImportacion: false`. A 404 uses the same fixed body for absent
+and RLS-hidden sources; visible stale identity is 409 and malformed stored source is 422. The
+embedded PostgREST read is one API request/statement snapshot, not a transaction spanning future
+requests; any later consumer must revalidate source identity. This endpoint never creates a
+purchase or grants emission authority.
 
 ## Purchase binding and linked-draft guard (local, no caller yet)
 
