@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   createFacturaRevisionRepository,
   RevisionRepositoryError,
@@ -9,6 +10,8 @@ import {
 import { supabase } from '../lib/supabase';
 import { parseFacturaExtraction, type FacturaExtraccionPayload } from '../lib/facturaExtractionContract';
 import { matchInvoiceLines, type LineMatch } from '../lib/facturaMatching';
+import { evaluarRepresentacionPos, type RepresentacionPos } from '../lib/compraRepresentacionPos';
+import { fetchExistenciasEstrictas, type ExistenciasEstrictas } from '../lib/facturaExistencias';
 import {
   aplicarEdicion,
   asociacionDesdeCandidato,
@@ -38,6 +41,9 @@ export type EstadoVisible =
 
 export type CargaRevision = 'cargando' | 'listo' | 'no_disponible' | 'error' | 'sin_sesion';
 
+/** State of the Hybrid stock snapshot: `no_aplica` while there is nothing to read (blocked review, no confirmed SKU, no session). */
+export type EstadoExistencias = 'no_aplica' | 'pendiente' | 'error' | 'listo';
+
 export interface AvisoRevision {
   readonly tipo: 'ok' | 'warning' | 'error';
   readonly texto: string;
@@ -57,6 +63,8 @@ export interface UseFacturaRevisionParams {
    * same account). Returns the unsubscribe function. Defaults to the Supabase auth listener.
    */
   readonly suscribirCierreSesion?: (alCerrarSesion: () => void) => () => void;
+  /** Reads Hybrid stock for the confirmed SKUs of an unblocked review. Defaults to the strict reader: a NULL or unreadable stock stays unknown, never zero. */
+  readonly leerExistencias?: (codigos: string[]) => Promise<ExistenciasEstrictas>;
 }
 
 type AuthListener = (evento: string) => void;
@@ -123,6 +131,16 @@ function historicalIds(revisiones: readonly RevisionRow[], extraccionId: string)
     }
   }
   return ids;
+}
+
+/** Sorted, unique internal codes of the confirmed products. Independent of blockers so a transient one never changes the read key. */
+function codigosConfirmados(calculo: CalculoRevision | null): string[] {
+  if (!calculo) return [];
+  const codigos = new Set<string>();
+  for (const { decisionAsociacion } of calculo.lineas) {
+    if (decisionAsociacion.tipo === 'confirmado' && decisionAsociacion.codigoInterno !== null) codigos.add(decisionAsociacion.codigoInterno);
+  }
+  return [...codigos].sort();
 }
 
 function isUsable(row: ExtraccionRow, documentoSha256: string | null): boolean {
@@ -385,6 +403,32 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
   })();
 
   const sesionOk = params.getSessionUid() === ownerId;
+
+  // Read-only Hybrid stock snapshot for the confirmed SKUs, read only while the review has no blockers. The key carries
+  // the account, invoice, session generation and SKU set (never the blocker state), so a snapshot is not inherited from
+  // another invoice or a previous session of the same account and typing never re-reads; a result requested under an
+  // older generation lands under its own key and is never shown. A failed or pending read stays unknown (never zero)
+  // and nothing retries or reloads on its own.
+  const codigosStock = codigosConfirmados(calculo);
+  const leerStock = sesionOk && calculo?.sinBloqueos === true && codigosStock.length > 0;
+  const lecturaExistencias = useQuery({
+    queryKey: ['factura-revision-existencias', ownerId, facturaId, sesionGen, codigosStock],
+    queryFn: () => (live.current.leerExistencias ?? fetchExistenciasEstrictas)(codigosStock),
+    enabled: leerStock,
+    staleTime: 30_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const estadoExistencias: EstadoExistencias = !leerStock ? 'no_aplica' : lecturaExistencias.isSuccess ? 'listo' : lecturaExistencias.isError ? 'error' : 'pendiente';
+  // The observed time of the query result, never the evaluation time.
+  const lecturaExistenciasEn = estadoExistencias === 'listo' && lecturaExistencias.dataUpdatedAt > 0 ? new Date(lecturaExistencias.dataUpdatedAt).toISOString() : null;
+  const existenciasLeidas = estadoExistencias === 'listo' ? lecturaExistencias.data : undefined;
+  const representacionPos: RepresentacionPos | null = useMemo(
+    () => (calculo && efectiva && sesionOk && estado.carga === 'listo' ? evaluarRepresentacionPos({ calculo, efectiva, existencias: existenciasLeidas ?? {}, lecturaExistenciasEn }) : null),
+    [calculo, efectiva, sesionOk, estado.carga, existenciasLeidas, lecturaExistenciasEn]
+  );
+
   const puedeExtraer = sesionOk && documentoSha256 !== null && facturaVersion >= 1 && !editorDirty && estado.ocupado === null && (estado.carga === 'listo' || estado.carga === 'error');
   const razonNoExtraer: string | null = !sesionOk
     ? 'Inicia sesión con la cuenta de esta factura.'
@@ -572,6 +616,8 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
     extraccion: estado.extraccion,
     efectiva,
     calculo,
+    representacionPos,
+    estadoExistencias,
     estadoVisible,
     sucio,
     ultimaFila,

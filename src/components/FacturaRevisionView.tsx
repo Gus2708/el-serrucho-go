@@ -1,14 +1,18 @@
 import * as React from 'react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 import { newUuid } from '../lib/facturaDocumentoPicker';
 import type { FacturaRevisionRepository } from '../lib/facturaRevisionRepository';
 import type { CodigoBloqueo, CorreccionesLinea, DecisionCabecera } from '../lib/facturaRevision';
-import { facturaRevisionRepository, useFacturaRevision } from '../hooks/useFacturaRevision';
+import { facturaRevisionRepository, useFacturaRevision, type UseFacturaRevisionParams } from '../hooks/useFacturaRevision';
 import { getFacturaSessionUid } from '../hooks/useFacturasProveedor';
+import { supabase } from '../lib/supabase';
+import { notify } from '../lib/notify';
+import { reanudarBorradorCompra } from '../hooks/useBorradores';
 import FacturaRevisionCabecera, { Boton, Entrada, Texto, avisoImporteOculto, formatoUsdExacto } from './FacturaRevisionCabecera';
 import FacturaRevisionLinea from './FacturaRevisionLinea';
+import FacturaRevisionPos from './FacturaRevisionPos';
 
 export interface FacturaRevisionViewProps {
   facturaId: string;
@@ -22,6 +26,8 @@ export interface FacturaRevisionViewProps {
   getSessionUid?: () => string | null;
   newId?: () => string;
   onDirtyChange?: (dirty: boolean) => void;
+  /** Stock reader for the read-only Hybrid impact; defaults to the shared `fetchExistencias`. */
+  leerExistencias?: UseFacturaRevisionParams['leerExistencias'];
 }
 
 const BLOQUEOS: Record<CodigoBloqueo, string> = {
@@ -70,16 +76,15 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
     editorDirty,
     getSessionUid: props.getSessionUid ?? getFacturaSessionUid,
     newId: props.newId ?? newUuid,
+    leerExistencias: props.leerExistencias,
   });
+  const [materializando, setMaterializando] = useState(false);
   const [motivoGuardado, setMotivoGuardado] = useState('');
   const [motivoReemplazo, setMotivoReemplazo] = useState('');
   const [nueva, setNueva] = useState({ descripcion: '', codigo: '', cantidad: '', unidad: '', precio: '', iva: '', motivo: '' });
 
-  useEffect(() => {
-    onDirtyChange?.(control.sucio);
-  }, [control.sucio, onDirtyChange]);
-
   const { efectiva, calculo, contenido } = control;
+  const puedeMaterializar = control.estadoVisible === 'Validada' && !editorDirty && !control.sucio && calculo?.sinBloqueos === true && control.ultimaFila?.aprobadoEn !== null && control.ultimaFila !== null;
   const numeroPorLinea = new Map(calculo?.lineas.map((l, i) => [l.lineaId, l.numeroLinea ?? `m${i + 1}`]) ?? []);
   const bloqueos = (calculo?.bloqueos ?? []).map(b => {
     const base = BLOQUEOS[b.codigo];
@@ -96,6 +101,51 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
   const motivoOk = motivoReemplazo.trim() !== '';
   const esUsd = calculo?.moneda === 'USD';
   const oculto = avisoImporteOculto(calculo?.moneda ?? null);
+
+  // PVP text that cannot be stored (see FacturaRevisionLinea), per line. It dies with the context it was typed in:
+  // another invoice, a reload, a lost session or a currency whose amounts are hidden.
+  const [borradoresPrecio, setBorradoresPrecio] = useState<Record<string, string>>({});
+  const setBorradorPrecio = useCallback((lineaId: string, texto: string | null): void => {
+    setBorradoresPrecio(actual => {
+      if (texto === null) {
+        if (!(lineaId in actual)) return actual;
+        const resto = { ...actual };
+        delete resto[lineaId];
+        return resto;
+      }
+      return actual[lineaId] === texto ? actual : { ...actual, [lineaId]: texto };
+    });
+  }, []);
+  const descartarBorradoresPrecio = (): void => setBorradoresPrecio({});
+  const sinContextoPrecio = control.carga !== 'listo' || contenido === null || !esUsd;
+  useEffect(() => {
+    if (sinContextoPrecio) setBorradoresPrecio(actual => (Object.keys(actual).length === 0 ? actual : {}));
+  }, [sinContextoPrecio]);
+  const lineasConBorrador = efectiva && esUsd ? efectiva.lineas.filter(l => borradoresPrecio[l.lineaId] !== undefined) : [];
+  const hayBorradorPrecio = lineasConBorrador.length > 0;
+
+  useEffect(() => {
+    onDirtyChange?.(control.sucio || hayBorradorPrecio);
+  }, [control.sucio, hayBorradorPrecio, onDirtyChange]);
+
+  async function materializarCompra(): Promise<void> {
+    const revision = control.ultimaFila;
+    if (!revision || !puedeMaterializar || materializando) return;
+    setMaterializando(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('materializar-compra-factura', {
+        body: { facturaId, revision: revision.revision, fingerprint: revision.fingerprint, versionEsperada: revision.facturaVersion },
+      });
+      if (error) throw error;
+      if (!data || !Number.isSafeInteger(data.compraId)) throw new Error('El servidor no devolvi\u00f3 una compra vinculada v\u00e1lida.');
+      await reanudarBorradorCompra(data.compraId);
+      notify('Borrador de compra listo', 'La compra vinculada qued\u00f3 editable. La emisi\u00f3n requiere una acci\u00f3n expl\u00edcita y est\u00e1 bloqueada por la regla de inventario pendiente.');
+    } catch (error) {
+      notify('No se pudo preparar la compra', error instanceof Error ? error.message : 'Error desconocido.');
+    } finally {
+      setMaterializando(false);
+    }
+  }
 
   function agregarRenglonOmitido(): void {
     const motivo = nueva.motivo.trim();
@@ -126,7 +176,7 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
       {control.carga === 'error' ? (
         <View testID="revision-error" style={styles.bloque}>
           <Texto tone="danger">{RAZON_CARGA.error}</Texto>
-          <Boton testID="revision-reintentar" label="Reintentar lectura" onPress={() => void control.recargar()} />
+          <Boton testID="revision-reintentar" label="Reintentar lectura" onPress={() => { descartarBorradoresPrecio(); void control.recargar(); }} />
         </View>
       ) : null}
 
@@ -136,7 +186,7 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
         </View>
       ) : null}
       {control.conflicto ? (
-        <Boton testID="revision-recargar" label="Recargar versión del servidor (descarta mis cambios sin guardar)" danger onPress={() => void control.recargar()} />
+        <Boton testID="revision-recargar" label="Recargar versión del servidor (descarta mis cambios sin guardar)" danger onPress={() => { descartarBorradoresPrecio(); void control.recargar(); }} />
       ) : null}
 
       <View style={styles.bloque}>
@@ -157,7 +207,7 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
         ) : null}
         {control.extraccionesUsables.map(fila =>
           contenido === null ? (
-            <Boton key={fila.id} testID={`revision-iniciar-${fila.id}`} label="Iniciar revisión con esta extracción" onPress={() => control.aplicarExtraccion(fila.id, null)} />
+            <Boton key={fila.id} testID={`revision-iniciar-${fila.id}`} label="Iniciar revisión con esta extracción" onPress={() => { descartarBorradoresPrecio(); control.aplicarExtraccion(fila.id, null); }} />
           ) : fila.id !== contenido.extraccion_id ? (
             <Boton
               key={fila.id}
@@ -165,7 +215,10 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
               label="Aplicar esta extracción"
               disabled={!motivoOk}
               onPress={() => {
-                if (control.aplicarExtraccion(fila.id, motivoReemplazo).ok) setMotivoReemplazo('');
+                if (control.aplicarExtraccion(fila.id, motivoReemplazo).ok) {
+                  setMotivoReemplazo('');
+                  descartarBorradoresPrecio();
+                }
               }}
             />
           ) : null
@@ -174,7 +227,7 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
 
       {contenido && efectiva && calculo ? (
         <>
-          <FacturaRevisionCabecera efectiva={efectiva} decisiones={decisiones} calculo={calculo} onEditar={control.editar} />
+          <FacturaRevisionCabecera efectiva={efectiva} decisiones={decisiones} tipoDocumento={contenido.cabecera.tipoDocumento ?? null} calculo={calculo} onEditar={control.editar} />
           <Texto tone="primary">{`RENGLONES (${efectiva.lineas.length})`}</Texto>
           {control.catalogoParcial ? <Texto small tone="warning">Catálogo parcial: la lectura se acotó o falló, así que la ausencia de un producto no prueba que no exista.</Texto> : null}
           {efectiva.lineas.map((linea, index) => {
@@ -193,6 +246,10 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
                 moneda={calculo.moneda}
                 esUsd={esUsd}
                 estadoBarras={control.estadosBarras[linea.lineaId]}
+                tipoDocumento={contenido.cabecera.tipoDocumento ?? null}
+                precioVenta={contenido.lineas.find(l => l.lineaId === linea.lineaId)?.precioVenta ?? null}
+                borradorPrecio={borradoresPrecio[linea.lineaId]}
+                onBorradorPrecio={setBorradorPrecio}
                 onEditar={control.editar}
                 onElegirCandidato={codigo => control.elegirCandidato(linea.numeroLinea ?? 0, linea.lineaId, codigo)}
               />
@@ -248,6 +305,10 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
             <Texto testID="revision-pos" small tone="muted">POS: no verificado. La precisión y la emisión al POS no están verificadas.</Texto>
           </View>
 
+          {control.representacionPos ? (
+            <FacturaRevisionPos representacion={control.representacionPos} estadoExistencias={control.estadoExistencias} moneda={calculo.moneda} />
+          ) : null}
+
           <View testID="revision-bloqueos" style={styles.bloque}>
             <Texto tone="primary">BLOQUEOS</Texto>
             {bloqueos.length === 0 ? <Texto tone="success">Sin bloqueos</Texto> : bloqueos.map((texto, i) => <Texto key={i} tone="warning">{`• ${texto}`}</Texto>)}
@@ -255,18 +316,30 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
 
           <View style={styles.bloque}>
             <Entrada testID="revision-motivo-guardado" label="Motivo de esta revisión (opcional)" value={motivoGuardado} onChangeText={setMotivoGuardado} />
+            {hayBorradorPrecio ? (
+              <Texto testID="revision-pvp-pendiente" tone="danger">
+                {`Corrige el precio de venta del renglón ${lineasConBorrador.map(l => numeroPorLinea.get(l.lineaId) ?? '').join(', ')} (o bórralo para usar el sugerido) antes de guardar o aprobar.`}
+              </Texto>
+            ) : null}
             <Boton
               testID="revision-guardar"
               label={control.ocupado === 'guardando' ? 'Guardando…' : 'Guardar revisión'}
-              disabled={!control.puedeGuardar}
+              disabled={!control.puedeGuardar || hayBorradorPrecio}
               onPress={() => {
+                if (hayBorradorPrecio) return;
                 void control.guardar(motivoGuardado).then(guardada => {
                   if (guardada) setMotivoGuardado('');
                 });
               }}
             />
-            <Boton testID="revision-aprobar" label="Aprobar revisión" disabled={!control.puedeAprobar} onPress={() => void control.aprobar()} />
+            <Boton testID="revision-aprobar" label="Aprobar revisión" disabled={!control.puedeAprobar || hayBorradorPrecio} onPress={() => void control.aprobar()} />
             <Texto small tone="muted">La aprobación es solo un registro de revisión humana: no es autoridad de compra.</Texto>
+            <Boton
+              testID="revision-materializar"
+              label={materializando ? 'Preparando borrador…' : 'Preparar borrador de compra'}
+              disabled={!puedeMaterializar || materializando}
+              onPress={() => void materializarCompra()}
+            />
           </View>
         </>
       ) : null}

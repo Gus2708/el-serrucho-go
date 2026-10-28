@@ -101,6 +101,15 @@ Modelo de tres niveles para quién puede disparar el write-back:
   pidiendo recrear el item; asegurar que `existencia_actual` siempre viaje en el
   insert.
 
+- **Compras vinculadas a una factura de proveedor:** una fila de `compras_app` creada por
+  `preparar_compra_factura` (tabla `facturas_proveedores_compras`) queda bloqueada para todos los
+  roles, incluidos `service_role` y el dueño de la tabla: no admite UPDATE, DELETE, TRUNCATE ni cambios
+  en sus items, por lo que nunca pasa a `emitido` y el listener (`status=emitido`) no la ve. Las compras
+  manuales y heredadas no cambian. Un item que entra en una compra (INSERT o cambio de `compra_id`)
+  exige antes que la compra destino sea visible y la bloquea (`FOR KEY SHARE`); si no es visible se
+  rechaza con el mismo error de siempre (`23503` para quien omite RLS, `42501` para el dueño
+  autenticado). Probado en PGlite de una sola conexión (emulación determinista, no concurrencia real). Detalle en `docs/SUPPLIER-INVOICE-REVIEW.md`.
+
 ## Referencias
 
 - Backend/motor: `backend serrucho/hybrid_writeback/README.md` (pipeline, seguridad,

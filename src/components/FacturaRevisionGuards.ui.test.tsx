@@ -80,6 +80,8 @@ let idCounter = 0;
 const newId = () => `90000000-0000-4000-8000-${String(++idCounter).padStart(12, '0')}`;
 
 const DOC = { path: `${OWNER_A}/${FACTURA_1}/d.pdf`, mime: 'application/pdf', sha256: SHA, nombre: 'factura.pdf' };
+// These guards never inspect the Hybrid impact; an empty snapshot keeps the stock read off the retrying default reader.
+const sinExistencias = async () => ({});
 
 function viewProps(repo: Mocks, over: Partial<FacturaRevisionViewProps> = {}): FacturaRevisionViewProps {
   return {
@@ -91,6 +93,7 @@ function viewProps(repo: Mocks, over: Partial<FacturaRevisionViewProps> = {}): F
     repository: repo as unknown as FacturaRevisionRepository,
     getSessionUid: () => OWNER_A,
     newId,
+    leerExistencias: sinExistencias,
     ...over,
   };
 }
@@ -162,7 +165,7 @@ function Hook(p: UseFacturaRevisionParams) {
   return null;
 }
 function hookProps(repo: Mocks, over: Partial<UseFacturaRevisionParams> = {}): UseFacturaRevisionParams {
-  return { repository: repo as unknown as FacturaRevisionRepository, facturaId: FACTURA_1, ownerId: OWNER_A, facturaVersion: 3, documentoSha256: SHA, editorDirty: false, getSessionUid: () => OWNER_A, newId, ...over };
+  return { repository: repo as unknown as FacturaRevisionRepository, facturaId: FACTURA_1, ownerId: OWNER_A, facturaVersion: 3, documentoSha256: SHA, editorDirty: false, getSessionUid: () => OWNER_A, newId, leerExistencias: sinExistencias, ...over };
 }
 async function mountHook(repo: Mocks, over: Partial<UseFacturaRevisionParams> = {}) {
   const view = renderWithProviders(<Hook {...hookProps(repo, over)} />);

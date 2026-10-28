@@ -22,15 +22,15 @@ import {
   toDecimalString,
   type Decimal,
   type RoundingMode,
-} from './facturaDecimal';
+} from './facturaDecimal.ts';
 import type {
   ExtraidaLinea,
   ExtraidoDescuento,
   ExtraidoImpuesto,
   FacturaExtraccionPayload,
-} from './facturaExtractionContract';
-import type { LineMatch } from './facturaMatching';
-import { normalizeDecimal } from './facturaProveedor';
+} from './facturaExtractionContract.ts';
+import type { LineMatch } from './facturaMatching.ts';
+import { normalizeDecimal } from './facturaProveedor.ts';
 
 export const REVIEW_SCHEMA = 1;
 export const CALCULO_VERSION = 'calc-v1';
@@ -59,6 +59,9 @@ export type LineaCampoEscalar =
   | 'total';
 
 export type DecisionCabecera = 'precioIncluyeIva' | 'recepcionCompleta' | 'documentoCompletoConfirmado';
+
+/** Human choice that selects the PVP markup. Absent means unknown: it is never inferred from taxes or the file name. */
+export type TipoDocumento = 'factura' | 'nota_entrega';
 
 export interface Correccion<T> {
   readonly valor: T;
@@ -95,6 +98,8 @@ export interface LineaRevision {
   readonly factorConversion: string | null;
   readonly asociacion: AsociacionRevision;
   readonly codigoBarras: { readonly usarCodigoFactura: boolean };
+  /** Optional, omitted when unset: a positive PVP typed by the user. A suggestion is never stored here. */
+  readonly precioVenta?: string;
 }
 
 export interface CabeceraRevision {
@@ -103,6 +108,8 @@ export interface CabeceraRevision {
   readonly precioIncluyeIva: boolean | null;
   readonly recepcionCompleta: boolean | null;
   readonly documentoCompletoConfirmado: boolean | null;
+  /** Optional, omitted when unset. */
+  readonly tipoDocumento?: TipoDocumento;
 }
 
 export interface RevisionContenido {
@@ -154,6 +161,7 @@ const LONGITUDES: Readonly<Record<string, number>> = {
   unidad: 40,
   descripcion: 500,
 };
+const TIPOS_DOCUMENTO: readonly string[] = ['factura', 'nota_entrega'];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_LINEAS_REVISION = 500;
 const MAX_LISTA = 20;
@@ -164,10 +172,14 @@ function isPlain(value: unknown): value is Plain {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function exactKeys(value: unknown, keys: readonly string[]): value is Plain {
+function tieneClave(value: Plain, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+/** Every `keys` entry is present and nothing else, except the `opcionales` keys, which may appear or not. */
+function exactKeys(value: unknown, keys: readonly string[], opcionales: readonly string[] = []): value is Plain {
   if (!isPlain(value)) return false;
-  const actual = Object.keys(value);
-  return actual.length === keys.length && keys.every(key => Object.prototype.hasOwnProperty.call(value, key));
+  return keys.every(key => tieneClave(value, key)) && Object.keys(value).every(key => keys.includes(key) || opcionales.includes(key));
 }
 
 function longitud(text: string): number {
@@ -203,6 +215,11 @@ function valorEscalarValido(campo: string, valor: unknown): boolean {
   if (campo === 'moneda') return /^[A-Z]{3}$/.test(valor);
   const max = LONGITUDES[campo] ?? 500;
   return longitud(valor) >= 1 && longitud(valor) <= max;
+}
+
+/** Same bounds as the other decimals, and strictly positive. */
+export function precioVentaValido(valor: unknown): boolean {
+  return typeof valor === 'string' && /^[0-9]{1,12}(\.[0-9]{1,8})?$/.test(valor) && /[1-9]/.test(valor);
 }
 
 function listaDescuentosValida(valor: unknown): boolean {
@@ -294,7 +311,8 @@ export function validarContenidoRevision(
 
   const cabecera = contenido.cabecera;
   if (
-    !exactKeys(cabecera, ['correcciones', 'tasaConfirmada', 'precioIncluyeIva', 'recepcionCompleta', 'documentoCompletoConfirmado']) ||
+    !exactKeys(cabecera, ['correcciones', 'tasaConfirmada', 'precioIncluyeIva', 'recepcionCompleta', 'documentoCompletoConfirmado'], ['tipoDocumento']) ||
+    (tieneClave(cabecera, 'tipoDocumento') && !TIPOS_DOCUMENTO.includes(cabecera.tipoDocumento as string)) ||
     cabecera.tasaConfirmada !== null ||
     [cabecera.precioIncluyeIva, cabecera.recepcionCompleta, cabecera.documentoCompletoConfirmado].some(
       v => v !== null && typeof v !== 'boolean'
@@ -313,9 +331,10 @@ export function validarContenidoRevision(
   for (let index = 0; index < lineas.length; index += 1) {
     const ruta = `lineas[${index}]`;
     const linea: unknown = lineas[index];
-    if (!exactKeys(linea, ['lineaId', 'origen', 'correcciones', 'factorConversion', 'asociacion', 'codigoBarras'])) {
+    if (!exactKeys(linea, ['lineaId', 'origen', 'correcciones', 'factorConversion', 'asociacion', 'codigoBarras'], ['precioVenta'])) {
       return fallo(ruta, 'claves de renglon');
     }
+    if (tieneClave(linea, 'precioVenta') && !precioVentaValido(linea.precioVenta)) return fallo(`${ruta}.precioVenta`, 'precio de venta invalido');
     if (typeof linea.lineaId !== 'string' || !UUID_RE.test(linea.lineaId) || ids.has(linea.lineaId)) {
       return fallo(`${ruta}.lineaId`, 'UUID invalido o repetido');
     }
@@ -435,6 +454,8 @@ export type Edicion =
   | { readonly tipo: 'revertir_cabecera'; readonly campo: CabeceraCampoEscalar | 'descuentos' | 'impuestos' }
   | { readonly tipo: 'revertir_linea'; readonly lineaId: string; readonly campo: LineaCampoEscalar | 'descuentos' }
   | { readonly tipo: 'decision_cabecera'; readonly campo: DecisionCabecera; readonly valor: boolean | null }
+  | { readonly tipo: 'tipo_documento'; readonly valor: TipoDocumento | null }
+  | { readonly tipo: 'precio_venta'; readonly lineaId: string; readonly valor: string | null }
   | { readonly tipo: 'factor_conversion'; readonly lineaId: string; readonly valor: string | null }
   | { readonly tipo: 'asociacion'; readonly lineaId: string; readonly asociacion: AsociacionRevision }
   | { readonly tipo: 'codigo_barras'; readonly lineaId: string; readonly usarCodigoFactura: boolean }
@@ -519,6 +540,12 @@ export function aplicarEdicion(
       break;
     case 'decision_cabecera':
       siguiente = { ...contenido, cabecera: { ...contenido.cabecera, [edicion.campo]: edicion.valor } };
+      break;
+    case 'tipo_documento':
+      siguiente = { ...contenido, cabecera: edicion.valor === null ? quitarClave(contenido.cabecera, 'tipoDocumento') : { ...contenido.cabecera, tipoDocumento: edicion.valor } };
+      break;
+    case 'precio_venta':
+      siguiente = actualizarLinea(edicion.lineaId, l => (edicion.valor === null ? quitarClave(l, 'precioVenta') : { ...l, precioVenta: edicion.valor }));
       break;
     case 'factor_conversion':
       siguiente = actualizarLinea(edicion.lineaId, l => ({ ...l, factorConversion: edicion.valor }));
@@ -1179,6 +1206,35 @@ export function calcularRevision(input: {
     bloqueos,
     sinBloqueos: bloqueos.length === 0,
   };
+}
+
+// ── PVP suggestion (derived, never stored) ──────────────────────────────────
+
+const MARGEN_PVP = parseDecimal('1.30') as Decimal;
+const FACTOR_IVA_PVP = parseDecimal('1.16') as Decimal;
+
+export interface PrecioVentaResuelto {
+  readonly valor: string;
+  readonly origen: 'usuario' | 'sugerido';
+}
+
+/**
+ * The PVP that applies to a line. A typed price always wins. Otherwise the suggestion is the exact net unit cost
+ * with a 30 % markup (not margin), plus a sequential x1.16 for an invoice; a delivery note carries no VAT. Without a
+ * chosen document type or a known cost there is no suggestion. Display and review aid only: no rounding rule is
+ * approved, nothing here is persisted, and a later purchase step must recompute from the approved data.
+ */
+export function resolverPrecioVenta(input: {
+  readonly tipoDocumento: TipoDocumento | null;
+  readonly costoNetoUnitario: string | null;
+  readonly precioVenta: string | null;
+}): PrecioVentaResuelto | null {
+  if (input.precioVenta !== null) return { valor: input.precioVenta, origen: 'usuario' };
+  const costo = input.costoNetoUnitario === null ? null : parseDecimal(input.costoNetoUnitario);
+  if (input.tipoDocumento === null || costo === null) return null;
+  const conMargen = mulDecimal(costo, MARGEN_PVP);
+  const sugerido = input.tipoDocumento === 'factura' ? mulDecimal(conMargen, FACTOR_IVA_PVP) : conMargen;
+  return isZeroDecimal(sugerido) ? null : { valor: toDecimalString(sugerido, 2), origen: 'sugerido' };
 }
 
 // ── Review state ────────────────────────────────────────────────────────────

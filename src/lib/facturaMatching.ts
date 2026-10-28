@@ -1,5 +1,5 @@
-import type { ExtraidaLinea } from './facturaExtractionContract';
-import type { Producto } from './supabase';
+import type { ExtraidaLinea } from './facturaExtractionContract.ts';
+import type { Producto } from './producto.ts';
 
 export const MATCHING_NORMALIZATION_VERSION = 'matching-v1';
 

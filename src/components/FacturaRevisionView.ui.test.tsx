@@ -1,6 +1,9 @@
 import * as React from 'react';
+import { StyleSheet } from 'react-native';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react-native';
 import FacturaRevisionView, { type FacturaRevisionViewProps } from './FacturaRevisionView';
+import { supabase } from '../lib/supabase';
+import { reanudarBorradorCompra } from '../hooks/useBorradores';
 import {
   RevisionRepositoryError,
   type ExtraccionRow,
@@ -11,8 +14,10 @@ import {
 import { crearRevisionDesdeExtraccion, aplicarEdicion, type RevisionContenido } from '../lib/facturaRevision';
 import type { FacturaExtraccionPayload } from '../lib/facturaExtractionContract';
 import { OWNER_A, OWNER_B, FACTURA_1, renderWithProviders, settle } from '../test-utils/facturaUiHarness';
+import { elSerrucho } from '../theme/brands/el-serrucho';
 
-jest.mock('../lib/supabase', () => ({ supabase: {} }));
+jest.mock('../lib/supabase', () => ({ supabase: { functions: { invoke: jest.fn() } } }));
+jest.mock('../hooks/useBorradores', () => ({ reanudarBorradorCompra: jest.fn() }));
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: require('../test-utils/facturaUiHarness').asyncStorage,
@@ -74,6 +79,9 @@ function fakeRepo(over: Partial<Mocks> = {}): Mocks {
 let idCounter = 0;
 const newId = () => `90000000-0000-4000-8000-${String(++idCounter).padStart(12, '0')}`;
 
+// The review reads Hybrid stock once it has no blockers; this suite does not exercise stock, so the read is a local fake.
+const sinExistencias = async () => ({});
+
 const DOC = { path: `${OWNER_A}/${FACTURA_1}/d.pdf`, mime: 'application/pdf', sha256: SHA, nombre: 'factura.pdf' };
 
 function props(repo: Mocks, over: Partial<FacturaRevisionViewProps> = {}): FacturaRevisionViewProps {
@@ -86,6 +94,7 @@ function props(repo: Mocks, over: Partial<FacturaRevisionViewProps> = {}): Factu
     repository: repo as unknown as FacturaRevisionRepository,
     getSessionUid: () => OWNER_A,
     newId,
+    leerExistencias: sinExistencias,
     ...over,
   };
 }
@@ -110,6 +119,14 @@ const textOf = (id: string): string => {
   return parts.join('');
 };
 const isDisabled = (id: string): boolean => Boolean(byId(id).props.accessibilityState?.disabled);
+
+const invokeMaterializar = jest.mocked(supabase.functions.invoke);
+const reanudarCompra = jest.mocked(reanudarBorradorCompra);
+
+beforeEach(() => {
+  invokeMaterializar.mockReset();
+  reanudarCompra.mockReset();
+});
 
 async function pressId(id: string): Promise<void> {
   await act(async () => {
@@ -244,6 +261,32 @@ describe('Extraer datos: explicit, guarded, never repeated', () => {
 });
 
 describe('review from an extraction', () => {
+  it('materializes an approved clean revision through the explicit action and resumes only the linked draft', async () => {
+    const repo = fakeRepo();
+    invokeMaterializar.mockResolvedValue({ data: { compraId: 42 }, error: null } as never);
+    await startRevision(repo);
+    await confirmEverything();
+    await typeId('revision-motivo-guardado', 'Revision completa');
+    await pressId('revision-guardar');
+    expect(screen.getByRole('button', { name: 'Preparar borrador de compra' })).toBeTruthy();
+    expect(isDisabled('revision-materializar')).toBe(true);
+    await pressId('revision-materializar');
+    expect(invokeMaterializar).not.toHaveBeenCalled();
+    await pressId('revision-aprobar');
+
+    expect(screen.getByRole('button', { name: 'Preparar borrador de compra' })).toBeTruthy();
+    expect(isDisabled('revision-materializar')).toBe(false);
+    await pressId('revision-materializar');
+
+    expect(invokeMaterializar).toHaveBeenCalledTimes(1);
+    expect(invokeMaterializar).toHaveBeenCalledWith('materializar-compra-factura', {
+      body: { facturaId: FACTURA_1, revision: 1, fingerprint: FP, versionEsperada: 3 },
+    });
+    expect(reanudarCompra).toHaveBeenCalledTimes(1);
+    expect(reanudarCompra).toHaveBeenCalledWith(42);
+    expect(invokeMaterializar.mock.calls.map(([name]) => name)).toEqual(['materializar-compra-factura']);
+  });
+
   it('shows every repeated supplier code as its own line with literal code, page, OCR confidence and the untouched original', async () => {
     const repo = fakeRepo();
     await startRevision(repo);
@@ -371,6 +414,9 @@ describe('calculation, blockers and approval', () => {
     expect(blockers).toMatch(/IVA/);
     expect(textOf('revision-estado')).toBe('Con bloqueos');
     expect(isDisabled('revision-aprobar')).toBe(true);
+    expect(isDisabled('revision-materializar')).toBe(true);
+    await pressId('revision-materializar');
+    expect(invokeMaterializar).not.toHaveBeenCalled();
   });
 
   it('shows exact USD lines, per-rate totals and unit costs for a complete review', async () => {
@@ -586,6 +632,9 @@ describe('identity fences and stale approval', () => {
     await openView(repo, { facturaVersion: 4 });
     expect(textOf('revision-estado')).toBe('Aprobación desactualizada');
     expect(isDisabled('revision-aprobar')).toBe(true);
+    expect(isDisabled('revision-materializar')).toBe(true);
+    await pressId('revision-materializar');
+    expect(invokeMaterializar).not.toHaveBeenCalled();
   });
 
   it('never renders a stale attestation as valid after the document was replaced', async () => {
@@ -598,10 +647,13 @@ describe('identity fences and stale approval', () => {
 
   it('does not offer attestation while manual editor changes are unsaved', async () => {
     const repo = fakeRepo();
-    repo.leerRevisiones.mockResolvedValue([savedRevision()]);
+    repo.leerRevisiones.mockResolvedValue([savedRevision({ aprobadoPor: OWNER_A, aprobadoEn: '2026-10-23T12:00:00Z' })]);
     repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
     await openView(repo, { editorDirty: true });
     expect(isDisabled('revision-aprobar')).toBe(true);
+    expect(isDisabled('revision-materializar')).toBe(true);
+    await pressId('revision-materializar');
+    expect(invokeMaterializar).not.toHaveBeenCalled();
   });
 });
 
@@ -650,5 +702,309 @@ describe('no side effects beyond the review contract', () => {
     expect(Object.keys(repo).sort()).toEqual(['aprobarRevision', 'buscarCandidatos', 'extraer', 'guardarRevision', 'leerColisionesBarras', 'leerExtracciones', 'leerRevisiones']);
     expect(repo.extraer).not.toHaveBeenCalled();
     expect(within(screen.getByTestId('revision-estado')).queryByText(/compra emitida/i)).toBeNull();
+  });
+});
+
+describe('PVP suggestion: document type, subdued placeholder, typed price (S18)', () => {
+  const pvp = (n: number) => `revision-linea-${n}-pvp-valor`;
+  const pvpEstado = (n: number) => `revision-linea-${n}-pvp-estado`;
+  const placeholderOf = (id: string): string => byId(id).props.placeholder;
+  const valueOf = (id: string): string => byId(id).props.value;
+  const lastSaved = (repo: Mocks): GuardarRevisionInput => repo.guardarRevision.mock.calls[repo.guardarRevision.mock.calls.length - 1][0] as GuardarRevisionInput;
+
+  /** Line 3 gets a verified cost of exactly 10.00 (2 x 10.00 over 2 stock units); lines 1 and 2 keep 0.80 and 0.95. */
+  async function costo10(): Promise<void> {
+    await typeId('revision-linea-3-precioUnitario-valor', '10.00');
+    await typeId('revision-linea-3-precioUnitario-motivo', 'Precio verificado');
+    await pressId('revision-linea-3-precioUnitario-aplicar');
+  }
+
+  async function listaConCosto(repo: Mocks, over: Partial<FacturaRevisionViewProps> = {}) {
+    const view = await startRevision(repo, over);
+    await confirmEverything();
+    await costo10();
+    return view;
+  }
+
+  /** A saved revision with the cost decisions confirmed, plus optional document type and typed price on line 3. */
+  function revisionGuardada(tipo: 'factura' | 'nota_entrega' | null, precio: string | null, over: Partial<RevisionRow> = {}): RevisionRow {
+    return savedRevision(over, base => {
+      const ext = payload();
+      const lineaId = base.lineas[2].lineaId;
+      const ediciones: Array<Parameters<typeof aplicarEdicion>[2]> = [
+        { tipo: 'decision_cabecera', campo: 'precioIncluyeIva', valor: false },
+        ...base.lineas.map(l => ({ tipo: 'factor_conversion' as const, lineaId: l.lineaId, valor: '1' })),
+        { tipo: 'linea_escalar', lineaId, campo: 'precioUnitario', valor: '10.00', motivo: 'Precio verificado' },
+        { tipo: 'tipo_documento', valor: tipo },
+        { tipo: 'precio_venta', lineaId, valor: precio },
+      ];
+      return ediciones.reduce((contenido, edicion) => {
+        const r = aplicarEdicion(contenido, ext, edicion, newId);
+        if (!r.ok) throw new Error(`fixture edit: ${JSON.stringify(r.error)}`);
+        return r.contenido;
+      }, base);
+    });
+  }
+
+  it('offers no suggestion before the document type is chosen, and says why', async () => {
+    const repo = fakeRepo();
+    await listaConCosto(repo);
+    expect(valueOf(pvp(3))).toBe('');
+    expect(placeholderOf(pvp(3))).toBe('Sin precio sugerido');
+    expect(textOf(pvpEstado(3))).toMatch(/Elige.*tipo de documento/i);
+    expect(byId('revision-tipo-sin-definir').props.accessibilityState.selected).toBe(true);
+  });
+
+  it.each([
+    ['revision-tipo-nota_entrega', '$13.00', '$1.04'],
+    ['revision-tipo-factura', '$15.08', '$1.2064'],
+  ])('%s: cost 10 suggests %s (cost 0.80 suggests %s), shown as a placeholder over an empty field', async (boton, para10, para080) => {
+    const repo = fakeRepo();
+    await listaConCosto(repo);
+    await pressId(boton);
+    expect(placeholderOf(pvp(3))).toBe(para10);
+    expect(placeholderOf(pvp(1))).toBe(para080);
+    expect(valueOf(pvp(3))).toBe('');
+    expect(textOf(pvpEstado(3))).toContain(`Se usará el precio sugerido: ${para10}`);
+  });
+
+  it('switching the type back to "Sin definir" removes the suggestion again', async () => {
+    const repo = fakeRepo();
+    await listaConCosto(repo);
+    await pressId('revision-tipo-factura');
+    await pressId('revision-tipo-sin-definir');
+    expect(placeholderOf(pvp(3))).toBe('Sin precio sugerido');
+    expect(byId('revision-tipo-factura').props.accessibilityState.selected).toBe(false);
+  });
+
+  it('subdues only the placeholder: typed text keeps the normal color and no opacity is applied to the input', async () => {
+    const repo = fakeRepo();
+    await listaConCosto(repo);
+    await pressId('revision-tipo-factura');
+    const input = byId(pvp(3));
+    const style = StyleSheet.flatten(input.props.style);
+    expect(input.props.placeholderTextColor).toBe(elSerrucho.colors.textMuted);
+    expect(style.color).toBe(elSerrucho.colors.text);
+    expect(style.opacity).toBeUndefined();
+    expect(input.props.accessibilityLabel).toBe('Precio de venta (USD)');
+    expect(input.props.accessibilityHint).toMatch(/vacío.*sugerido/i);
+  });
+
+  it('a typed price replaces the placeholder, takes precedence and is used by Guardar without any blur', async () => {
+    const repo = fakeRepo();
+    await listaConCosto(repo);
+    await pressId('revision-tipo-factura');
+    await typeId(pvp(3), '20');
+    expect(valueOf(pvp(3))).toBe('20');
+    expect(textOf(pvpEstado(3))).toContain('Se usará tu precio: $20.00');
+    expect(isDisabled('revision-guardar')).toBe(false);
+    await pressId('revision-guardar');
+    const saved = lastSaved(repo).contenido;
+    expect(saved.cabecera.tipoDocumento).toBe('factura');
+    expect(saved.lineas[2].precioVenta).toBe('20');
+    expect(saved.lineas[0]).not.toHaveProperty('precioVenta');
+    expect(saved.lineas[1]).not.toHaveProperty('precioVenta');
+  });
+
+  it('left empty, Guardar stores no price at all (the suggestion is derived, never persisted)', async () => {
+    const repo = fakeRepo();
+    await listaConCosto(repo);
+    await pressId('revision-tipo-nota_entrega');
+    await pressId('revision-guardar');
+    const saved = lastSaved(repo).contenido;
+    expect(saved.cabecera.tipoDocumento).toBe('nota_entrega');
+    expect(JSON.stringify(saved.lineas)).not.toContain('precioVenta');
+  });
+
+  it('without touching the PVP controls the saved payload is the legacy content', async () => {
+    const repo = fakeRepo();
+    await startRevision(repo);
+    await confirmEverything();
+    await pressId('revision-guardar');
+    expect(JSON.stringify(lastSaved(repo).contenido)).not.toMatch(/tipoDocumento|precioVenta/);
+  });
+
+  it('a typed price survives a cost change while the placeholder follows the new cost; clearing restores the default', async () => {
+    const repo = fakeRepo();
+    await listaConCosto(repo);
+    await pressId('revision-tipo-factura');
+    await typeId(pvp(3), '20');
+    await typeId('revision-linea-3-precioUnitario-valor', '20.00');
+    await typeId('revision-linea-3-precioUnitario-motivo', 'Otro costo');
+    await pressId('revision-linea-3-precioUnitario-aplicar');
+    expect(valueOf(pvp(3))).toBe('20');
+    expect(placeholderOf(pvp(3))).toBe('$30.16');
+    await typeId(pvp(3), '');
+    expect(valueOf(pvp(3))).toBe('');
+    expect(textOf(pvpEstado(3))).toContain('Se usará el precio sugerido: $30.16');
+    await pressId('revision-guardar');
+    expect(JSON.stringify(lastSaved(repo).contenido.lineas)).not.toContain('precioVenta');
+  });
+
+  it('reloads a saved revision with the typed price in the field and the suggestion behind other lines', async () => {
+    const repo = fakeRepo();
+    repo.leerRevisiones.mockResolvedValue([revisionGuardada('factura', '20')]);
+    repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
+    await openView(repo);
+    expect(valueOf(pvp(3))).toBe('20');
+    expect(textOf(pvpEstado(3))).toContain('Se usará tu precio: $20.00');
+    expect(placeholderOf(pvp(1))).toBe('$1.2064');
+    expect(byId('revision-tipo-factura').props.accessibilityState.selected).toBe(true);
+    expect(textOf('revision-estado')).not.toBe('Con cambios sin guardar');
+  });
+
+  it('a saved revision with a type and no price reloads with the placeholder only', async () => {
+    const repo = fakeRepo();
+    repo.leerRevisiones.mockResolvedValue([revisionGuardada('nota_entrega', null)]);
+    repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
+    await openView(repo);
+    expect(valueOf(pvp(3))).toBe('');
+    expect(placeholderOf(pvp(3))).toBe('$13.00');
+  });
+
+  it('editing the price after an approval makes the approval outdated and needs a new save', async () => {
+    const repo = fakeRepo();
+    repo.leerRevisiones.mockResolvedValue([revisionGuardada('factura', null, { aprobadoPor: OWNER_A, aprobadoEn: '2026-10-23T12:00:00Z' })]);
+    repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
+    await openView(repo);
+    await typeId(pvp(3), '20');
+    expect(textOf('revision-estado')).toBe('Aprobación desactualizada');
+    expect(isDisabled('revision-aprobar')).toBe(true);
+    expect(isDisabled('revision-guardar')).toBe(false);
+  });
+
+  describe('invalid text never falls back to the suggestion', () => {
+    it.each([['comma decimal', '12,5'], ['intermediate dot', '15.'], ['zero', '0'], ['negative', '-5'], ['letters', '20a'], ['13 integer digits', '1234567890123']])(
+      'keeps %s visible, blocks Guardar and Aprobar and says what to fix',
+      async (_nombre, texto) => {
+        const repo = fakeRepo();
+        await listaConCosto(repo);
+        await pressId('revision-tipo-factura');
+        await typeId(pvp(3), texto);
+        expect(valueOf(pvp(3))).toBe(texto);
+        expect(textOf(pvpEstado(3))).toMatch(/no válido/i);
+        expect(textOf('revision-pvp-pendiente')).toMatch(/Corrige el precio de venta del renglón 3/);
+        expect(isDisabled('revision-guardar')).toBe(true);
+        expect(isDisabled('revision-aprobar')).toBe(true);
+        await pressId('revision-guardar');
+        expect(repo.guardarRevision).not.toHaveBeenCalled();
+      }
+    );
+
+    it('a previous valid price is not saved silently over invalid text either', async () => {
+      const repo = fakeRepo();
+      await listaConCosto(repo);
+      await typeId(pvp(3), '20');
+      await typeId(pvp(3), '20a');
+      await pressId('revision-guardar');
+      expect(repo.guardarRevision).not.toHaveBeenCalled();
+      expect(valueOf(pvp(3))).toBe('20a');
+    });
+
+    it('correcting the text, or clearing it, lifts the block', async () => {
+      const repo = fakeRepo();
+      await listaConCosto(repo);
+      await typeId(pvp(3), '15.');
+      expect(isDisabled('revision-guardar')).toBe(true);
+      await typeId(pvp(3), '15.5');
+      expect(maybeId('revision-pvp-pendiente')).toBeNull();
+      expect(isDisabled('revision-guardar')).toBe(false);
+      await typeId(pvp(3), '15.');
+      await typeId(pvp(3), '');
+      expect(maybeId('revision-pvp-pendiente')).toBeNull();
+    });
+
+    it('unsaved invalid text is reported as unsaved work so a close guard protects it', async () => {
+      const onDirtyChange = jest.fn();
+      const repo = fakeRepo();
+      repo.leerRevisiones.mockResolvedValue([revisionGuardada(null, null)]);
+      repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
+      await openView(repo, { onDirtyChange });
+      expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+      await typeId(pvp(3), '12,5');
+      expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+      await typeId(pvp(3), '');
+      expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    });
+
+    it('an explicit reload from the server discards the invalid text', async () => {
+      const repo = fakeRepo();
+      repo.guardarRevision.mockRejectedValue(new RevisionRepositoryError('revision_obsoleta'));
+      await listaConCosto(repo);
+      await pressId('revision-guardar');
+      await typeId(pvp(3), '12,5');
+      await pressId('revision-recargar');
+      await settle();
+      expect(maybeId('revision-pvp-pendiente')).toBeNull();
+      expect(maybeId(pvp(3))?.props.value ?? '').toBe('');
+    });
+  });
+
+  describe('currency, account and invoice context', () => {
+    it('a non-USD document hides the field, the placeholder and any stored price', async () => {
+      const repo = fakeRepo();
+      repo.leerRevisiones.mockResolvedValue([revisionGuardada('factura', '20')]);
+      repo.leerExtracciones.mockResolvedValue([extraccionRow({}, payload({ moneda: 'VES', tasaCambio: '36.5' }))]);
+      await openView(repo);
+      expect(maybeId(pvp(3))).toBeNull();
+      expect(textOf('revision-linea-3-pvp-oculto')).toBe('Importe oculto: moneda VES sin conversión aprobada a USD');
+      expect(screen.queryByDisplayValue('20')).toBeNull();
+      expect(maybeId(pvpEstado(3))).toBeNull();
+    });
+
+    it('an unknown currency hides it too', async () => {
+      const repo = fakeRepo();
+      repo.leerExtracciones.mockResolvedValue([extraccionRow({}, payload({ moneda: null }))]);
+      await openView(repo);
+      await pressId(`revision-iniciar-${EXT}`);
+      expect(maybeId(pvp(1))).toBeNull();
+      expect(textOf('revision-linea-1-pvp-oculto')).toBe('Importe oculto: moneda desconocida sin conversión aprobada a USD');
+    });
+
+    it('changing the currency hides typed and invalid text; going back shows the stored price and drops the invalid text', async () => {
+      const repo = fakeRepo();
+      await listaConCosto(repo);
+      await typeId(pvp(2), '20');
+      await typeId(pvp(1), '12,5');
+      await typeId('revision-cab-moneda-valor', 'EUR');
+      await typeId('revision-cab-moneda-motivo', 'Documento en euros');
+      await pressId('revision-cab-moneda-aplicar');
+      expect(maybeId(pvp(1))).toBeNull();
+      expect(screen.queryByDisplayValue('20')).toBeNull();
+      expect(screen.queryByDisplayValue('12,5')).toBeNull();
+      expect(maybeId('revision-pvp-pendiente')).toBeNull();
+      await pressId('revision-cab-moneda-revertir');
+      expect(valueOf(pvp(2))).toBe('20');
+      expect(valueOf(pvp(1))).toBe('');
+    });
+
+    it('a session change drops the invalid text instead of keeping it for another account', async () => {
+      const repo = fakeRepo();
+      let uid: string | null = OWNER_A;
+      repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
+      const view = await openView(repo, { getSessionUid: () => uid });
+      await pressId(`revision-iniciar-${EXT}`);
+      await typeId(pvp(1), '12,5');
+      expect(valueOf(pvp(1))).toBe('12,5');
+      uid = OWNER_B;
+      view.rerenderUi(<FacturaRevisionView {...props(repo, { getSessionUid: () => uid })} />);
+      await settle();
+      expect(screen.queryByDisplayValue('12,5')).toBeNull();
+      expect(maybeId('revision-pvp-pendiente')).toBeNull();
+    });
+
+    it('opening another invoice never shows text typed for the previous one', async () => {
+      const repo = fakeRepo();
+      repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
+      const view = await openView(repo);
+      await pressId(`revision-iniciar-${EXT}`);
+      await typeId(pvp(1), '12,5');
+      repo.leerExtracciones.mockResolvedValue([]);
+      view.rerenderUi(<FacturaRevisionView {...props(repo, { facturaId: 'f0000000-0000-4000-8000-000000000002' })} />);
+      await settle();
+      expect(screen.queryByDisplayValue('12,5')).toBeNull();
+      expect(maybeId('revision-pvp-pendiente')).toBeNull();
+      expect(maybeId('revision-linea-1')).toBeNull();
+    });
   });
 });
