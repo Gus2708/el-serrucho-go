@@ -103,6 +103,10 @@ export function useUserRole(userId?: string) {
             console.log('[useUserRole] Using cached role (offline/error)');
             return cached;
           }
+          // A failed fetch is not "inactive": throw so the query keeps its last
+          // good data and AuthGuard sees roleError instead of showing "pending".
+          // Only a missing profile row (PGRST116) means the account is inactive.
+          if (error && error.code !== 'PGRST116') throw error;
           return { role: 'empleado' as const, is_active: false, profile: null };
         }
 
@@ -135,12 +139,12 @@ export function useUserRole(userId?: string) {
           console.log('[useUserRole] Using cached role after timeout');
           return cached;
         }
-        return { role: 'empleado' as const, is_active: false, profile: null };
+        throw err;
       }
     },
     staleTime: 5 * 60_000,
     gcTime:    30 * 60_000,
-    retry: false,
+    retry: 2,
     // Arranque instantáneo: si hay un rol cacheado en localStorage (guardado en
     // el último fetch exitoso), lo usamos como dato inicial para que el
     // AuthGuard y el dashboard no bloqueen con "Cargando perfil...". Al marcar

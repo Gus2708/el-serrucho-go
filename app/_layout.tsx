@@ -33,13 +33,9 @@ Sentry.init({
   dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
   enabled: Boolean(process.env.EXPO_PUBLIC_SENTRY_DSN),
   sendDefaultPii: true,
-  tracesSampleRate: 1.0,
-  profilesSampleRate: 1.0,
-  replaysOnErrorSampleRate: 1.0,
-  replaysSessionSampleRate: 0.1,
-  integrations: [
-    Sentry.mobileReplayIntegration(),
-  ],
+  // Light config: replay and profiling ran on the UI thread and are the prime
+  // suspect for "no responde" (ANR) on mid-range Xiaomi/Poco devices.
+  tracesSampleRate: 0.1,
   enableNativeFramesTracking: !isRunningInExpoGo(),
   environment: __DEV__ ? 'development' : 'production',
 });
@@ -93,7 +89,7 @@ const queryPersister = createAsyncStoragePersister({
 const persistOptions = {
   persister: queryPersister,
   maxAge: 24 * 60 * 60_000,
-  buster: 'v1.2.2',
+  buster: 'v1.2.3',
   dehydrateOptions: {
     shouldDehydrateQuery: (query: { state: { status: string }; queryKey: readonly unknown[] }) =>
       query.state.status === 'success' && PERSISTED_QUERY_KEYS.has(String(query.queryKey[0])),

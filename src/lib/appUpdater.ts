@@ -94,7 +94,7 @@ export function formatBytes(bytes: number, decimals = 1): string {
  * Retrieves the current app version configured in Expo.
  */
 export function getCurrentVersion(): string {
-  return Constants.expoConfig?.version ?? '1.2.2';
+  return Constants.expoConfig?.version ?? '1.2.3';
 }
 
 /**

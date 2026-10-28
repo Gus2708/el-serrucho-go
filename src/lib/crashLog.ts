@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { AppState, Platform } from 'react-native';
+import * as Sentry from '@sentry/react-native';
 import { supabase } from './supabase';
 import {
   EVENT_ACTIVE,
@@ -21,7 +22,8 @@ import {
 
 // ── Diagnóstico de crashes en dispositivos reales ───────────────────────────
 //
-// No hay Sentry/Bugsnag en el proyecto. Logger mínimo sobre Supabase:
+// Logger mínimo sobre Supabase (Sentry cubre las excepciones JS y los crashes
+// nativos; los cierres anormales sin excepción también se reenvían a Sentry):
 //  - Un rastro de breadcrumbs en AsyncStorage. Si el proceso muere con la app
 //    en primer plano (crash nativo, sin excepción JS), el próximo arranque lo
 //    detecta y lo encola como 'session_trail'.
@@ -92,6 +94,26 @@ function deviceInfo(): {
     version_so:  truncate(androidConstants ? androidConstants.Release : String(Platform.Version), 50),
     app_version: truncate(Constants.expoConfig?.version, 50),
   };
+}
+
+// A process that dies without a JS exception (ANR, OOM, OS kill) never reaches
+// Sentry's own handlers, so the trail left on disk is the only evidence. Forward
+// it once, at the boot that recovers it.
+function reportAbnormalExit(previousTrail: Breadcrumb[]): void {
+  try {
+    Sentry.withScope((scope) => {
+      scope.setLevel('error');
+      scope.setTag('crash_type', 'session_trail');
+      scope.setFingerprint(['abnormal-exit']);
+      scope.setContext('previous_session', {
+        ended_at: new Date(previousTrail[previousTrail.length - 1].ts).toISOString(),
+        last_events: previousTrail.slice(-20).map((b) => `${b.evento} ${JSON.stringify(b.meta ?? {})}`),
+      });
+      Sentry.captureMessage('Abnormal exit: previous session ended without an exception');
+    });
+  } catch {
+    // Reporting must never block boot.
+  }
 }
 
 async function flushPending(): Promise<void> {
@@ -180,7 +202,9 @@ export function initCrashLog(): void {
       const stored = Object.fromEntries(entries);
       const previousTrail = parseJsonArray<Breadcrumb>(stored[TRAIL_KEY]);
       const storedPending = parseJsonArray<PendingReport>(stored[PENDING_KEY]);
-      const recovered: PendingReport[] = isAbnormalExit(previousTrail)
+      const abnormal = isAbnormalExit(previousTrail);
+      if (abnormal) reportAbnormalExit(previousTrail);
+      const recovered: PendingReport[] = abnormal
         ? [{
             tipo:        'session_trail',
             mensaje:     null,
