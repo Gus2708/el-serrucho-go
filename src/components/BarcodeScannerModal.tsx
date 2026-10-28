@@ -3,11 +3,13 @@ import { scaleFont } from '../theme/responsive';
  * BarcodeScannerModal.tsx
  *
  * Despacha automáticamente al scanner correcto según la plataforma:
- * - Android / iOS → CameraView de expo-camera (nativo, soporta EAN-13, QR, etc.)
+ * - Android / iOS → CameraView de expo-camera (nativo, optimizado para códigos 1D)
  * - Web / PWA     → WebBarcodeScanner (BarcodeDetector API + @zxing/browser fallback)
  *
- * CRÍTICO (expo-camera 16.x): CameraView NO soporta children.
- * El overlay DEBE ser un sibling View con absoluteFillObject, nunca hijo de CameraView.
+ * CRÍTICO:
+ * 1. Excluye códigos QR y matrices 2D (solo lee códigos de barras 1D).
+ * 2. CameraView NO soporta children en expo-camera 16.x. El overlay DEBE ser sibling View.
+ * 3. Retícula horizontal (310x160) adaptada a códigos de barra lineales con linterna y zoom 1x/2x.
  */
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -19,7 +21,7 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions, type BarcodeType } from 'expo-camera';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { WebBarcodeScanner } from './WebBarcodeScanner';
@@ -30,6 +32,19 @@ interface Props {
   onClose: () => void;
   onScan:  (data: string) => void;
 }
+
+/** Formatos 1D lineales soportados (sin QR ni matrices 2D) */
+export const BARCODE_1D_TYPES: BarcodeType[] = [
+  'ean13',
+  'ean8',
+  'code128',
+  'code39',
+  'code93',
+  'upc_a',
+  'upc_e',
+  'codabar',
+  'itf14',
+];
 
 // ─── On web, delegate entirely to WebBarcodeScanner ────────────────────────────
 export function BarcodeScannerModal({ visible, onClose, onScan }: Props) {
@@ -43,6 +58,8 @@ export function BarcodeScannerModal({ visible, onClose, onScan }: Props) {
 function NativeBarcodeScannerModal({ visible, onClose, onScan }: Props) {
   const { colors } = useTheme();
   const [permission, requestPermission] = useCameraPermissions();
+  const [torch, setTorch] = useState(false);
+  const [zoom, setZoom] = useState(0);
 
   // Track if scanner is active to avoid double scans
   const scannedRef = useRef(false);
@@ -55,11 +72,13 @@ function NativeBarcodeScannerModal({ visible, onClose, onScan }: Props) {
     let animation: Animated.CompositeAnimation | null = null;
     if (visible) {
       scannedRef.current = false;
+      setTorch(false);
+      setZoom(0);
       scanLineAnim.setValue(0);
       animation = Animated.loop(
         Animated.sequence([
-          Animated.timing(scanLineAnim, { toValue: 1, duration: 2000, useNativeDriver: true }),
-          Animated.timing(scanLineAnim, { toValue: 0, duration: 2000, useNativeDriver: true }),
+          Animated.timing(scanLineAnim, { toValue: 1, duration: 1800, useNativeDriver: true }),
+          Animated.timing(scanLineAnim, { toValue: 0, duration: 1800, useNativeDriver: true }),
         ])
       );
       animation.start();
@@ -67,10 +86,20 @@ function NativeBarcodeScannerModal({ visible, onClose, onScan }: Props) {
     return () => { animation?.stop(); };
   }, [visible, scanLineAnim]);
 
-  function handleBarcodeScanned({ data }: { type: string; data: string }) {
+  function handleBarcodeScanned({ type, data }: { type?: string; data: string }) {
     if (scannedRef.current) return;
+    const lowerType = (type || '').toLowerCase();
+    // Bloqueo estricto de códigos QR y matrices 2D
+    if (
+      lowerType.includes('qr') ||
+      lowerType.includes('aztec') ||
+      lowerType.includes('matrix') ||
+      lowerType === 'org.iso.qrcode'
+    ) {
+      return;
+    }
     scannedRef.current = true;
-    onScan(data);
+    onScan(data.trim());
   }
 
   if (!visible) return null;
@@ -91,7 +120,7 @@ function NativeBarcodeScannerModal({ visible, onClose, onScan }: Props) {
             <Feather name="camera-off" size={48} color={colors.danger} style={styles.icon} />
             <Text style={[styles.cardTitle, { color: colors.text }]}>Permiso de Cámara Requerido</Text>
             <Text style={[styles.cardSubtitle, { color: colors.textMuted }]}>
-              Para poder escanear códigos de barras y códigos QR en El Serrucho GO, necesitamos acceso a tu cámara.
+              Para poder escanear códigos de barras en El Serrucho GO, necesitamos acceso a tu cámara.
             </Text>
             <View style={styles.buttonRow}>
               <PressableScale
@@ -117,7 +146,7 @@ function NativeBarcodeScannerModal({ visible, onClose, onScan }: Props) {
 
   const translateY = scanLineAnim.interpolate({
     inputRange:  [0, 1],
-    outputRange: [10, 230],
+    outputRange: [8, 142],
   });
 
   const permissionOverlay = renderPermissionState();
@@ -140,12 +169,12 @@ function NativeBarcodeScannerModal({ visible, onClose, onScan }: Props) {
           <CameraView
             style={StyleSheet.absoluteFillObject}
             facing="back"
+            enableTorch={torch}
+            zoom={zoom}
+            autofocus={Platform.OS === 'android' ? 'on' : 'off'}
             onBarcodeScanned={handleBarcodeScanned}
             barcodeScannerSettings={{
-              barcodeTypes: [
-                'qr', 'ean13', 'ean8', 'code39', 'code93', 'code128',
-                'upc_a', 'upc_e', 'pdf417', 'aztec', 'datamatrix', 'codabar', 'itf14',
-              ],
+              barcodeTypes: BARCODE_1D_TYPES,
             }}
           />
 
@@ -172,15 +201,45 @@ function NativeBarcodeScannerModal({ visible, onClose, onScan }: Props) {
 
             <View style={styles.overlayRow}>
               <Text style={[styles.instructionText, { color: '#fff' }]}>
-                Apunta la cámara al código de barras o QR
+                Apunta la cámara al código de barras
               </Text>
-              <PressableScale
-                style={[styles.btnClose, { backgroundColor: colors.surface + 'DD', borderColor: colors.border }]}
-                onPress={onClose}
-              >
-                <Feather name="x" size={20} color="#fff" style={{ marginRight: 8 }} />
-                <Text style={styles.btnCloseText}>Cerrar Escáner</Text>
-              </PressableScale>
+              <View style={styles.controlButtonsRow}>
+                <PressableScale
+                  style={[
+                    styles.controlBtn,
+                    { backgroundColor: torch ? colors.primary : 'rgba(30,30,30,0.85)', borderColor: colors.border },
+                  ]}
+                  onPress={() => setTorch((t) => !t)}
+                  accessibilityRole="button"
+                  accessibilityLabel={torch ? 'Apagar linterna' : 'Encender linterna'}
+                >
+                  <Feather name={torch ? 'zap' : 'zap-off'} size={18} color={torch ? colors.onPrimary : '#fff'} />
+                </PressableScale>
+
+                <PressableScale
+                  style={[
+                    styles.controlBtn,
+                    { backgroundColor: zoom > 0 ? colors.primary : 'rgba(30,30,30,0.85)', borderColor: colors.border },
+                  ]}
+                  onPress={() => setZoom((z) => (z > 0 ? 0 : 0.15))}
+                  accessibilityRole="button"
+                  accessibilityLabel={zoom > 0 ? 'Zoom 1x' : 'Zoom 2x'}
+                >
+                  <Text style={[styles.zoomText, { color: zoom > 0 ? colors.onPrimary : '#fff' }]}>
+                    {zoom > 0 ? '2x' : '1x'}
+                  </Text>
+                </PressableScale>
+
+                <PressableScale
+                  style={[styles.btnClose, { backgroundColor: 'rgba(30,30,30,0.85)', borderColor: colors.border }]}
+                  onPress={onClose}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cerrar Escáner"
+                >
+                  <Feather name="x" size={18} color="#fff" style={{ marginRight: 6 }} />
+                  <Text style={styles.btnCloseText}>Cerrar</Text>
+                </PressableScale>
+              </View>
             </View>
           </View>
         </View>
@@ -204,18 +263,21 @@ const styles = StyleSheet.create({
 
   overlayContainer: { ...StyleSheet.absoluteFillObject, justifyContent: 'space-between' },
   overlayRow: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
-  overlayMiddleRow: { height: 250, flexDirection: 'row' },
+  overlayMiddleRow: { height: 160, flexDirection: 'row' },
   overlayCol: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)' },
 
-  targetBox: { width: 250, height: 250, borderWidth: 1, position: 'relative', backgroundColor: 'transparent' },
+  targetBox: { width: 310, height: 160, borderWidth: 1, position: 'relative', backgroundColor: 'transparent', borderRadius: 8 },
   corner: { position: 'absolute', width: 22, height: 22 },
-  topLeft:     { top: 0,    left: 0,  borderTopWidth: 4,    borderLeftWidth: 4 },
-  topRight:    { top: 0,    right: 0, borderTopWidth: 4,    borderRightWidth: 4 },
-  bottomLeft:  { bottom: 0, left: 0,  borderBottomWidth: 4, borderLeftWidth: 4 },
-  bottomRight: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4 },
+  topLeft:     { top: 0,    left: 0,  borderTopWidth: 4,    borderLeftWidth: 4, borderTopLeftRadius: 8 },
+  topRight:    { top: 0,    right: 0, borderTopWidth: 4,    borderRightWidth: 4, borderTopRightRadius: 8 },
+  bottomLeft:  { bottom: 0, left: 0,  borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 8 },
+  bottomRight: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 8 },
   scanLine: { position: 'absolute', left: 10, right: 10, height: 3, elevation: 3 },
 
   instructionText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_500Medium', textAlign: 'center', marginBottom: 20 },
-  btnClose: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 48, borderRadius: 24, borderWidth: 1, paddingHorizontal: 24 },
+  controlButtonsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 },
+  controlBtn: { width: 48, height: 48, borderRadius: 24, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  zoomText: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
+  btnClose: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 48, borderRadius: 24, borderWidth: 1, paddingHorizontal: 20 },
   btnCloseText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold', color: '#fff' },
 });

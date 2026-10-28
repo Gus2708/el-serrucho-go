@@ -82,9 +82,9 @@ export function WebBarcodeScanner({ visible, onClose, onScan }: Props) {
     await video.play();
     setStatus('scanning');
 
-    // Obtener formatos soportados por este browser
-    let formats = ['qr_code', 'ean_13', 'ean_8', 'code_128', 'code_39', 'code_93',
-                   'upc_a', 'upc_e', 'pdf417', 'aztec', 'data_matrix', 'codabar', 'itf'];
+    // Obtener formatos 1D soportados por este browser (sin QR ni 2D)
+    let formats = ['ean_13', 'ean_8', 'code_128', 'code_39', 'code_93',
+                   'upc_a', 'upc_e', 'codabar', 'itf'];
     try {
       const supported = await BarcodeDetector.getSupportedFormats();
       const filtered = formats.filter(f => supported.includes(f));
@@ -108,7 +108,20 @@ export function WebBarcodeScanner({ visible, onClose, onScan }: Props) {
   // ─── Inicia detección con @zxing/browser (fallback cross-browser) ───────────
   async function startZxingScanner() {
     const { BrowserMultiFormatReader } = await import('@zxing/browser');
-    const reader = new BrowserMultiFormatReader();
+    const { BarcodeFormat, DecodeHintType } = await import('@zxing/library');
+    const hints = new Map();
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+      BarcodeFormat.CODE_128,
+      BarcodeFormat.CODE_39,
+      BarcodeFormat.CODE_93,
+      BarcodeFormat.EAN_13,
+      BarcodeFormat.EAN_8,
+      BarcodeFormat.UPC_A,
+      BarcodeFormat.UPC_E,
+      BarcodeFormat.CODABAR,
+      BarcodeFormat.ITF,
+    ]);
+    const reader = new BrowserMultiFormatReader(hints);
 
     // decodeFromConstraints: ZXing maneja cámara + loop de detección internamente
     // El callback se llama cada vez que detecta un código (o cuando hay error de frame)
@@ -201,7 +214,7 @@ export function WebBarcodeScanner({ visible, onClose, onScan }: Props) {
     return () => { anim?.stop(); };
   }, [visible, status, scanLineAnim]);
 
-  const translateY = scanLineAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 230] });
+  const translateY = scanLineAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 142] });
 
   if (!visible) return null;
 
@@ -293,7 +306,7 @@ export function WebBarcodeScanner({ visible, onClose, onScan }: Props) {
 
             {/* Franja oscura inferior con texto y botón */}
             <View style={styles.overlayRow}>
-              <Text style={styles.instrText}>Apunta la cámara al código de barras o QR</Text>
+              <Text style={styles.instrText}>Apunta la cámara al código de barras</Text>
               <PressableScale
                 style={[styles.btnClose, { borderColor: colors.border }]}
                 onPress={() => { cleanup(); onClose(); }}
@@ -324,10 +337,10 @@ const styles = StyleSheet.create({
 
   overlayWrap: { ...StyleSheet.absoluteFillObject, justifyContent: 'space-between' },
   overlayRow:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
-  overlayMid:  { height: 250, flexDirection: 'row' },
+  overlayMid:  { height: 160, flexDirection: 'row' },
   overlayCol:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)' },
 
-  targetBox: { width: 250, height: 250, borderWidth: 1, position: 'relative', backgroundColor: 'transparent' },
+  targetBox: { width: 310, height: 160, borderWidth: 1, position: 'relative', backgroundColor: 'transparent', borderRadius: 8 },
   corner:    { position: 'absolute', width: 22, height: 22 },
   tl: { top: 0,    left: 0,  borderTopWidth: 4,    borderLeftWidth: 4 },
   tr: { top: 0,    right: 0, borderTopWidth: 4,    borderRightWidth: 4 },
