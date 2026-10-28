@@ -316,6 +316,18 @@ describe('matchInvoiceLines: attributes', () => {
     expect(result.status).toBe('unresolved');
   });
 
+  it.each(['MX30.5', 'MX30,5'])('does not classify a partial decimal model %s as MX30', (printedModel) => {
+    const [result] = run(
+      [line(1, { descripcion: `Generic adhesive ${printedModel} white` })],
+      [prod('P1', 'Generic adhesive MX50 white')],
+    );
+
+    expect(result.candidates.map((candidate) => candidate.codigoInterno)).toEqual(['P1']);
+    expect(result.candidates[0].unknownAttributes).toContain('model');
+    expect(result.excluded).toEqual([]);
+    expect(result.status).toBe('review');
+  });
+
   it('surfaces an exact-code conflict when an MX model differs', () => {
     const [result] = run(
       [line(1, { codigoProveedor: 'SKU-1', descripcion: 'Generic adhesive MX30 white', unidad: 'UND' })],

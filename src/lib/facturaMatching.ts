@@ -147,7 +147,7 @@ const POWER = /(\d+(?:\.\d+)?) ?(w|kw|hp)\b/g;
 const GAUGE = /\bcal ?(\d+)\b|\b(\d+) ?cal\b/g;
 const MULTIPACK = /\bx(\d+)\b/g;
 // Recognize only explicit MX-number model tokens; other alphanumeric codes remain unclassified.
-const MX_MODEL = /\bmx\s*(\d+)\b/g;
+const MX_MODEL = /\bmx\s*(\d+)\b(?!\.\d)/g;
 
 // The family decides compatibility; a different presentation inside one family only needs review.
 const UNIT_FAMILIES: Readonly<Record<string, readonly [canonical: string, family: string]>> = {
