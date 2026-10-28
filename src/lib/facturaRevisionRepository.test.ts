@@ -204,6 +204,20 @@ describe('bounded catalog reads', () => {
     precioUnitario: '1', descuentos: [], tasaIva: '16', total: null, incertidumbre: null, ...over,
   });
   const producto = (codigo: string, barras: string | null = null) => ({ codigo_interno: codigo, descripcion: `P ${codigo}`, codigo_barras: barras, existencia: 0, costo: 1, precio_venta: 2 });
+  const responderCatalogo = (catalog: ReturnType<typeof producto>[]) => (call: Call): Answer => {
+    const rows = catalog.filter(row => {
+      const inMatches = stepsOf(call, 'in').every(([, column, values]) =>
+        Array.isArray(values) && values.includes(row[column as keyof typeof row])
+      );
+      const descriptionMatches = stepsOf(call, 'ilike').every(([, column, pattern]) => {
+        if (typeof pattern !== 'string') return false;
+        const regex = new RegExp(`^${pattern.split('%').map(part => part.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')).join('.*')}$`, 'i');
+        return regex.test(String(row[column as keyof typeof row] ?? ''));
+      });
+      return inMatches && descriptionMatches;
+    });
+    return { data: rows };
+  };
 
   it('never downloads the whole catalog: every read is filtered and capped', async () => {
     const { client, calls } = fakeClient({ tables: { productos_view: { data: [producto('A')] } } });
@@ -215,6 +229,46 @@ describe('bounded catalog reads', () => {
       expect(stepsOf(call, 'limit').length).toBe(1);
       expect(stepsOf(call, 'in').length + stepsOf(call, 'ilike').length).toBeGreaterThan(0);
     }
+  });
+
+  it('retrieves a compatible description match when the catalog terms appear in another order', async () => {
+    const item = { ...producto('CAT-1'), descripcion: 'Galvanizado tornillo hexagonal 1/4' };
+    const sameOrderItem = { ...producto('CAT-2'), descripcion: 'Tornillo hexagonal galvanizado 1/4' };
+    const catalog = [item, sameOrderItem];
+    const { client } = fakeClient({
+      tables: { productos_view: responderCatalogo(catalog) },
+    });
+
+    const result = await createFacturaRevisionRepository(client).buscarCandidatos([
+      linea(1, { codigoProveedor: null, descripcion: 'Tornillo hexagonal galvanizado 1/4' }),
+    ]);
+
+    expect(result.productos).toEqual([item, sameOrderItem]);
+    expect(result.parcial).toBe(false);
+  });
+
+  it('keeps exact internal-code and barcode reads when descriptions are empty', async () => {
+    const internal = producto('SKU-A');
+    const barcode = producto('SKU-B', '00123A');
+    const { client } = fakeClient({ tables: { productos_view: responderCatalogo([internal, barcode]) } });
+
+    const result = await createFacturaRevisionRepository(client).buscarCandidatos([
+      linea(1, { codigoProveedor: 'SKU-A', descripcion: null }),
+      linea(2, { codigoProveedor: '00123A', descripcion: null }),
+    ]);
+
+    expect(result.productos).toEqual([internal, barcode]);
+    expect(result.parcial).toBe(false);
+  });
+
+  it('returns no candidates without marking a blank code and description as a failed lookup', async () => {
+    const { client } = fakeClient({ tables: { productos_view: { data: [] } } });
+
+    const result = await createFacturaRevisionRepository(client).buscarCandidatos([
+      linea(1, { codigoProveedor: null, descripcion: null }),
+    ]);
+
+    expect(result).toEqual({ productos: [], parcial: false });
   });
 
   it('keeps hostile invoice text out of filter syntax', async () => {
