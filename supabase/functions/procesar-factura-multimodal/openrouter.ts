@@ -14,7 +14,9 @@ Critical extraction rules:
 2. Preserve supplier product codes exactly as printed on the invoice, including leading zeros and alphanumeric characters (for example: "00142-A"). NEVER convert codes to numbers.
 3. If a line item or SKU appears multiple times, preserve them as separate line items in exact invoice order. Never merge or aggregate lines.
 4. If a field is missing, illegible, or not present on the document, set it to null.
-5. Do not invent unauthorized fields or grant inventory, catalog, or approval authority.`.trim();
+5. Only transcribe amounts explicitly printed with their own labels. Do not calculate subtotal, sum line totals, or copy total into subtotal. If no labeled subtotal is printed, cabecera.subtotal must be null even when total is readable.
+6. For example, if only "Total: 25.00" is printed, output subtotal=null and total="25.00". If subtotal and total are separately printed as the same amount, preserve both exact strings.
+7. Do not invent unauthorized fields or grant inventory, catalog, or approval authority.`.trim();
 
 export type ProtocolErrorCode =
   | 'invalid_api_key'

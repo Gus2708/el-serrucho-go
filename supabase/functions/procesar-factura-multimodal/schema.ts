@@ -50,7 +50,7 @@ export const EXTRACTION_JSON_SCHEMA = {
         },
         subtotal: {
           type: ['string', 'null'],
-          description: 'Subtotal antes de impuestos como texto decimal exacto',
+          description: 'Only an explicitly printed, labeled subtotal as exact decimal text. Null when absent or illegible; do not derive it from total or line sums. Equal separately printed subtotal and total are valid.',
         },
         descuentos: {
           type: 'array',
@@ -113,7 +113,7 @@ export const EXTRACTION_JSON_SCHEMA = {
         },
         total: {
           type: ['string', 'null'],
-          description: 'Total general a pagar como texto decimal exacto',
+          description: 'Only the explicitly printed total payable as exact decimal text; null if absent or illegible. Do not calculate it from other fields.',
         },
       },
       required: [

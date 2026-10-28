@@ -220,9 +220,9 @@ const MAX_CODES_PER_QUERY = 100;
 /** Values that can ride inside a PostgREST in.(...) list without quoting or injection risk. */
 const SAFE_FILTER_VALUE = /^[A-Za-z0-9._/-]{1,80}$/;
 
-function descriptionPattern(text: string | null): string | null {
+function descriptionTerms(text: string | null): string[] | null {
   const words = (text ?? '').match(/[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ]{3,}/g);
-  return words && words.length > 0 ? `%${words.slice(0, 3).join('%')}%` : null;
+  return words && words.length > 0 ? words.slice(0, 3) : null;
 }
 
 function chunk<T>(items: readonly T[], size: number): T[][] {
@@ -354,10 +354,17 @@ export function createFacturaRevisionRepository(client: RevisionClient): Factura
         reads.push(client.from('productos_view').select('*').in('codigo_interno', part).limit(CATALOG_QUERY_CAP));
         reads.push(client.from('productos_view').select('*').in('codigo_barras', part).limit(CATALOG_QUERY_CAP));
       }
-      const patterns = [...new Set(lineas.map(l => descriptionPattern(l.descripcion)).filter((p): p is string => p !== null))];
+      const patternsByTerms = new Map<string, string[]>();
+      for (const linea of lineas) {
+        const terms = descriptionTerms(linea.descripcion);
+        if (terms) patternsByTerms.set(terms.join(' '), terms);
+      }
+      const patterns = [...patternsByTerms.values()];
       if (patterns.length > MAX_DESCRIPTION_QUERIES) parcial = true;
-      for (const pattern of patterns.slice(0, MAX_DESCRIPTION_QUERIES)) {
-        reads.push(client.from('productos_view').select('*').ilike('descripcion', pattern).limit(CATALOG_QUERY_CAP));
+      for (const terms of patterns.slice(0, MAX_DESCRIPTION_QUERIES)) {
+        let read = client.from('productos_view').select('*');
+        for (const term of terms) read = read.ilike('descripcion', `%${term}%`);
+        reads.push(read.limit(CATALOG_QUERY_CAP));
       }
       const results = await Promise.all(reads.map(read => readCatalog(read, CATALOG_QUERY_CAP)));
       const byCode = new Map<string, Producto>();

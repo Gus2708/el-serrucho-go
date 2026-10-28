@@ -43,11 +43,11 @@ const linea = (n: number, over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-function payload(cabecera: Record<string, unknown> = {}): FacturaExtraccionPayload {
+function payload(cabecera: Record<string, unknown> = {}, lineas: Record<string, unknown>[] = [linea(1), linea(2), linea(3)]): FacturaExtraccionPayload {
   return {
     version: 1,
     cabecera: { proveedorNombre: 'Proveedor Uno', proveedorRif: null, numeroDocumento: 'DOC-1', numeroControl: null, fechaEmision: '2026-10-15', moneda: 'USD', tasaCambio: null, subtotal: null, descuentos: [], impuestos: [], total: null, ...cabecera },
-    lineas: [linea(1), linea(2), linea(3)],
+    lineas,
     metadatos: { totalPaginas: 2, paginasProcesadas: [1, 2], documentoCompleto: true, advertencias: [], confianzaGlobal: null },
   } as unknown as FacturaExtraccionPayload;
 }
@@ -142,8 +142,8 @@ async function typeId(id: string, text: string): Promise<void> {
 }
 
 /** Opens a revision from a completed extraction through the explicit button. */
-async function startRevision(repo: Mocks, over: Partial<FacturaRevisionViewProps> = {}) {
-  repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
+async function startRevision(repo: Mocks, over: Partial<FacturaRevisionViewProps> = {}, resultado: unknown = payload()) {
+  repo.leerExtracciones.mockResolvedValue([extraccionRow({}, resultado)]);
   const view = await openView(repo, over);
   await pressId(`revision-iniciar-${EXT}`);
   return view;
@@ -317,6 +317,29 @@ describe('review from an extraction', () => {
     expect(textOf('revision-linea-1-decision')).toMatch(/Sin decidir/);
     await pressId('revision-linea-1-candidato-00123');
     expect(textOf('revision-linea-1-decision')).toMatch(/00123/);
+    expect(textOf('revision-linea-1-decision')).toMatch(/sugerencia/i);
+  });
+
+  it('renders a reordered-description candidate while keeping the association pending until pressed', async () => {
+    const repo = fakeRepo({
+      buscarCandidatos: jest.fn(async () => ({
+        productos: [{ codigo_interno: 'CAT-1', descripcion: 'Galvanizado tornillo hexagonal 1/4', codigo_barras: null, existencia: 0, costo: 1, precio_venta: 2, es_placeholder: false }],
+        parcial: false,
+      })),
+    });
+    const extraction = payload({}, [
+      linea(1, { codigoProveedor: null, descripcion: 'Tornillo hexagonal galvanizado 1/4' }),
+      linea(2),
+      linea(3),
+    ]);
+
+    await startRevision(repo, {}, extraction);
+
+    expect(await screen.findByTestId('revision-linea-1-candidato-CAT-1')).toBeTruthy();
+    expect(textOf('revision-linea-1-decision')).toMatch(/Sin decidir/);
+    expect(textOf('revision-linea-1-decision')).not.toMatch(/CAT-1/);
+    await pressId('revision-linea-1-candidato-CAT-1');
+    expect(textOf('revision-linea-1-decision')).toMatch(/Asociado a CAT-1/);
     expect(textOf('revision-linea-1-decision')).toMatch(/sugerencia/i);
   });
 
