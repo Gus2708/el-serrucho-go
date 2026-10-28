@@ -2,6 +2,8 @@ import * as React from 'react';
 import { StyleSheet } from 'react-native';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react-native';
 import FacturaRevisionView, { type FacturaRevisionViewProps } from './FacturaRevisionView';
+import { supabase } from '../lib/supabase';
+import { reanudarBorradorCompra } from '../hooks/useBorradores';
 import {
   RevisionRepositoryError,
   type ExtraccionRow,
@@ -14,7 +16,8 @@ import type { FacturaExtraccionPayload } from '../lib/facturaExtractionContract'
 import { OWNER_A, OWNER_B, FACTURA_1, renderWithProviders, settle } from '../test-utils/facturaUiHarness';
 import { elSerrucho } from '../theme/brands/el-serrucho';
 
-jest.mock('../lib/supabase', () => ({ supabase: {} }));
+jest.mock('../lib/supabase', () => ({ supabase: { functions: { invoke: jest.fn() } } }));
+jest.mock('../hooks/useBorradores', () => ({ reanudarBorradorCompra: jest.fn() }));
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: require('../test-utils/facturaUiHarness').asyncStorage,
@@ -116,6 +119,14 @@ const textOf = (id: string): string => {
   return parts.join('');
 };
 const isDisabled = (id: string): boolean => Boolean(byId(id).props.accessibilityState?.disabled);
+
+const invokeMaterializar = jest.mocked(supabase.functions.invoke);
+const reanudarCompra = jest.mocked(reanudarBorradorCompra);
+
+beforeEach(() => {
+  invokeMaterializar.mockReset();
+  reanudarCompra.mockReset();
+});
 
 async function pressId(id: string): Promise<void> {
   await act(async () => {
@@ -250,6 +261,32 @@ describe('Extraer datos: explicit, guarded, never repeated', () => {
 });
 
 describe('review from an extraction', () => {
+  it('materializes an approved clean revision through the explicit action and resumes only the linked draft', async () => {
+    const repo = fakeRepo();
+    invokeMaterializar.mockResolvedValue({ data: { compraId: 42 }, error: null } as never);
+    await startRevision(repo);
+    await confirmEverything();
+    await typeId('revision-motivo-guardado', 'Revision completa');
+    await pressId('revision-guardar');
+    expect(screen.getByRole('button', { name: 'Preparar borrador de compra' })).toBeTruthy();
+    expect(isDisabled('revision-materializar')).toBe(true);
+    await pressId('revision-materializar');
+    expect(invokeMaterializar).not.toHaveBeenCalled();
+    await pressId('revision-aprobar');
+
+    expect(screen.getByRole('button', { name: 'Preparar borrador de compra' })).toBeTruthy();
+    expect(isDisabled('revision-materializar')).toBe(false);
+    await pressId('revision-materializar');
+
+    expect(invokeMaterializar).toHaveBeenCalledTimes(1);
+    expect(invokeMaterializar).toHaveBeenCalledWith('materializar-compra-factura', {
+      body: { facturaId: FACTURA_1, revision: 1, fingerprint: FP, versionEsperada: 3 },
+    });
+    expect(reanudarCompra).toHaveBeenCalledTimes(1);
+    expect(reanudarCompra).toHaveBeenCalledWith(42);
+    expect(invokeMaterializar.mock.calls.map(([name]) => name)).toEqual(['materializar-compra-factura']);
+  });
+
   it('shows every repeated supplier code as its own line with literal code, page, OCR confidence and the untouched original', async () => {
     const repo = fakeRepo();
     await startRevision(repo);
@@ -377,6 +414,9 @@ describe('calculation, blockers and approval', () => {
     expect(blockers).toMatch(/IVA/);
     expect(textOf('revision-estado')).toBe('Con bloqueos');
     expect(isDisabled('revision-aprobar')).toBe(true);
+    expect(isDisabled('revision-materializar')).toBe(true);
+    await pressId('revision-materializar');
+    expect(invokeMaterializar).not.toHaveBeenCalled();
   });
 
   it('shows exact USD lines, per-rate totals and unit costs for a complete review', async () => {
@@ -592,6 +632,9 @@ describe('identity fences and stale approval', () => {
     await openView(repo, { facturaVersion: 4 });
     expect(textOf('revision-estado')).toBe('Aprobación desactualizada');
     expect(isDisabled('revision-aprobar')).toBe(true);
+    expect(isDisabled('revision-materializar')).toBe(true);
+    await pressId('revision-materializar');
+    expect(invokeMaterializar).not.toHaveBeenCalled();
   });
 
   it('never renders a stale attestation as valid after the document was replaced', async () => {
@@ -604,10 +647,13 @@ describe('identity fences and stale approval', () => {
 
   it('does not offer attestation while manual editor changes are unsaved', async () => {
     const repo = fakeRepo();
-    repo.leerRevisiones.mockResolvedValue([savedRevision()]);
+    repo.leerRevisiones.mockResolvedValue([savedRevision({ aprobadoPor: OWNER_A, aprobadoEn: '2026-10-23T12:00:00Z' })]);
     repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
     await openView(repo, { editorDirty: true });
     expect(isDisabled('revision-aprobar')).toBe(true);
+    expect(isDisabled('revision-materializar')).toBe(true);
+    await pressId('revision-materializar');
+    expect(invokeMaterializar).not.toHaveBeenCalled();
   });
 });
 

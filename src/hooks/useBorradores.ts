@@ -129,6 +129,13 @@ export async function reanudarBorradorCompra(id: number): Promise<void> {
   if (error) throw error;
 
   const items = await fetchCompraItemsForEdit(id);
+  const { data: binding, error: bindingError } = await supabase
+    .from('facturas_proveedores_compras')
+    .select('factura_id')
+    .eq('compra_id', id)
+    .maybeSingle();
+
+  if (bindingError) throw bindingError;
 
   useCompra.getState().loadBorrador({
     borradorId:      data.id,
@@ -138,6 +145,7 @@ export async function reanudarBorradorCompra(id: number): Promise<void> {
     nota:            data.nota ?? '',
     numeroDocumento: data.numero_documento ?? '',
     items,
+    facturaVinculada: binding !== null,
   });
 }
 

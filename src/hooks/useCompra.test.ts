@@ -54,6 +54,22 @@ describe('useCompra autosave draft', () => {
     useCompra.getState().clear();
   });
 
+  it('blocks invoice-linked draft submission before any purchase writes', async () => {
+    useCompra.getState().loadBorrador({
+      borradorId: 31,
+      titulo: 'Factura F-31',
+      proveedorCodigo: 'PRV-01',
+      proveedorNombre: 'FLORIPAINT',
+      nota: '',
+      numeroDocumento: 'F-31',
+      items: [sampleItem],
+      facturaVinculada: true,
+    });
+
+    await expect(useCompra.getState().submit('user-123')).rejects.toThrow('regla de inventario');
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
   it('does not autosave if items list is empty', async () => {
     const id = await useCompra.getState().autoSaveDraft('user-123');
     expect(id).toBeNull();

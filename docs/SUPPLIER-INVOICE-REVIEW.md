@@ -213,10 +213,13 @@ embedded PostgREST read is one API request/statement snapshot, not a transaction
 requests; any later consumer must revalidate source identity. This endpoint never creates a
 purchase or grants emission authority.
 
-## Purchase binding and linked-draft guard (local, no caller yet)
+## Approved revision materialization and linked draft
 
-An approved revision can be tied to exactly one empty purchase draft. This is source identity
-only: it carries no amounts, items, provider or header mapping and is **not** purchase authority.
+The existing invoice binding remains immutable source identity. A server-side materializer reads and
+revalidates the latest approved revision, recalculates its purchase rows, and writes them into the
+already-linked draft atomically. The result remains an editable draft, not purchase or emission
+authority; the user must take a separate action to submit, and that path is currently blocked for
+invoice-linked drafts until the unresolved T5 inventory rule is settled.
 
 - `public.facturas_proveedores_compras` (migration `*_facturas_proveedores_compras.sql`) is
   the authoritative binding, keyed by the canonical invoice UUID (one purchase per invoice, not per
@@ -236,11 +239,17 @@ only: it carries no amounts, items, provider or header mapping and is **not** pu
   still-pristine draft (`rebind: true`); a non-pristine draft refuses with `PC409`, an older
   revision with `PR409`, an unapproved one with `22023 revision_no_aprobada`. Other errors reuse the
   review codes (`42501`, `PI409`, `PV409`, `P0002`).
-- A linked purchase is locked for every role, `service_role` and the table owner included: any
-  header UPDATE, any item INSERT/UPDATE/DELETE (old and new parent are both checked, so items cannot
-  be moved in or out), header DELETE (RESTRICT) and TRUNCATE of either purchase table while any
-  link exists. `emitido` is therefore unreachable and the purchase listener never sees a linked
-  draft. Unlinked manual and legacy purchases are unchanged.
+- Only the privileged, session-valid invoice owner may edit the linked header and item rows while
+  the linked purchase remains `borrador`; attempts to change owner/backend state, move rows across
+  purchases, or emit/delete the linked purchase remain blocked. The purchase listener cannot see a
+  linked draft because `emitido` is unreachable. Unlinked manual and legacy purchases are unchanged.
+- `materializar-compra-factura` accepts invoice/revision identity only from the client. It reads the
+  latest approved source with the caller JWT, verifies owner, revision, fingerprint, invoice version,
+  document hash and stored extraction, then runs the existing revision calculator to derive the
+  header and literal purchase rows. A service-only private stage carries those server-derived rows
+  into `materializar_compra_factura`, whose authenticated RPC repeats the authorization and source
+  checks under the existing invoice lock. One transaction inserts header/items and records a digest;
+  replay does not overwrite later user edits. No submit/emission call is made.
 - First-link guard: a draft and its binding commit together and the binding never changes
   identity, so a draft cannot be seen unlinked and later become linked. That alone does not stop a
   `BYPASSRLS` writer (`service_role`) whose item row reaches the BEFORE trigger while the target
@@ -263,9 +272,9 @@ only: it carries no amounts, items, provider or header mapping and is **not** pu
   trigger or constraint. `TRUNCATE` of `compras_app` itself fails for client roles even with no
   link (the binding's RESTRICT foreign key: `0A000` unless the statement also lists the binding,
   `42501` with `CASCADE`); `TRUNCATE` of the items table alone is unchanged without links. No UI
-  or repository calls the function yet, so no live linked draft exists; a linked draft would
-  appear in the manual Borradores list and every edit there would fail by design (a product
-  decision for the UI unit).
+  or hosted behavior are observed there. The manual purchase UI reopens linked drafts through the
+  existing Borradores flow; linked submit stays blocked until the T5 stock-compensation policy is
+  resolved.
 
 ## Delivery boundaries
 

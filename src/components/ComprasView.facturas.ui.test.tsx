@@ -4,6 +4,7 @@ import { renderWithProviders } from '../test-utils/facturaUiHarness';
 
 let mockRole: string | undefined = 'admin';
 let mockDemo = false;
+let mockFacturaVinculada = false;
 
 jest.mock('../hooks/useUserRole', () => ({
   useUserRole: () => ({ data: { role: mockRole, profile: { id: 'a0000000-0000-4000-8000-00000000000a' } } }),
@@ -13,7 +14,7 @@ jest.mock('../demo/useDemoStore', () => ({ isDemoActive: () => mockDemo, useDemo
 jest.mock('../hooks/useDeviceSize', () => ({ useDeviceSize: () => ({ isDesktop: false }) }));
 jest.mock('../hooks/useProveedores', () => ({ useProveedores: () => ({ data: [], isLoading: false }) }));
 jest.mock('../hooks/useCompra', () => ({
-  useCompra: () => ({ proveedorCodigo: 'P1', proveedorNombre: 'Prov Uno', items: [], nota: '', titulo: '', numeroDocumento: '', isLoading: false, isAutoSaving: false, lastSavedAt: null, editingCompraId: null, borradorId: null,
+  useCompra: () => ({ proveedorCodigo: 'P1', proveedorNombre: 'Prov Uno', items: mockFacturaVinculada ? [{ codigo_producto: 'SKU-1', descripcion: 'Artículo', cantidad: 2, costo: 1, precio: 1.3, referencia: null, es_nuevo: false }] : [], nota: '', titulo: '', numeroDocumento: '', isLoading: false, isAutoSaving: false, lastSavedAt: null, editingCompraId: null, borradorId: mockFacturaVinculada ? 7 : null, facturaVinculada: mockFacturaVinculada,
     setProveedor: jest.fn(), addItem: jest.fn(), removeItem: jest.fn(), updateItem: jest.fn(), setNota: jest.fn(), setNumeroDocumento: jest.fn(), clear: jest.fn(), saveDraft: jest.fn(), autoSaveDraft: jest.fn(), deleteActiveDraft: jest.fn(), submit: jest.fn() }),
 }));
 jest.mock('../hooks/useBorradores', () => ({ borradoresQueryKey: ['b'] }));
@@ -36,7 +37,7 @@ async function mount() {
 }
 
 describe('ComprasView invoice entry gate', () => {
-  afterEach(() => { mockRole = 'admin'; mockDemo = false; });
+  afterEach(() => { mockRole = 'admin'; mockDemo = false; mockFacturaVinculada = false; });
   it('admin: entry present, modal closed, opens on press with supplier prefill', async () => {
     const r = await mount();
     expect(r.getByLabelText('Facturas de proveedor')).toBeTruthy();
@@ -59,6 +60,12 @@ describe('ComprasView invoice entry gate', () => {
     mockRole = undefined;
     const r = await mount();
     expect(r.queryByLabelText('Facturas de proveedor')).toBeNull();
+  });
+  it('keeps an invoice-linked draft editable but blocks the unsafe submit path', async () => {
+    mockFacturaVinculada = true;
+    const r = await mount();
+    expect(r.getByTestId('factura-submit-block')).toBeTruthy();
+    expect(r.getByTestId('compra-submit').props.accessibilityState.disabled).toBe(true);
   });
   it('demo mode, even as admin: no entry', async () => {
     mockDemo = true;

@@ -38,6 +38,7 @@ export interface CompraBorradorDraft {
   nota:            string;
   numeroDocumento: string;
   items:           CompraDraftItem[];
+  facturaVinculada?: boolean;
 }
 
 interface CompraStore {
@@ -53,6 +54,7 @@ interface CompraStore {
   autoSaveError:    string | null;
   editingCompraId:  number | null;   // != null => reintentar una compra existente (update, no insert)
   borradorId:       number | null;   // != null => se está armando sobre un borrador guardado
+  facturaVinculada: boolean;
   setProveedor:      (codigo: string, nombre: string) => void;
   addItem:           (item: CompraDraftItem) => void;
   removeItem:        (codigo: string) => void;
@@ -82,6 +84,7 @@ export const useCompra = create<CompraStore>()((set, get) => ({
   autoSaveError:   null,
   editingCompraId: null,
   borradorId:      null,
+  facturaVinculada: false,
 
   setProveedor: (codigo, nombre) => set({ proveedorCodigo: codigo, proveedorNombre: nombre }),
 
@@ -115,12 +118,13 @@ export const useCompra = create<CompraStore>()((set, get) => ({
   setNumeroDocumento: (numero) => set({ numeroDocumento: numero }),
 
   clear: () => set({
-    proveedorCodigo: null, proveedorNombre: null, items: [], nota: '', titulo: '', numeroDocumento: '', editingCompraId: null, borradorId: null, isAutoSaving: false, lastSavedAt: null, autoSaveError: null,
+    proveedorCodigo: null, proveedorNombre: null, items: [], nota: '', titulo: '', numeroDocumento: '', editingCompraId: null, borradorId: null, facturaVinculada: false, isAutoSaving: false, lastSavedAt: null, autoSaveError: null,
   }),
 
   loadForEdit: (draft) => set({
     editingCompraId: draft.compraId,
     borradorId:      null,
+    facturaVinculada: false,
     proveedorCodigo: draft.proveedorCodigo,
     proveedorNombre: draft.proveedorNombre,
     nota:            draft.nota,
@@ -134,6 +138,7 @@ export const useCompra = create<CompraStore>()((set, get) => ({
   loadBorrador: (draft) => set({
     editingCompraId: null,
     borradorId:      draft.borradorId,
+    facturaVinculada: draft.facturaVinculada ?? false,
     proveedorCodigo: draft.proveedorCodigo,
     proveedorNombre: draft.proveedorNombre,
     nota:            draft.nota,
@@ -301,6 +306,9 @@ export const useCompra = create<CompraStore>()((set, get) => ({
   },
 
   submit: async (userId: string) => {
+    if (get().facturaVinculada) {
+      throw new Error('La emision de esta compra vinculada sigue bloqueada hasta resolver la regla de inventario de facturas.');
+    }
     if (isDemoActive()) {
       get().clear();
       return { compraId: 888 };
