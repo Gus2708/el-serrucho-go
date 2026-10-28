@@ -48,7 +48,7 @@ const MAX_REQUEST_BODY_BYTES = 4 * 1024;
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
 };
 const NO_STORE_HEADERS = { 'Cache-Control': 'no-store' };
 const NOT_AVAILABLE_BODY = JSON.stringify({
