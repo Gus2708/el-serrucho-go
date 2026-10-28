@@ -160,6 +160,47 @@ describe('OpenRouter Protocol & Schema Slice', () => {
   });
 
   describe('buildOpenRouterExtractionRequest', () => {
+    test('requests a literal printed subtotal without deriving it from a readable total', () => {
+      const built = buildOpenRouterExtractionRequest({
+        apiKey: dummyApiKey,
+        documentBytes: validPdfBytes,
+        validateDocument: validateDocumentBytes,
+      });
+
+      expect(built.ok).toBe(true);
+      if (!built.ok) return;
+
+      expect(built.body.messages[0].content).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('Do not calculate subtotal, sum line totals, or copy total into subtotal.'),
+        }),
+      ]));
+      expect(built.body.messages[0].content).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('If no labeled subtotal is printed, cabecera.subtotal must be null'),
+        }),
+      ]));
+      expect(built.body.response_format.json_schema.schema).toBe(EXTRACTION_JSON_SCHEMA);
+      expect(EXTRACTION_JSON_SCHEMA.properties.cabecera.properties.subtotal.description)
+        .toContain('explicitly printed, labeled subtotal');
+      expect(EXTRACTION_JSON_SCHEMA.properties.cabecera.properties.total.description)
+        .toContain('explicitly printed total');
+    });
+
+    test.each([null, '100.0000'])('preserves a valid nullable or equal printed subtotal: %s', subtotal => {
+      const parsed = parseFacturaExtraction({
+        ...minimalValidPayload,
+        cabecera: { ...minimalValidPayload.cabecera, subtotal, total: '100.0000' },
+      });
+
+      expect(parsed.ok).toBe(true);
+      if (!parsed.ok) return;
+      expect(parsed.data.cabecera.subtotal).toBe(subtotal);
+      expect(parsed.data.cabecera.total).toBe('100.0000');
+    });
+
     test('builds compliant request with exact model, headers, and privacy flags', () => {
       const built = buildOpenRouterExtractionRequest({
         apiKey: dummyApiKey,

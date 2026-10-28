@@ -1,6 +1,6 @@
 # Evaluate historical supplier invoices safely
 
-Use old supplier invoices to measure extraction and product detection before a live pilot. This is a preparation plan, not evidence of accuracy or a model-training job. No real invoice has been evaluated under this plan yet.
+Use old supplier invoices to measure extraction and product detection before a live pilot. This is an evaluation guide, not proof of general accuracy or a model-training job. The first controlled observation is recorded below; it does not establish pilot readiness.
 
 ## First batch
 
@@ -51,6 +51,14 @@ Use the existing [extraction contract](../src/lib/facturaExtractionContract.ts),
 Publish numerators and denominators, not percentages alone. Break results down by supplier/layout, quality and split so easy cases cannot hide failures. Distinguish extraction errors, catalog gaps, matching errors, incorrect human labels and policy blocks.
 
 ## Calibration is not automatic learning
+
+### First controlled observation
+
+One authorized six-line calibration document completed extraction through the authenticated application without purchase emission or inventory changes. Its printed codes, quantities, unit costs, line totals and document total matched the source. Catalog associations and tax, unit, completeness and receipt decisions remained unresolved; approval and purchase preparation stayed blocked.
+
+The model also supplied a subtotal that was not separately printed. Treat this as an extraction error, not a correct calculated field. The original extraction must remain unchanged; any reviewed correction needs a reason. Prompt and schema descriptions now explicitly require a labeled, printed subtotal and prohibit deriving it from a total or line sums. Valid equal subtotal and total values remain allowed when both are printed.
+
+The clarification has deterministic request-contract tests, not a new real-model accuracy result. No additional provider call, broader corpus score, product-match correctness or fine-tuning result is implied. Preserve private source files and answer sheets outside the repository; provider cost was not observed for this first case.
 
 Use calibration errors to propose bounded prompt/parser/matcher changes with regression tests. Corrections do not automatically update aliases, barcodes, catalog rows, model weights or financial policies. Actual fine-tuning would be a separate decision with provider support, data rights, privacy and budget checks.
 
