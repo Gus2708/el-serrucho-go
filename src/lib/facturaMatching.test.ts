@@ -288,6 +288,102 @@ describe('matchInvoiceLines: attributes', () => {
     expect(result.candidates[0].unknownAttributes).toEqual([]);
     expect(result.excluded).toEqual([]);
   });
+
+  it.each([
+    ['MX30', 'MX-30'],
+    ['MX30', 'MX 30'],
+    ['MX-30', 'MX 30'],
+  ])('treats equivalent MX model spellings %s and %s as compatible', (printedModel, catalogModel) => {
+    const [result] = run(
+      [line(1, { descripcion: `Generic adhesive ${printedModel} white` })],
+      [prod('P1', `Generic adhesive ${catalogModel} white`)],
+    );
+
+    expect(result.candidates.map((candidate) => candidate.codigoInterno)).toEqual(['P1']);
+    expect(result.excluded).toEqual([]);
+    expect(result.candidates[0].unknownAttributes).not.toContain('model');
+    expect(result.status).toBe('review');
+  });
+
+  it('excludes a fuzzy candidate with a different explicit MX model', () => {
+    const [result] = run(
+      [line(1, { descripcion: 'Generic adhesive MX30 white' })],
+      [prod('P1', 'Generic adhesive MX50 white')],
+    );
+
+    expect(result.candidates).toEqual([]);
+    expect(result.excluded).toEqual([{ codigoInterno: 'P1', reasons: ['incompatible:model'] }]);
+    expect(result.status).toBe('unresolved');
+  });
+
+  it.each(['MX30.5', 'MX30,5'])('does not classify a partial decimal model %s as MX30', (printedModel) => {
+    const [result] = run(
+      [line(1, { descripcion: `Generic adhesive ${printedModel} white` })],
+      [prod('P1', 'Generic adhesive MX50 white')],
+    );
+
+    expect(result.candidates.map((candidate) => candidate.codigoInterno)).toEqual(['P1']);
+    expect(result.candidates[0].unknownAttributes).toContain('model');
+    expect(result.excluded).toEqual([]);
+    expect(result.status).toBe('review');
+  });
+
+  it('surfaces an exact-code conflict when an MX model differs', () => {
+    const [result] = run(
+      [line(1, { codigoProveedor: 'SKU-1', descripcion: 'Generic adhesive MX30 white', unidad: 'UND' })],
+      [prod('P1', 'Generic adhesive MX50 white', { codigo_barras: 'SKU-1' })],
+    );
+
+    expect(result.candidates).toEqual([]);
+    expect(result.excluded).toEqual([{ codigoInterno: 'P1', reasons: ['incompatible:model'] }]);
+    expect(result.conflicts).toEqual([{ code: 'code_attribute_incompatible', codigosInternos: ['P1'] }]);
+    expect(result.status).toBe('conflict');
+  });
+
+  it.each([
+    ['line only', 'Generic adhesive MX30 white', 'Generic adhesive white'],
+    ['catalog only', 'Generic adhesive white', 'Generic adhesive MX30 white'],
+  ])('keeps one-sided MX model evidence unknown for %s', (_label, printed, catalog) => {
+    const [result] = run([line(1, { descripcion: printed, unidad: 'UND' })], [prod('P1', catalog)]);
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0].unknownAttributes).toContain('model');
+    expect(result.excluded).toEqual([]);
+    expect(result.status).toBe('review');
+  });
+
+  it('preserves existing behavior when neither description has an MX model', () => {
+    const [result] = run(
+      [line(1, { descripcion: 'Generic adhesive white', unidad: 'UND' })],
+      [prod('P1', 'Generic adhesive white')],
+    );
+
+    expect(result.candidates.map((candidate) => candidate.codigoInterno)).toEqual(['P1']);
+    expect(result.candidates[0].unknownAttributes).toEqual([]);
+    expect(result.excluded).toEqual([]);
+    expect(result.status).toBe('review');
+  });
+
+  it('does not infer diameter or incompatibility from bare 4 X 3MTS and 6 X 3MTS', () => {
+    const [result] = run(
+      [line(1, { descripcion: 'Generic hose 4 X 3MTS' })],
+      [prod('P1', 'Generic hose 6 X 3MTS')],
+    );
+
+    expect(result.candidates.map((candidate) => candidate.codigoInterno)).toEqual(['P1']);
+    expect(result.candidates[0].unknownAttributes).not.toContain('model');
+    expect(result.excluded).toEqual([]);
+  });
+
+  it('still excludes a size mismatch when the explicit MX model matches', () => {
+    const [result] = run(
+      [line(1, { descripcion: 'Generic adhesive MX30 10mm' })],
+      [prod('P1', 'Generic adhesive MX-30 12mm')],
+    );
+
+    expect(result.candidates).toEqual([]);
+    expect(result.excluded).toEqual([{ codigoInterno: 'P1', reasons: ['incompatible:size'] }]);
+  });
 });
 
 describe('matchInvoiceLines: fuzzy suggestions and unresolved lines', () => {

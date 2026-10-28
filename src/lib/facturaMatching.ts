@@ -136,7 +136,7 @@ const MATERIALS = new Set([
 ]);
 const PACKAGES = new Set(['caja', 'paquete', 'bolsa', 'docena', 'blister', 'rollo']);
 
-const ATTRIBUTE_KINDS = ['size', 'voltage', 'power', 'gauge', 'material', 'presentation'] as const;
+const ATTRIBUTE_KINDS = ['size', 'voltage', 'power', 'gauge', 'material', 'presentation', 'model'] as const;
 type AttributeKind = (typeof ATTRIBUTE_KINDS)[number];
 type Attributes = Record<AttributeKind, Set<string>>;
 
@@ -146,6 +146,8 @@ const VOLTAGE = /(\d+(?:\.\d+)?) ?(vac|vdc|v)\b/g;
 const POWER = /(\d+(?:\.\d+)?) ?(w|kw|hp)\b/g;
 const GAUGE = /\bcal ?(\d+)\b|\b(\d+) ?cal\b/g;
 const MULTIPACK = /\bx(\d+)\b/g;
+// Recognize only explicit MX-number model tokens; other alphanumeric codes remain unclassified.
+const MX_MODEL = /\bmx\s*(\d+)\b(?!\.\d)/g;
 
 // The family decides compatibility; a different presentation inside one family only needs review.
 const UNIT_FAMILIES: Readonly<Record<string, readonly [canonical: string, family: string]>> = {
@@ -240,6 +242,7 @@ function extractAttributes(text: string): Attributes {
       ...words.filter((w) => PACKAGES.has(w)),
       ...collect(text, MULTIPACK, (m) => `x${m[1]}`),
     ]),
+    model: collect(text, MX_MODEL, (m) => `mx${m[1]}`),
   };
 }
 
