@@ -15,6 +15,7 @@ const PRECACHE_ASSETS = [
   '/manifest.webmanifest',
   '/elserruchogo512x512.png',
   '/apple-touch-icon.png',
+  '/zxing_reader.wasm',
 ];
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

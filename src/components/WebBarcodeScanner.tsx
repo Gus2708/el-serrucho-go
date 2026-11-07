@@ -141,16 +141,91 @@ function isDisallowedFormat(format?: string): boolean {
   );
 }
 
-interface ZxingEngine {
+interface BarcodeReaderEngine {
   decodeVideoFrame: (
     video: HTMLVideoElement,
     cropCenter: boolean,
     digitalScale: number,
     tryInverted: boolean,
-  ) => string | null;
+  ) => Promise<string | null> | string | null;
 }
 
-async function createZxingEngine(): Promise<ZxingEngine | null> {
+async function createZxingWasmEngine(): Promise<BarcodeReaderEngine | null> {
+  if (typeof window === 'undefined' || typeof document === 'undefined' || typeof document.createElement !== 'function') {
+    return null;
+  }
+  try {
+    const { readBarcodesFromImageData, setZXingModuleOverrides } = await import('zxing-wasm/reader');
+
+    setZXingModuleOverrides({
+      locateFile: (fileName: string) => {
+        return `/${fileName}`;
+      },
+    });
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D | null;
+    if (!ctx) return null;
+
+    return {
+      async decodeVideoFrame(
+        video: HTMLVideoElement,
+        cropCenter: boolean,
+        digitalScale: number,
+      ): Promise<string | null> {
+        const vw = video.videoWidth || 0;
+        const vh = video.videoHeight || 0;
+        if (vw < 64 || vh < 64) return null;
+
+        const zoomFactor = digitalScale > 1 ? digitalScale : 1;
+        const bandWidthRatio = (cropCenter ? 0.88 : 0.98) / zoomFactor;
+        const bandHeightRatio = (cropCenter ? 0.44 : 0.85) / zoomFactor;
+
+        const sw = Math.max(64, Math.floor(vw * bandWidthRatio));
+        const sh = Math.max(48, Math.floor(vh * bandHeightRatio));
+        const sx = Math.floor((vw - sw) / 2);
+        const sy = Math.floor((vh - sh) / 2);
+
+        const targetWidth = Math.min(sw, 960);
+        const targetHeight = Math.max(48, Math.floor((sh * targetWidth) / sw));
+
+        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+        }
+
+        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, targetWidth, targetHeight);
+        const imgData = ctx.getImageData(0, 0, targetWidth, targetHeight);
+
+        try {
+          const results = await readBarcodesFromImageData(imgData, {
+            formats: ['Linear-Codes'],
+            tryHarder: true,
+            tryRotate: true,
+            tryInvert: true,
+            maxNumberOfSymbols: 1,
+          });
+
+          if (results && results.length > 0) {
+            const valid = results.find((r) => r.text && !isDisallowedFormat(r.format));
+            if (valid?.text) {
+              return valid.text;
+            }
+          }
+        } catch {
+          /* ignore frame errors */
+        }
+
+        return null;
+      },
+    };
+  } catch (err) {
+    console.warn('[WebBarcodeScanner] zxing-wasm unavailable, using fallback:', err);
+    return null;
+  }
+}
+
+async function createZxingJsEngine(): Promise<BarcodeReaderEngine | null> {
   if (typeof document === 'undefined' || typeof document.createElement !== 'function') {
     return null;
   }
@@ -316,6 +391,12 @@ async function createZxingEngine(): Promise<ZxingEngine | null> {
       return null;
     },
   };
+}
+
+async function createUnifiedEngine(): Promise<BarcodeReaderEngine | null> {
+  const wasmEngine = await createZxingWasmEngine();
+  if (wasmEngine) return wasmEngine;
+  return createZxingJsEngine();
 }
 
 export function WebBarcodeScanner({ visible, onClose, onScan }: Props): React.JSX.Element | null {
@@ -499,9 +580,9 @@ export function WebBarcodeScanner({ visible, onClose, onScan }: Props): React.JS
         return null;
       }
 
-      const [nativeDetector, zxingEngine] = await Promise.all([
+      const [nativeDetector, barcodeEngine] = await Promise.all([
         initNativeDetector(),
-        createZxingEngine(),
+        createUnifiedEngine(),
       ]);
 
       const stream = await acquireOrReuseStream();
@@ -549,8 +630,8 @@ export function WebBarcodeScanner({ visible, onClose, onScan }: Props): React.JS
             }
           }
 
-          if (zxingEngine && !scannedRef.current) {
-            const decoded = zxingEngine.decodeVideoFrame(
+          if (barcodeEngine && !scannedRef.current) {
+            const decoded = await barcodeEngine.decodeVideoFrame(
               currentVideo,
               cropCenter,
               cssZoomRef.current ? 2 : 1,
@@ -563,7 +644,7 @@ export function WebBarcodeScanner({ visible, onClose, onScan }: Props): React.JS
         } finally {
           detectingRef.current = false;
         }
-      }, 120);
+      }, 100);
     } catch (err: any) {
       const isPermissionDenied =
         err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError';
