@@ -1,16 +1,27 @@
-import { useEffect, useMemo } from 'react';
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { supabase, Producto } from '../lib/supabase';
 import { isDemoActive } from '../demo/useDemoStore';
 import { demoProductos } from '../demo/demoData';
+import {
+  normalizeSearchTerm,
+  buildBarcodeSearchVariants,
+} from '../lib/barcode';
+
+export {
+  normalizeSearchTerm,
+  computeGtinCheckDigit,
+  expandUPCEtoUPCA,
+  compressUPCAtoUPCE,
+  cleanScannedBarcode,
+  buildBarcodeSearchVariants,
+} from '../lib/barcode';
 
 export type StockFilter = 'todos' | 'sin_stock' | 'stock_bajo' | 'margen_negativo';
 
 const PAGE_SIZE = 50;
 
 export function useProductos(search: string = '', filter: StockFilter = 'todos') {
-  const queryClient = useQueryClient();
-
   const query = useInfiniteQuery({
     queryKey:         ['productos', search, filter],
     queryFn:          ({ pageParam = 0 }) => fetchProductos(search, filter, pageParam),
@@ -43,15 +54,6 @@ export function useProductos(search: string = '', filter: StockFilter = 'todos')
   };
 }
 
-/** Normaliza texto de búsqueda eliminando acentos/diacríticos (ej: Ü -> U, á -> A) y convirtiendo a mayúsculas */
-export function normalizeSearchTerm(str: string): string {
-  if (!str) return '';
-  return str
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toUpperCase();
-}
-
 /** Products with names like ".", "..", "...", "A", "B" are POS placeholders — treat as non-data */
 export function isPlaceholder(p: Producto): boolean {
   if (p.es_placeholder !== undefined) return p.es_placeholder;
@@ -69,11 +71,16 @@ async function fetchProductos(
     const trimmed = normalizeSearchTerm(search).trim();
     if (trimmed) {
       const clean = trimmed.replace(/\*/g, '').toUpperCase();
-      list = list.filter(p =>
-        normalizeSearchTerm(p.descripcion).includes(clean) ||
-        normalizeSearchTerm(p.codigo_interno).includes(clean) ||
-        normalizeSearchTerm(p.codigo_barras).includes(clean)
-      );
+      const variants = buildBarcodeSearchVariants(clean);
+      list = list.filter(p => {
+        const desc = normalizeSearchTerm(p.descripcion);
+        const interno = normalizeSearchTerm(p.codigo_interno);
+        const barras = normalizeSearchTerm(p.codigo_barras);
+        if (desc.includes(clean) || interno.includes(clean) || barras.includes(clean)) {
+          return true;
+        }
+        return variants.some(v => barras === v || interno === v || barras.startsWith(v));
+      });
     }
     if (filter === 'sin_stock') {
       list = list.filter(p => p.existencia <= 0);
@@ -98,23 +105,30 @@ async function fetchProductos(
 
   const trimmed = normalizeSearchTerm(search).trim();
   if (trimmed) {
-    if (trimmed.includes('*')) {
+    const isCode39Wrapped = /^\*[^*\s]+\*$/.test(trimmed);
+    if (trimmed.includes('*') && !isCode39Wrapped) {
       // Wildcard mode: busca en cualquier posición
       const clean = trimmed.replace(/\*/g, '').trim();
       const words = clean.split(/\s+/).filter(w => w.length > 0);
       const pattern = `%${words.join('%')}%`;
       // NOTE: referencia no está en la vista — solo buscar en columnas existentes
       query = query.or(`descripcion.ilike.${pattern},codigo_interno.ilike.${pattern},codigo_barras.ilike.${pattern}`);
-    } else if (/^\d{8,}$/.test(trimmed)) {
-      // Modo código de barras: la búsqueda es solo dígitos largos (EAN-8/13, UPC, etc.)
-      // Busca coincidencia exacta en codigo_barras o como prefijo en codigo_interno
-      const term = `${trimmed}%`;
-      query = query.or(`codigo_barras.eq.${trimmed},codigo_interno.ilike.${term},codigo_barras.ilike.${term}`);
     } else {
-      // Strict mode: busca por prefijo en nombre y código
-      const term = `${trimmed}%`;
-      // NOTE: referencia no está en la vista — solo buscar en columnas existentes
-      query = query.or(`descripcion.ilike.${term},codigo_interno.ilike.${term},codigo_barras.ilike.${term}`);
+      const variants = buildBarcodeSearchVariants(trimmed);
+      if (variants.length > 1 || /^\d{6,}$/.test(trimmed)) {
+        // Modo código de barras: busca todas las variantes equivalentes (UPC-E, UPC-A, EAN-13, ITF-14, Codabar, Code 39)
+        const clauses = variants.flatMap(v => [
+          `codigo_barras.eq.${v}`,
+          `codigo_interno.ilike.${v}%`,
+          `codigo_barras.ilike.${v}%`,
+        ]);
+        query = query.or(clauses.join(','));
+      } else {
+        // Strict mode: busca por prefijo en nombre y código
+        const term = `${trimmed}%`;
+        // NOTE: referencia no está en la vista — solo buscar en columnas existentes
+        query = query.or(`descripcion.ilike.${term},codigo_interno.ilike.${term},codigo_barras.ilike.${term}`);
+      }
     }
   }
 

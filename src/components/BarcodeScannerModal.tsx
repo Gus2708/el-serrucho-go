@@ -4,12 +4,13 @@ import { scaleFont } from '../theme/responsive';
  *
  * Despacha automáticamente al scanner correcto según la plataforma:
  * - Android / iOS → CameraView de expo-camera (nativo, optimizado para códigos 1D)
- * - Web / PWA     → WebBarcodeScanner (BarcodeDetector API + @zxing/browser fallback)
+ * - Web / PWA     → WebBarcodeScanner (BarcodeDetector API + @zxing/library con ROI + TRY_HARDER)
  *
  * CRÍTICO:
  * 1. Excluye códigos QR y matrices 2D (solo lee códigos de barras 1D).
  * 2. CameraView NO soporta children en expo-camera 16.x. El overlay DEBE ser sibling View.
  * 3. Retícula horizontal (310x160) adaptada a códigos de barra lineales con linterna y zoom 1x/2x.
+ * 4. En expo-camera, autofocus="off" activa enfoque continuo automático en Android e iOS.
  */
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -24,6 +25,7 @@ import {
 import { CameraView, useCameraPermissions, type BarcodeType } from 'expo-camera';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
+import { cleanScannedBarcode } from '../lib/barcode';
 import { WebBarcodeScanner } from './WebBarcodeScanner';
 import { PressableScale } from './PressableScale';
 
@@ -46,8 +48,19 @@ export const BARCODE_1D_TYPES: BarcodeType[] = [
   'itf14',
 ];
 
+export function isDisallowed2DBarcodeType(type?: string): boolean {
+  const lowerType = (type || '').toLowerCase();
+  return (
+    lowerType.includes('qr') ||
+    lowerType.includes('aztec') ||
+    lowerType.includes('matrix') ||
+    lowerType.includes('pdf417') ||
+    lowerType === 'org.iso.qrcode'
+  );
+}
+
 // ─── On web, delegate entirely to WebBarcodeScanner ────────────────────────────
-export function BarcodeScannerModal({ visible, onClose, onScan }: Props) {
+export function BarcodeScannerModal({ visible, onClose, onScan }: Props): React.JSX.Element {
   if (Platform.OS === 'web') {
     return <WebBarcodeScanner visible={visible} onClose={onClose} onScan={onScan} />;
   }
@@ -55,7 +68,7 @@ export function BarcodeScannerModal({ visible, onClose, onScan }: Props) {
 }
 
 // ─── Native implementation (Android / iOS) ────────────────────────────────────
-function NativeBarcodeScannerModal({ visible, onClose, onScan }: Props) {
+function NativeBarcodeScannerModal({ visible, onClose, onScan }: Props): React.JSX.Element | null {
   const { colors } = useTheme();
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
@@ -86,25 +99,32 @@ function NativeBarcodeScannerModal({ visible, onClose, onScan }: Props) {
     return () => { animation?.stop(); };
   }, [visible, scanLineAnim]);
 
-  function handleBarcodeScanned({ type, data }: { type?: string; data: string }) {
-    if (scannedRef.current) return;
-    const lowerType = (type || '').toLowerCase();
-    // Bloqueo estricto de códigos QR y matrices 2D
+  useEffect(() => {
     if (
-      lowerType.includes('qr') ||
-      lowerType.includes('aztec') ||
-      lowerType.includes('matrix') ||
-      lowerType === 'org.iso.qrcode'
+      visible &&
+      permission &&
+      !permission.granted &&
+      (permission as { status?: string; canAskAgain?: boolean }).status === 'undetermined' &&
+      (permission as { canAskAgain?: boolean }).canAskAgain
     ) {
+      requestPermission();
+    }
+  }, [visible, permission, requestPermission]);
+
+  function handleBarcodeScanned({ type, data }: { type?: string; data: string }): void {
+    if (scannedRef.current) return;
+    if (isDisallowed2DBarcodeType(type)) {
       return;
     }
+    const clean = cleanScannedBarcode(data);
+    if (!clean) return;
     scannedRef.current = true;
-    onScan(data.trim());
+    onScan(clean);
   }
 
   if (!visible) return null;
 
-  function renderPermissionState() {
+  function renderPermissionState(): React.JSX.Element | null {
     if (!permission) {
       return (
         <View style={[styles.centerContainer, { backgroundColor: colors.bg }]}>
@@ -171,7 +191,7 @@ function NativeBarcodeScannerModal({ visible, onClose, onScan }: Props) {
             facing="back"
             enableTorch={torch}
             zoom={zoom}
-            autofocus={Platform.OS === 'android' ? 'on' : 'off'}
+            autofocus="off"
             onBarcodeScanned={handleBarcodeScanned}
             barcodeScannerSettings={{
               barcodeTypes: BARCODE_1D_TYPES,

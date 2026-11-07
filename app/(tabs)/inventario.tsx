@@ -208,7 +208,7 @@ export default function Inventario() {
         visible={scannerVisible}
         onClose={() => setScannerVisible(false)}
         onScan={(data) => {
-          setSearch(data);
+          setSearch(normalizeSearchTerm(data));
           setScannerVisible(false);
         }}
       />

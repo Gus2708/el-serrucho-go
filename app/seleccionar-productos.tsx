@@ -468,7 +468,9 @@ export default function SeleccionarProductos() {
         visible={scannerVisible}
         onClose={() => setScannerVisible(false)}
         onScan={(data) => {
-          setSearch(data);
+          const normalized = normalizeSearchTerm(data);
+          setSearch(normalized);
+          setDebouncedSearch(normalized);
           setScannerVisible(false);
         }}
       />
