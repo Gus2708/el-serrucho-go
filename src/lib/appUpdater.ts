@@ -124,6 +124,10 @@ export async function checkForUpdate(apiUrl: string = GITHUB_API_LATEST_RELEASE)
     };
   }
 
+  if (response.status === 403) {
+    throw new Error('Límite de consultas a GitHub alcanzado. Reintentá en unos minutos.');
+  }
+
   if (!response.ok) {
     throw new Error(`Error al consultar GitHub Releases (${response.status}: ${response.statusText})`);
   }

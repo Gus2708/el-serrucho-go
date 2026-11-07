@@ -21,7 +21,7 @@ import { elSerrucho } from '../src/theme/brands/el-serrucho';
 import { MOBILE_FRAME_WIDTH, FRAMED_BODY_CLASS, FRAME_WIDTH_CSS_VAR } from '../src/theme/layout';
 import * as Font from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import { ActivityIndicator, Platform, View, useWindowDimensions, Text, Pressable } from 'react-native';
+import { ActivityIndicator, Platform, View, useWindowDimensions, Text, Pressable, AppState } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PressableScale } from '../src/components/PressableScale';
 import { initCrashLog, logBreadcrumb } from '../src/lib/crashLog';
@@ -214,14 +214,27 @@ function RealtimeInitializer({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function AndroidUpdateChecker() {
+function AndroidUpdateChecker({ ready }: { ready: boolean }) {
   const checkForUpdates = useAppUpdateStore((s) => s.checkForUpdates);
 
   useEffect(() => {
-    if (Platform.OS === 'android') {
+    if (Platform.OS !== 'android' || !ready) return;
+
+    const timer = setTimeout(() => {
       checkForUpdates(false).catch(() => {});
-    }
-  }, [checkForUpdates]);
+    }, 600);
+
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        checkForUpdates(false).catch(() => {});
+      }
+    });
+
+    return () => {
+      clearTimeout(timer);
+      subscription.remove();
+    };
+  }, [ready, checkForUpdates]);
 
   return <AppUpdateModal />;
 }
@@ -518,7 +531,7 @@ function RootLayout() {
                 </Head>
                 <AuthGuard session={activeSession} ready={isAppReady} />
                 <UpdateToast />
-                <AndroidUpdateChecker />
+                <AndroidUpdateChecker ready={isAppReady} />
               </>
             </ThemeProvider>
           </RealtimeInitializer>
