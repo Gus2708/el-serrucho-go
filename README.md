@@ -55,7 +55,7 @@ For evaluation and portfolio demonstration without requiring active credentials 
 - **1-Click Instant Access**: Tap **"Entrar en Modo Demo"** on the login screen.
 - **Zero-Trust Client Sandbox**: All mutations (quotes, inventory adjustments, purchase orders, client/supplier directory, and stock movements) are simulated in-memory using Zustand and TanStack Query.
 - **Complete Network Isolation**: Zero write requests reach the Supabase backend during demo sessions.
-- **Realistic Dataset**: Features authentic hardware store catalog (7,650 virtual items), 24h interactive sparkline charts, daily sales bars, quotes, and audit logs.
+- **Realistic Dataset**: Features authentic hardware store catalog (8,000+ virtual items), 24h interactive sparkline charts, daily sales bars, quotes, and audit logs.
 - **Clean Exit**: Exiting demo mode clears all in-memory caches, reset queries, and restores the pristine auth state.
 
 ---
@@ -128,7 +128,7 @@ El Serrucho GO enforces strict security best practices audited through a compreh
 │   │   ├── _layout.tsx           # FloatingTabBar (mobile) / Sidebar (desktop web)
 │   │   ├── index.tsx             # Dashboard — KPI cards, sparklines, recent sales
 │   │   ├── ventas.tsx            # Real-time sales viewer & detail sheet
-│   │   ├── inventario.tsx        # Virtualized inventory (7,650 products)
+│   │   ├── inventario.tsx        # Virtualized inventory (8,000+ products)
 │   │   ├── notificaciones.tsx    # Attention queue, help requests & Zelle spoof alerts
 │   │   ├── reportes.tsx          # Admin financial charts & product velocity
 │   │   └── ordenes.tsx           # Órdenes hub — 7 sub-tabs (see below)
