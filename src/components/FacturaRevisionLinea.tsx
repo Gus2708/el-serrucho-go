@@ -110,6 +110,7 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
       </Texto>
       {efectiva.lecturaOcr?.campoDudoso.length ? <Texto small tone="warning">{`Campos dudosos: ${efectiva.lecturaOcr.campoDudoso.join(', ')}`}</Texto> : null}
 
+      <Texto small tone="muted">Introduce el IVA (%) manualmente en cada renglón: 0 si no aplica. El IVA detectado es solo referencia y no se aplica automáticamente.</Texto>
       {CAMPOS.map(({ campo, label, decimal, monetario }) => (
         <CampoCorregible
           key={campo}

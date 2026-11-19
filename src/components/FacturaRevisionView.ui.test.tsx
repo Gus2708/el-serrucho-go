@@ -154,6 +154,9 @@ async function confirmEverything(): Promise<void> {
   await pressId('revision-decision-recepcionCompleta-si');
   await pressId('revision-decision-precioIncluyeIva-no');
   for (const n of [1, 2, 3]) {
+    await typeId(`revision-linea-${n}-tasaIva-valor`, '16');
+    await typeId(`revision-linea-${n}-tasaIva-motivo`, 'Manual tax decision');
+    await pressId(`revision-linea-${n}-tasaIva-aplicar`);
     await typeId(`revision-linea-${n}-factor-valor`, '1');
     await pressId(`revision-linea-${n}-factor-aplicar`);
     await typeId(`revision-linea-${n}-manual-codigo`, `SKU-${n}`);
@@ -757,6 +760,7 @@ describe('PVP suggestion: document type, subdued placeholder, typed price (S18)'
       const ediciones: Array<Parameters<typeof aplicarEdicion>[2]> = [
         { tipo: 'decision_cabecera', campo: 'precioIncluyeIva', valor: false },
         ...base.lineas.map(l => ({ tipo: 'factor_conversion' as const, lineaId: l.lineaId, valor: '1' })),
+        ...base.lineas.map(l => ({ tipo: 'linea_escalar' as const, lineaId: l.lineaId, campo: 'tasaIva' as const, valor: '16', motivo: 'Manual tax decision' })),
         { tipo: 'linea_escalar', lineaId, campo: 'precioUnitario', valor: '10.00', motivo: 'Precio verificado' },
         { tipo: 'tipo_documento', valor: tipo },
         { tipo: 'precio_venta', lineaId, valor: precio },
