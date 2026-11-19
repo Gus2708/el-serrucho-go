@@ -54,7 +54,7 @@ Diseñado para evaluación técnica, pruebas interactivas y demostración de por
 - **Acceso Instantáneo en 1 Clic**: Presioná **"Entrar en Modo Demo"** directamente en la pantalla de login.
 - **Sandbox Zero-Trust en Cliente**: Todas las mutaciones (presupuestos, ajustes de stock, órdenes de compra a proveedores, registro de clientes/proveedores en directorio y movimientos de inventario) se simulan completamente en memoria mediante Zustand y TanStack Query.
 - **Aislamiento Total de Red**: Cero peticiones de escritura llegan al backend de Supabase durante la sesión demo.
-- **Dataset Realista**: Incluye catálogo auténtico de ferretería (7.650 ítems virtuales), gráficas interactivas sparkline de 24h, barras de ventas diarias, presupuestos e historial de auditoría.
+- **Dataset Realista**: Incluye catálogo auténtico de ferretería (más de 8.000 ítems virtuales), gráficas interactivas sparkline de 24h, barras de ventas diarias, presupuestos e historial de auditoría.
 - **Salida Limpia**: Al salir del modo demo se purgan todas las memorias intermedias, se reinician las consultas y se restablece el estado de autenticación original.
 
 ---
@@ -128,7 +128,7 @@ El Serrucho GO implementa las mejores prácticas de seguridad de la industria, a
 │   │   ├── _layout.tsx           # Barra flotante (móvil) / Barra lateral (escritorio)
 │   │   ├── index.tsx             # Dashboard — métricas KPI, sparklines, ventas recientes
 │   │   ├── ventas.tsx            # Monitor de ventas en vivo y detalle fiscal
-│   │   ├── inventario.tsx        # Inventario virtualizado (7.650 productos)
+│   │   ├── inventario.tsx        # Inventario virtualizado (más de 8.000 productos)
 │   │   ├── notificaciones.tsx    # Cola de atención, solicitudes del bot y alertas Zelle
 │   │   ├── reportes.tsx          # Analítica financiera de administradores y rotación de stock
 │   │   └── ordenes.tsx           # Hub de órdenes — 7 sub-pestañas unificadas
@@ -292,7 +292,7 @@ npm start
 ## Historial de Versiones (Changelog)
 
 ### v2.6 (Actual)
-- **Modo Demo para Reclutadores**: Acceso en 1 clic desde la pantalla de login con datos simulados en memoria, gráficas interactivas, catálogo virtual de 7.650 ítems y aislamiento de red zero-trust.
+- **Modo Demo para Reclutadores**: Acceso en 1 clic desde la pantalla de login con datos simulados en memoria, gráficas interactivas, catálogo virtual de más de 8.000 ítems y aislamiento de red zero-trust.
 - **Auditoría de Seguridad Integral con TDD**: Mitigación de XSS en PDFs (`escHtml`), prevención de path traversal en storage (`sanitizeStorageFileName`), validación de esquemas seguros de URL (`safeUrl.ts`), limitación de intentos de login por fuerza bruta (`rateLimit.ts`), y cabeceras HTTP estrictas (`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, HSTS).
 - **Suite de Pruebas Ampliada**: 8 suites de prueba Jest con 46 tests unitarios pasando exitosamente.
 

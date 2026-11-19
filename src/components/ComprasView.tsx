@@ -25,7 +25,7 @@ import { supabase, Producto } from '../lib/supabase';
 import { useProveedores, Proveedor } from '../hooks/useProveedores';
 import { useCompra, CompraDraftItem } from '../hooks/useCompra';
 import { borradoresQueryKey } from '../hooks/useBorradores';
-import { useProductos, normalizeSearchTerm } from '../hooks/useProductos';
+import { useProductos, normalizeSearchTerm, buildBarcodeSearchVariants } from '../hooks/useProductos';
 import { useExistencias, faltantePorNegativo } from '../hooks/useExistencias';
 import { useColisionesCodigo, describirColision, ColisionCodigo } from '../hooks/useColisionesCodigo';
 import { useUserRole, isPrivilegedRole } from '../hooks/useUserRole';
@@ -1142,7 +1142,7 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
         const { data, error } = await supabase
           .from('productos')
           .select('codigo_interno, descripcion')
-          .or(`codigo_interno.ilike.${trimmed},codigo_barras.ilike.${trimmed}`)
+          .or(buildBarcodeSearchVariants(trimmed).flatMap(v => [`codigo_interno.ilike.${v}`, `codigo_barras.ilike.${v}`]).join(','))
           .limit(1)
           .maybeSingle();
 
@@ -1215,7 +1215,7 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
     const { data: existingCheck } = await supabase
       .from('productos')
       .select('codigo_interno, descripcion')
-      .or(`codigo_interno.ilike.${codigoTrim},codigo_barras.ilike.${codigoTrim}`)
+      .or(buildBarcodeSearchVariants(codigoTrim).flatMap(v => [`codigo_interno.ilike.${v}`, `codigo_barras.ilike.${v}`]).join(','))
       .limit(1)
       .maybeSingle();
 

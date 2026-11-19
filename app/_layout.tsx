@@ -21,7 +21,7 @@ import { elSerrucho } from '../src/theme/brands/el-serrucho';
 import { MOBILE_FRAME_WIDTH, FRAMED_BODY_CLASS, FRAME_WIDTH_CSS_VAR } from '../src/theme/layout';
 import * as Font from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import { ActivityIndicator, Platform, View, useWindowDimensions, Text, Pressable } from 'react-native';
+import { ActivityIndicator, Platform, View, useWindowDimensions, Text, Pressable, AppState } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PressableScale } from '../src/components/PressableScale';
 import { initCrashLog, logBreadcrumb } from '../src/lib/crashLog';
@@ -33,13 +33,9 @@ Sentry.init({
   dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
   enabled: Boolean(process.env.EXPO_PUBLIC_SENTRY_DSN),
   sendDefaultPii: true,
-  tracesSampleRate: 1.0,
-  profilesSampleRate: 1.0,
-  replaysOnErrorSampleRate: 1.0,
-  replaysSessionSampleRate: 0.1,
-  integrations: [
-    Sentry.mobileReplayIntegration(),
-  ],
+  // Light config: replay and profiling ran on the UI thread and are the prime
+  // suspect for "no responde" (ANR) on mid-range Xiaomi/Poco devices.
+  tracesSampleRate: 0.1,
   enableNativeFramesTracking: !isRunningInExpoGo(),
   environment: __DEV__ ? 'development' : 'production',
 });
@@ -93,7 +89,7 @@ const queryPersister = createAsyncStoragePersister({
 const persistOptions = {
   persister: queryPersister,
   maxAge: 24 * 60 * 60_000,
-  buster: 'v1.2.2',
+  buster: 'v1.2.5',
   dehydrateOptions: {
     shouldDehydrateQuery: (query: { state: { status: string }; queryKey: readonly unknown[] }) =>
       query.state.status === 'success' && PERSISTED_QUERY_KEYS.has(String(query.queryKey[0])),
@@ -218,14 +214,27 @@ function RealtimeInitializer({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function AndroidUpdateChecker() {
+function AndroidUpdateChecker({ ready }: { ready: boolean }) {
   const checkForUpdates = useAppUpdateStore((s) => s.checkForUpdates);
 
   useEffect(() => {
-    if (Platform.OS === 'android') {
+    if (Platform.OS !== 'android' || !ready) return;
+
+    const timer = setTimeout(() => {
       checkForUpdates(false).catch(() => {});
-    }
-  }, [checkForUpdates]);
+    }, 600);
+
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        checkForUpdates(false).catch(() => {});
+      }
+    });
+
+    return () => {
+      clearTimeout(timer);
+      subscription.remove();
+    };
+  }, [ready, checkForUpdates]);
 
   return <AppUpdateModal />;
 }
@@ -522,7 +531,7 @@ function RootLayout() {
                 </Head>
                 <AuthGuard session={activeSession} ready={isAppReady} />
                 <UpdateToast />
-                <AndroidUpdateChecker />
+                <AndroidUpdateChecker ready={isAppReady} />
               </>
             </ThemeProvider>
           </RealtimeInitializer>

@@ -94,7 +94,7 @@ export function formatBytes(bytes: number, decimals = 1): string {
  * Retrieves the current app version configured in Expo.
  */
 export function getCurrentVersion(): string {
-  return Constants.expoConfig?.version ?? '1.2.2';
+  return Constants.expoConfig?.version ?? '1.2.5';
 }
 
 /**
@@ -122,6 +122,10 @@ export async function checkForUpdate(apiUrl: string = GITHUB_API_LATEST_RELEASE)
       apkAsset: null,
       publishedAt: '',
     };
+  }
+
+  if (response.status === 403) {
+    throw new Error('Límite de consultas a GitHub alcanzado. Reintentá en unos minutos.');
   }
 
   if (!response.ok) {
