@@ -6,6 +6,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   useReducedMotion,
+  cancelAnimation,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
@@ -53,6 +54,12 @@ export function PressableScale({
   useEffect(() => {
     opacity.value = withTiming(dimmed ? 0.5 : 1, timing.press);
   }, [dimmed, opacity]);
+
+  // Stop in-flight press/dim animations on unmount (native crash otherwise).
+  useEffect(() => () => {
+    cancelAnimation(scale);
+    cancelAnimation(opacity);
+  }, [scale, opacity]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],

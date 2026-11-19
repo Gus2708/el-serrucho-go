@@ -5,6 +5,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   useReducedMotion,
+  cancelAnimation,
   withDelay,
   withTiming,
 } from 'react-native-reanimated';
@@ -30,6 +31,8 @@ export function FadeIn({ children, delay = 0, translateY = 8, style }: FadeInPro
 
   useEffect(() => {
     progress.value = withDelay(delay, withTiming(1, timing.enter));
+    // Stop the driver if the view unmounts mid-animation (native crash otherwise).
+    return () => cancelAnimation(progress);
   }, [delay, progress]);
 
   const animatedStyle = useAnimatedStyle(() => ({

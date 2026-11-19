@@ -16,6 +16,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   useReducedMotion,
+  cancelAnimation,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
@@ -74,6 +75,12 @@ export function PedidoFab(): React.JSX.Element | null {
       badgePop.value = withSpring(1, spring.press);
     });
   }, [draftCount, reduced, badgePop]);
+
+  // Stop in-flight animations on unmount (native crash otherwise).
+  useEffect(() => () => {
+    cancelAnimation(enter);
+    cancelAnimation(badgePop);
+  }, [enter, badgePop]);
 
   const badgeStyle = useAnimatedStyle(() => ({ transform: [{ scale: badgePop.value }] }));
 

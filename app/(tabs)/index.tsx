@@ -38,6 +38,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   useReducedMotion,
+  cancelAnimation,
   withDelay,
   withTiming,
 } from 'react-native-reanimated';
@@ -647,6 +648,7 @@ function KpiCard({ icon, value, label, loading, desktop, index = 0 }: {
 
   useEffect(() => {
     progress.value = withDelay(staggerDelay(index), withTiming(1, timing.enter));
+    return () => cancelAnimation(progress);
   }, [index, progress]);
 
   const enterStyle = useAnimatedStyle(() => ({

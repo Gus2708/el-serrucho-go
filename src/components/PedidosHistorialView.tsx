@@ -7,6 +7,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   useReducedMotion,
+  cancelAnimation,
   withDelay,
   withTiming,
 } from 'react-native-reanimated';
@@ -151,6 +152,7 @@ function PedidoHistCard({ pedido, expanded, onToggleExpand, onEditRetry, onOpenS
 
   useEffect(() => {
     progress.value = withDelay(staggerDelay(index), withTiming(1, timing.enter));
+    return () => cancelAnimation(progress);
   }, [index, progress]);
 
   const enterStyle = useAnimatedStyle(() => ({
