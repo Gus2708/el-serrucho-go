@@ -105,6 +105,9 @@ async function confirmEverything(): Promise<void> {
   await pressId('revision-decision-documentoCompletoConfirmado-si');
   await pressId('revision-decision-recepcionCompleta-si');
   await pressId('revision-decision-precioIncluyeIva-no');
+  await typeId('revision-linea-1-tasaIva-valor', '16');
+  await typeId('revision-linea-1-tasaIva-motivo', 'Manual tax decision');
+  await pressId('revision-linea-1-tasaIva-aplicar');
   await typeId('revision-linea-1-factor-valor', '1');
   await pressId('revision-linea-1-factor-aplicar');
   await typeId('revision-linea-1-manual-codigo', 'SKU-1');
@@ -258,6 +261,7 @@ async function confirmHook() {
     await edit({ tipo: 'decision_cabecera', campo, valor: campo !== 'precioIncluyeIva' });
   }
   const { lineaId } = current.contenido!.lineas[0];
+  await edit({ tipo: 'linea_escalar', lineaId, campo: 'tasaIva', valor: '16', motivo: 'Manual tax decision' });
   await edit({ tipo: 'factor_conversion', lineaId, valor: '1' });
   await edit({ tipo: 'asociacion', lineaId, asociacion: { tipo: 'confirmado', codigoInterno: 'SKU-1', evidencia: 'manual', motivo: 'Printed product' } });
 }
