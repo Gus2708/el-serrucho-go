@@ -39,6 +39,19 @@ export interface MatchInvoiceLinesInput {
   readonly catalog: readonly Producto[];
   readonly aliases?: readonly SupplierAlias[];
   readonly bounds?: Partial<MatchingBounds>;
+  /** Optional hosted retrieval ranks keyed to the original zero-based input line index. */
+  readonly hybridRanks?: readonly HybridLineRanks[];
+}
+
+export interface HybridRankEntry {
+  readonly codigoInterno: string;
+  readonly rank: number;
+}
+
+export interface HybridLineRanks {
+  readonly lineIndex: number;
+  readonly lexical?: readonly HybridRankEntry[];
+  readonly semantic?: readonly HybridRankEntry[];
 }
 
 export type EvidenceSource =
@@ -176,6 +189,46 @@ interface MatchContext {
   readonly catalog: readonly PreparedProduct[];
   readonly aliases: readonly SupplierAlias[];
   readonly bounds: MatchingBounds;
+  readonly hybrid: HybridIndex;
+}
+
+type HybridIndex = ReadonlyMap<number, ReadonlyMap<string, number>>;
+
+const RRF_K = 60;
+const RANK_SOURCES = ['lexical', 'semantic'] as const;
+
+// Evidence is untrusted at runtime: anything malformed is ignored, so an invalid input behaves as no input.
+// Each source keeps one best (lowest) valid rank per line and SKU, so repeated groups never add votes.
+function indexHybridRanks(groups: unknown, lineCount: number, bounds: MatchingBounds): HybridIndex {
+  const index = new Map<number, Map<string, number>>();
+  if (!Array.isArray(groups) || groups.length > bounds.maxLines) return index;
+  const best = new Map<number, Map<string, number>[]>();
+  for (const group of groups as unknown[]) {
+    if (typeof group !== 'object' || group === null) continue;
+    const { lineIndex } = group as { lineIndex?: unknown };
+    if (typeof lineIndex !== 'number' || !Number.isInteger(lineIndex) || lineIndex < 0 || lineIndex >= lineCount) continue;
+    const perSource = best.get(lineIndex) ?? RANK_SOURCES.map(() => new Map<string, number>());
+    best.set(lineIndex, perSource);
+    RANK_SOURCES.forEach((source, i) => {
+      const entries = (group as Record<string, unknown>)[source];
+      if (!Array.isArray(entries)) return;
+      for (const entry of entries.slice(0, bounds.maxCatalog) as unknown[]) {
+        if (typeof entry !== 'object' || entry === null) continue;
+        const { codigoInterno, rank } = entry as { codigoInterno?: unknown; rank?: unknown };
+        if (typeof codigoInterno !== 'string' || typeof rank !== 'number') continue;
+        if (!Number.isInteger(rank) || rank < 1 || rank > bounds.maxCatalog) continue;
+        perSource[i].set(codigoInterno, Math.min(rank, perSource[i].get(codigoInterno) ?? rank));
+      }
+    });
+  }
+  best.forEach((perSource, lineIndex) => {
+    const scores = new Map<string, number>();
+    perSource.forEach((ranks) =>
+      ranks.forEach((rank, sku) => scores.set(sku, (scores.get(sku) ?? 0) + 1 / (RRF_K + rank))),
+    );
+    if (scores.size > 0) index.set(lineIndex, scores);
+  });
+  return index;
 }
 
 type Comparison = 'same' | 'unknown' | 'incompatible';
@@ -351,9 +404,12 @@ function hasCodeEvidence(candidate: MatchCandidate): boolean {
   return candidate.evidence.some((e) => e.source !== 'descripcion');
 }
 
-function compareCandidates(a: MatchCandidate, b: MatchCandidate): number {
+// Code evidence keeps its priority and order; RRF only orders candidates that have no code evidence.
+function compareCandidates(a: MatchCandidate, b: MatchCandidate, hybrid: ReadonlyMap<string, number>): number {
+  const retrieval = hasCodeEvidence(a) ? 0 : (hybrid.get(b.codigoInterno) ?? 0) - (hybrid.get(a.codigoInterno) ?? 0);
   return (
     Number(!hasCodeEvidence(a)) - Number(!hasCodeEvidence(b)) ||
+    retrieval ||
     (b.similarity ?? -1) - (a.similarity ?? -1) ||
     compareText(a.codigoInterno, b.codigoInterno) ||
     compareText(a.descripcion, b.descripcion)
@@ -393,7 +449,8 @@ function findConflicts(
     const codigosInternos = [...incompatibleCodeIds].sort(compareText);
     conflicts.push({ code: 'code_attribute_incompatible', codigosInternos });
   }
-  const descriptionOnly = candidates.filter((c) => !hasCodeEvidence(c));
+  // Retrieval-only candidates carry no description evidence, so they can never contradict a code.
+  const descriptionOnly = candidates.filter((c) => !hasCodeEvidence(c) && c.evidence.length > 0);
   // Independent description evidence that outscores every coded candidate points at another SKU.
   const bestCoded = Math.max(...coded.map((c) => c.similarity ?? -1));
   const outscored = descriptionOnly.some((c) => (c.similarity ?? -1) > bestCoded);
@@ -435,6 +492,7 @@ function matchLine(line: ExtraidaLinea, index: number, ctx: MatchContext): LineM
   const candidates: MatchCandidate[] = [];
   const excluded: ExcludedCandidate[] = [];
   const incompatibleCodeIds: string[] = [];
+  const hybrid = ctx.hybrid.get(index) ?? new Map<string, number>();
 
   for (const prepared of ctx.catalog) {
     const { product } = prepared;
@@ -445,7 +503,8 @@ function matchLine(line: ExtraidaLinea, index: number, ctx: MatchContext): LineM
     });
     const score = text === '' ? null : similarity(lineTrigrams, prepared.trigrams);
     const fuzzy = !prepared.placeholder && score !== null && score >= bounds.minSimilarity;
-    if (sources.length === 0 && !fuzzy) continue;
+    const retrieved = !prepared.placeholder && hybrid.has(product.codigo_interno);
+    if (sources.length === 0 && !fuzzy && !retrieved) continue;
     if (prepared.placeholder) {
       excluded.push({ codigoInterno: product.codigo_interno, reasons: ['placeholder'] });
       continue;
@@ -476,7 +535,7 @@ function matchLine(line: ExtraidaLinea, index: number, ctx: MatchContext): LineM
     });
   }
 
-  candidates.sort(compareCandidates);
+  candidates.sort((a, b) => compareCandidates(a, b, hybrid));
   excluded.sort((a, b) => compareText(a.codigoInterno, b.codigoInterno));
   // Conflicts and status read every candidate, so the per-line cap can never hide them.
   const conflicts = findConflicts(candidates, aliases.conflict, incompatibleCodeIds, text !== '');
@@ -513,6 +572,7 @@ export function matchInvoiceLines(input: MatchInvoiceLinesInput): MatchInvoiceLi
     catalog: input.catalog.map(prepareProduct),
     aliases,
     bounds,
+    hybrid: indexHybridRanks(input.hybridRanks, input.lines.length, bounds),
   };
   return { ok: true, lines: input.lines.map((line, index) => matchLine(line, index, ctx)) };
 }

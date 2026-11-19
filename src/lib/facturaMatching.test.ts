@@ -387,6 +387,17 @@ describe('matchInvoiceLines: attributes', () => {
 });
 
 describe('matchInvoiceLines: fuzzy suggestions and unresolved lines', () => {
+  it('retains a synonym candidate from line-scoped semantic rank for human review', () => {
+    const result = run(
+      [line(1, { descripcion: 'Adhesivo blanco', unidad: 'UND' })],
+      [prod('P1', 'Pegamento blanco')],
+      { hybridRanks: [{ lineIndex: 0, semantic: [{ codigoInterno: 'P1', rank: 1 }] }] } as never,
+    )[0];
+    expect(result.candidates.map((candidate) => candidate.codigoInterno)).toEqual(['P1']);
+    expect(result.status).toBe('review');
+    expect(result.conflicts).toEqual([]);
+  });
+
   it('ranks trigram suggestions deterministically with provenance and review status', () => {
     const catalog = [
       prod('B2', 'Cinta aislante negra 18mm'),
@@ -501,5 +512,167 @@ describe('matchInvoiceLines: bounds, order and purity', () => {
     const before = JSON.stringify(input);
     expect(() => matchInvoiceLines(input)).not.toThrow();
     expect(JSON.stringify(input)).toBe(before);
+  });
+});
+
+describe('matchInvoiceLines: hybrid retrieval ranks', () => {
+  const SYNONYMS = [
+    prod('P1', 'Pegamento rojo'),
+    prod('P2', 'Pegamento negro'),
+    prod('P3', 'Pegamento gris'),
+  ];
+  const synonymLine = () => [line(1, { descripcion: 'Adhesivo', unidad: 'UND' })];
+  const withRanks = (hybridRanks: unknown, catalog = SYNONYMS, extra: Partial<MatchInvoiceLinesInput> = {}) =>
+    run(synonymLine(), catalog, { ...extra, hybridRanks: hybridRanks as never })[0];
+  const ids = (match: LineMatch) => match.candidates.map((candidate) => candidate.codigoInterno);
+  const entry = (codigoInterno: string, rank: number) => ({ codigoInterno, rank });
+
+  it('fuses both lists with RRF so a SKU in two lists outranks one in a single list, ties by SKU', () => {
+    const match = withRanks([
+      { lineIndex: 0, lexical: [entry('P1', 1), entry('P2', 2)], semantic: [entry('P3', 1), entry('P2', 2)] },
+    ]);
+    expect(ids(match)).toEqual(['P2', 'P1', 'P3']);
+    expect(match.status).toBe('review');
+  });
+
+  it('orders by rank only and never by raw lexical or cosine scores', () => {
+    const match = withRanks([
+      {
+        lineIndex: 0,
+        lexical: [{ ...entry('P1', 2), score: 999 }],
+        semantic: [{ ...entry('P2', 1), similarity: 0.01 }],
+      },
+    ]);
+    expect(ids(match)).toEqual(['P2', 'P1']);
+  });
+
+  it('counts a SKU once per source across repeated groups of the same line', () => {
+    const groups = [
+      { lineIndex: 0, lexical: [entry('P1', 1)] },
+      { lineIndex: 0, lexical: [entry('P1', 1)] },
+      { lineIndex: 0, lexical: [entry('P2', 1)], semantic: [entry('P2', 1)] },
+    ];
+    expect(ids(withRanks(groups))).toEqual(['P2', 'P1']);
+    expect(withRanks([...groups].reverse())).toEqual(withRanks(groups));
+    expect(withRanks(deepFreeze(groups))).toEqual(withRanks(groups));
+  });
+
+  it('keeps the best rank of a SKU repeated inside one source regardless of arrival order', () => {
+    const forward = withRanks([{ lineIndex: 0, lexical: [entry('P1', 9), entry('P1', 1), entry('P2', 2)] }]);
+    const reversed = withRanks([{ lineIndex: 0, lexical: [entry('P2', 2), entry('P1', 1), entry('P1', 9)] }]);
+    expect(ids(forward)).toEqual(['P1', 'P2']);
+    expect(reversed).toEqual(forward);
+  });
+
+  it('leaves the legacy output untouched for empty and invalid evidence', () => {
+    const legacy = run(synonymLine(), SYNONYMS);
+    const invalid = [
+      null,
+      5,
+      { lineIndex: 0, lexical: 'P1' },
+      { lineIndex: -1, semantic: [entry('P1', 1)] },
+      { lineIndex: 1.5, semantic: [entry('P1', 1)] },
+      { lineIndex: 99, semantic: [entry('P1', 1)] },
+      { lineIndex: '0', semantic: [entry('P1', 1)] },
+      { lineIndex: Number.NaN, semantic: [entry('P1', 1)] },
+      {
+        lineIndex: 0,
+        semantic: [
+          null,
+          7,
+          { rank: 1 },
+          { codigoInterno: 7, rank: 1 },
+          entry('P1', Number.NaN),
+          entry('P1', Number.POSITIVE_INFINITY),
+          entry('P1', 1.5),
+          entry('P1', 0),
+          entry('P1', -1),
+          { codigoInterno: 'P1', rank: '1' },
+          entry('P1', 10001),
+          entry('NOT-IN-CATALOG', 1),
+        ],
+      },
+    ];
+    for (const evidence of [undefined, [], invalid, 'abc', { length: 1 }, {}, 42]) {
+      expect(run(synonymLine(), SYNONYMS, { hybridRanks: evidence as never })).toEqual(legacy);
+    }
+  });
+
+  it('applies the configured bounds to groups, entries per source and ranks', () => {
+    const entries = [entry('X1', 1), entry('X2', 2), entry('X3', 3), entry('P1', 1)];
+    expect(ids(withRanks([{ lineIndex: 0, lexical: entries }]))).toEqual(['P1']);
+    expect(withRanks([{ lineIndex: 0, lexical: entries }], SYNONYMS, { bounds: { maxCatalog: 3 } }).candidates).toEqual([]);
+    expect(ids(withRanks([{ lineIndex: 0, lexical: [entry('P2', 4)] }]))).toEqual(['P2']);
+    expect(withRanks([{ lineIndex: 0, lexical: [entry('P2', 4)] }], SYNONYMS, { bounds: { maxCatalog: 3 } }).candidates).toEqual([]);
+    const repeated = [
+      { lineIndex: 0, lexical: [entry('P1', 1)] },
+      { lineIndex: 0, lexical: [entry('P1', 1)] },
+    ];
+    expect(ids(withRanks(repeated))).toEqual(['P1']);
+    expect(withRanks(repeated, SYNONYMS, { bounds: { maxLines: 1 } }).candidates).toEqual([]);
+  });
+
+  it('scopes ranks to the original line index even when numeroLinea differs or repeats', () => {
+    for (const numbers of [[2, 1], [7, 7]]) {
+      const lines = numbers.map((n) => line(n, { descripcion: 'Adhesivo', unidad: 'UND' }));
+      const [first, second] = run(lines, SYNONYMS, {
+        hybridRanks: [{ lineIndex: 1, semantic: [entry('P1', 1)] }] as never,
+      });
+      expect(first.candidates).toEqual([]);
+      expect(first.status).toBe('unresolved');
+      expect(second.candidates.map((c) => c.codigoInterno)).toEqual(['P1']);
+    }
+  });
+
+  it('keeps retrieved candidates with no stock and drops placeholders and hard variant conflicts', () => {
+    const catalog = [
+      prod('M1', 'Pegamento MX200 12mm'),
+      prod('D1', 'Pegamento MX100 20mm'),
+      prod('U1', 'Pegamento MX100 12mm', { unidad: 'KG' }),
+      prod('PL', '.'),
+      prod('OK', 'Pegamento MX100 12mm', { existencia: -4 }),
+    ];
+    const ranked = ['M1', 'D1', 'U1', 'PL', 'OK'].map((sku, i) => entry(sku, i + 1));
+    const [match] = run([line(1, { descripcion: 'Adhesivo MX100 12mm', unidad: 'UND' })], catalog, {
+      hybridRanks: [{ lineIndex: 0, lexical: ranked, semantic: ranked }] as never,
+    });
+    expect(ids(match)).toEqual(['OK']);
+    expect(match.status).toBe('review');
+    expect(match.excluded.map((e) => e.codigoInterno)).toEqual(['D1', 'M1', 'U1']);
+    expect(match.excluded.find((e) => e.codigoInterno === 'M1')?.reasons).toContain('incompatible:model');
+    expect(match.excluded.find((e) => e.codigoInterno === 'D1')?.reasons).toContain('incompatible:size');
+    expect(match.excluded.find((e) => e.codigoInterno === 'U1')?.reasons).toContain('incompatible:unit');
+  });
+
+  it('keeps code evidence first and its order, conflicts and status unchanged by ranks', () => {
+    const catalog = [
+      prod('P1', 'Cinta aislante negra', { codigo_barras: 'S-1' }),
+      prod('P2', 'Cinta aislante', { referencia: 'S-1' }),
+      prod('N1', 'Pegamento rojo'),
+    ];
+    const lines = [line(1, { codigoProveedor: 'S-1', descripcion: 'Cinta aislante negra', unidad: 'UND' })];
+    const legacy = run(lines, catalog);
+    const ranked = run(lines, catalog, {
+      hybridRanks: [
+        { lineIndex: 0, lexical: [entry('N1', 1), entry('P2', 2), entry('P1', 3)], semantic: [entry('N1', 1)] },
+      ] as never,
+    });
+    expect(ranked[0].candidates.map((c) => c.codigoInterno)).toEqual(['P1', 'P2', 'N1']);
+    expect(ranked[0].conflicts).toEqual(legacy[0].conflicts);
+    expect(ranked[0].status).toBe(legacy[0].status);
+    expect(ranked[0].candidates.slice(0, 2)).toEqual(legacy[0].candidates.slice(0, 2));
+  });
+
+  it('does not raise a description conflict or a suggestion from retrieval-only evidence', () => {
+    const catalog = [prod('P1', 'Zzzz', { codigo_barras: 'S-1' }), prod('P2', 'Tornillo')];
+    const lines = [line(1, { codigoProveedor: 'S-1', descripcion: 'Tornillo hexagonal 1/2 pulgada', unidad: 'UND' })];
+    const legacy = run(lines, catalog)[0];
+    const ranked = run(lines, catalog, {
+      hybridRanks: [{ lineIndex: 0, semantic: [entry('P2', 1)] }] as never,
+    })[0];
+    expect(legacy.conflicts).toEqual([]);
+    expect(ranked.conflicts).toEqual([]);
+    expect(ranked.status).toBe(legacy.status);
+    expect(ranked.candidates.map((c) => c.codigoInterno)).toEqual(['P1', 'P2']);
   });
 });
