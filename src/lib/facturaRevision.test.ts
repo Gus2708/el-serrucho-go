@@ -596,6 +596,18 @@ describe('calcularRevision: global discounts', () => {
 });
 
 describe('calcularRevision: VAT per line', () => {
+  it('retains an explicit zero equal to detected VAT and treats its identical repeat as unchanged', () => {
+    const ext = extraccion([linea(1, { tasaIva: '0' })]);
+    const inicial = confirmada(ext, { ivaManual: false });
+    const edicion: Edicion = { tipo: 'linea_escalar', lineaId: inicial.lineas[0].lineaId, campo: 'tasaIva', valor: '0', motivo: 'Manual no VAT' };
+    const primera = aplicarEdicion(inicial, ext, edicion);
+    expect(primera).toMatchObject({ ok: true, cambio: true });
+    if (!primera.ok) return;
+    expect(primera.contenido.lineas[0].correcciones.tasaIva).toEqual({ valor: '0', motivo: 'Manual no VAT' });
+    expect(aplicarEdicion(primera.contenido, ext, edicion)).toMatchObject({ ok: true, cambio: false });
+    expect(calcularRevision({ extraccion: ext, contenido: primera.contenido }).totales).toEqual({ base: '8.00', iva: '0.00', total: '8.00' });
+  });
+
   it.each(['0', '16'])('does not apply detected VAT %s without a manual decision', tasaIva => {
     const ext = extraccion([linea(1, { cantidad: '1', precioUnitario: '100', tasaIva })]);
     const contenido = confirmada(ext, { ivaManual: false });
