@@ -147,6 +147,7 @@ export function VentaDetailModal({ venta, onClose }: VentaDetailModalProps): Rea
   
   const animProgress = useRef(new Animated.Value(0)).current; 
   const [ticketLayout, setTicketLayout] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  const [notchY, setNotchY] = useState<number>(148);
 
   const closeModal = (): void => {
     Animated.timing(animProgress, {
@@ -283,7 +284,7 @@ export function VentaDetailModal({ venta, onClose }: VentaDetailModalProps): Rea
                   <TicketBackground 
                     width={ticketLayout.width} 
                     height={ticketLayout.height} 
-                    notchY={104}
+                    notchY={notchY}
                   />
                 ) : (
                   <View style={[StyleSheet.absoluteFill, { backgroundColor: '#222', borderRadius: 24 }]} />
@@ -323,10 +324,36 @@ export function VentaDetailModal({ venta, onClose }: VentaDetailModalProps): Rea
                     </View>
                   </View>
 
-                  <View style={{ height: 32 }} />
+                  {/* Client Info */}
+                  <View style={styles.ticketClientSection}>
+                    <View style={styles.ticketClientHeaderRow}>
+                      <Text style={[styles.ticketClientLabel, { color: colors.textMuted }]}>CLIENTE</Text>
+                      {venta.rif_cliente?.trim() ? (
+                        <Text style={[styles.ticketClientRif, { color: colors.textMuted }]}>
+                          {venta.rif_cliente.trim()}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Text
+                      style={[styles.ticketClientName, { color: colors.text }]}
+                      numberOfLines={2}
+                    >
+                      {venta.nombre_cliente?.trim() || 'Cliente Genérico'}
+                    </Text>
+                  </View>
+
+                  <View
+                    style={styles.ticketPerforationSpacer}
+                    onLayout={(e) => {
+                      const { y, height } = e.nativeEvent.layout;
+                      const nextNotchY = Math.round(y + height / 2);
+                      if (Math.abs(notchY - nextNotchY) > 1) {
+                        setNotchY(nextNotchY);
+                      }
+                    }}
+                  />
 
                   {/* Items List - Internal scroll for 3+ items */}
-                  <View style={{ height: 16 }} />
                   <View style={[styles.ticketListContainer, { maxHeight: 180 }]}>
                     <ScrollView 
                       nestedScrollEnabled={true} 
@@ -476,6 +503,12 @@ const styles = StyleSheet.create({
   ticketDateLabel: { fontSize: scaleFont(9), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1, opacity: 0.85, marginBottom: 2 },
   ticketDate: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold' },
   ticketTime: { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_500Medium', opacity: 0.9 },
+  ticketClientSection: { paddingHorizontal: 28, marginTop: 4, gap: 2 },
+  ticketClientHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  ticketClientLabel: { fontSize: scaleFont(9), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1, textTransform: 'uppercase', opacity: 0.85 },
+  ticketClientRif: { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_500Medium', opacity: 0.9 },
+  ticketClientName: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', lineHeight: scaleFont(18) },
+  ticketPerforationSpacer: { height: 36 },
   
   ticketListContainer: {
     width: '100%',

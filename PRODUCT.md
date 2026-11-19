@@ -1,8 +1,10 @@
 # Product
 
-## Register
+<!-- impeccable:product-schema 1 -->
 
-product
+## Platform
+
+adaptive
 
 ## Users
 
@@ -25,7 +27,7 @@ The gold (#F5B200) is the saw blade from the physical store's logo — it carrie
 - Any design that feels like "dark mode for aesthetics" rather than "dark for legibility"
 - WhatsApp Business green anywhere in the UI (used by the bot flow, must stay isolated to that context)
 
-## Design Principles
+## Product Principles
 
 1. **Speed over polish** — every interaction is mid-task; transitions earn their time or they don't exist.
 2. **State always visible** — sync status, stock levels, and margin signals must be readable at a glance without tapping into anything.
