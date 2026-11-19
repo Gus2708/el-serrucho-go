@@ -1051,3 +1051,30 @@ describe('PVP review fields: tipoDocumento and precioVenta (S18)', () => {
     });
   });
 });
+
+describe('captured physical barcode edit', () => {
+  it('stores printable alphanumeric codes separately and clears them without mutating prior content', () => {
+    const ext = extraccion([linea(1, { codigoProveedor: 'SUP-01' })]);
+    const before = crear(ext);
+    const id = before.lineas[0].lineaId;
+    const edit: Edicion = { tipo: 'codigo_barras_escaneado', lineaId: id, valor: '00123-A' };
+    const set = aplicarEdicion(before, ext, edit);
+    expect(set).toMatchObject({ ok: true, cambio: true });
+    if (!set.ok) return;
+    expect(set.contenido.lineas[0].codigoBarras).toEqual({ usarCodigoFactura: false, codigoEscaneado: '00123-A' });
+    expect(before.lineas[0].codigoBarras).toEqual({ usarCodigoFactura: false });
+    expect(ext.lineas[0].codigoProveedor).toBe('SUP-01');
+    expect(aplicarEdicion(set.contenido, ext, edit)).toMatchObject({ ok: true, cambio: false });
+    const toggle = aplicarEdicion(set.contenido, ext, { tipo: 'codigo_barras', lineaId: id, usarCodigoFactura: true });
+    expect(toggle.ok && toggle.contenido.lineas[0].codigoBarras).toEqual({ usarCodigoFactura: true, codigoEscaneado: '00123-A' });
+    for (const valor of ['', ' 123', '123 ', 'ABC\n123', '123\n', '123\r\n', 'x'.repeat(201), 123] as unknown[]) {
+      const rejected = aplicarEdicion(before, ext, { ...edit, valor } as Edicion);
+      expect(rejected).toMatchObject({ ok: false });
+      expect(before.lineas[0].codigoBarras).toEqual({ usarCodigoFactura: false });
+    }
+    const clear = aplicarEdicion(set.contenido, ext, { ...edit, valor: null });
+    expect(clear).toMatchObject({ ok: true, cambio: true });
+    expect(clear.ok && clear.contenido.lineas[0].codigoBarras).toEqual({ usarCodigoFactura: false });
+    expect(validarContenidoRevision(set.contenido, ext)).toMatchObject({ ok: true });
+  });
+});

@@ -57,6 +57,7 @@ async function initTestDb(withPvp = true): Promise<PGlite> {
   await database.exec(migrationSql('_facturas_proveedores_extracciones.sql'));
   await database.exec(migrationSql('_facturas_proveedores_revisiones.sql'));
   if (withPvp) await database.exec(migrationSql('_facturas_revisiones_pvp.sql'));
+  if (withPvp) await database.exec(migrationSql('_factura_revision_barcode_escaneado.sql'));
   return database;
 }
 
@@ -544,6 +545,18 @@ describe('facturas_proveedores_revisiones', () => {
   });
 
   describe('versions, revisions and idempotency', () => {
+    it('persists an optional captured physical barcode without changing supplier code', async () => {
+      const s = await scenario();
+      const content = fullContent(s) as any;
+      content.lineas[0].codigoBarras.codigoEscaneado = '00123-A';
+      await save({ id: s.facturaId, content });
+      const stored = await db.query<{ contenido: Json }>(
+        'select contenido from public.facturas_proveedores_revisiones where factura_id = $1', [s.facturaId]
+      );
+      expect((stored.rows[0].contenido.lineas as any[])[0].codigoBarras).toEqual({ usarCodigoFactura: true, codigoEscaneado: '00123-A' });
+      expect((stored.rows[0].contenido.lineas as any[])[0].correcciones.codigoProveedor).toBeUndefined();
+    });
+
     it('rejects a stale expected revision', async () => {
       const s = await scenario();
       await save({ id: s.facturaId, content: fullContent(s) });
@@ -777,6 +790,12 @@ describe('facturas_proveedores_revisiones', () => {
       ['producto_nuevo without motivo', mutate(c => { c.lineas[0].asociacion = { tipo: 'producto_nuevo', codigoInterno: null, evidencia: 'manual', motivo: null }; })],
       ['producto_nuevo with suggestion evidence', mutate(c => { c.lineas[0].asociacion = { tipo: 'producto_nuevo', codigoInterno: null, evidencia: 'sugerencia', motivo: 'Nuevo' }; })],
       ['codigoBarras extra key', mutate(c => { c.lineas[0].codigoBarras = { usarCodigoFactura: true, codigo: '1' }; })],
+      ['captured barcode numeric', mutate(c => { c.lineas[0].codigoBarras.codigoEscaneado = 123; })],
+      ['captured barcode blank', mutate(c => { c.lineas[0].codigoBarras.codigoEscaneado = ' '; })],
+      ['captured barcode control character', mutate(c => { c.lineas[0].codigoBarras.codigoEscaneado = 'ABC\n123'; })],
+      ['captured barcode padded', mutate(c => { c.lineas[0].codigoBarras.codigoEscaneado = ' 123'; })],
+      ['captured barcode too long', mutate(c => { c.lineas[0].codigoBarras.codigoEscaneado = 'A'.repeat(201); })],
+      ['captured barcode unknown key', mutate(c => { c.lineas[0].codigoBarras.codigoEscaneado = '001-A'; c.lineas[0].codigoBarras.other = true; })],
       ['usarCodigoFactura string', mutate(c => { c.lineas[0].codigoBarras = { usarCodigoFactura: 'si' }; })],
       ['codigoBarras null', mutate(c => { c.lineas[0].codigoBarras = null; })],
       ['tipoDocumento unknown value', mutate(c => { c.cabecera.tipoDocumento = 'otro'; })],

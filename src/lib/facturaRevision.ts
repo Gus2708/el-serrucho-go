@@ -97,7 +97,11 @@ export interface LineaRevision {
   readonly correcciones: CorreccionesLinea;
   readonly factorConversion: string | null;
   readonly asociacion: AsociacionRevision;
-  readonly codigoBarras: { readonly usarCodigoFactura: boolean };
+  readonly codigoBarras: {
+    readonly usarCodigoFactura: boolean;
+    /** Physical capture for pending completion, not permission to assign a catalog barcode. */
+    readonly codigoEscaneado?: string;
+  };
   /** Optional, omitted when unset: a positive PVP typed by the user. A suggestion is never stored here. */
   readonly precioVenta?: string;
 }
@@ -363,7 +367,9 @@ export function validarContenidoRevision(
       return fallo(`${ruta}.factorConversion`, 'factor invalido');
     }
     if (!validarAsociacion(linea.asociacion)) return fallo(`${ruta}.asociacion`, 'asociacion incoherente');
-    if (!exactKeys(linea.codigoBarras, ['usarCodigoFactura']) || typeof linea.codigoBarras.usarCodigoFactura !== 'boolean') {
+    if (!exactKeys(linea.codigoBarras, ['usarCodigoFactura'], ['codigoEscaneado'])
+      || typeof linea.codigoBarras.usarCodigoFactura !== 'boolean'
+      || (tieneClave(linea.codigoBarras, 'codigoEscaneado') && !codigoEscaneadoValido(linea.codigoBarras.codigoEscaneado))) {
       return fallo(`${ruta}.codigoBarras`, 'forma de codigo de barras');
     }
   }
@@ -445,6 +451,10 @@ export function crearRevisionManual(): RevisionContenido {
 
 // ── Edits (pure: never mutate the extraction or a previous revision) ────────
 
+function codigoEscaneadoValido(valor: unknown): valor is string {
+  return typeof valor === 'string' && valor.length >= 1 && valor.length <= 200 && /^[!-~](?:[ -~]*[!-~])?$/.test(valor);
+}
+
 export type Edicion =
   | { readonly tipo: 'cabecera_escalar'; readonly campo: CabeceraCampoEscalar; readonly valor: string | null; readonly motivo: string }
   | { readonly tipo: 'cabecera_descuentos'; readonly valor: readonly ExtraidoDescuento[]; readonly motivo: string }
@@ -459,6 +469,7 @@ export type Edicion =
   | { readonly tipo: 'factor_conversion'; readonly lineaId: string; readonly valor: string | null }
   | { readonly tipo: 'asociacion'; readonly lineaId: string; readonly asociacion: AsociacionRevision }
   | { readonly tipo: 'codigo_barras'; readonly lineaId: string; readonly usarCodigoFactura: boolean }
+  | { readonly tipo: 'codigo_barras_escaneado'; readonly lineaId: string; readonly valor: string | null }
   | { readonly tipo: 'agregar_linea_manual'; readonly correcciones: CorreccionesLinea }
   | { readonly tipo: 'quitar_linea_manual'; readonly lineaId: string };
 
@@ -557,7 +568,11 @@ export function aplicarEdicion(
       siguiente = actualizarLinea(edicion.lineaId, l => ({ ...l, asociacion: edicion.asociacion }));
       break;
     case 'codigo_barras':
-      siguiente = actualizarLinea(edicion.lineaId, l => ({ ...l, codigoBarras: { usarCodigoFactura: edicion.usarCodigoFactura } }));
+      siguiente = actualizarLinea(edicion.lineaId, l => ({ ...l, codigoBarras: { ...l.codigoBarras, usarCodigoFactura: edicion.usarCodigoFactura } }));
+      break;
+    case 'codigo_barras_escaneado':
+      if (edicion.valor !== null && !codigoEscaneadoValido(edicion.valor)) return rechazo('codigo escaneado invalido');
+      siguiente = actualizarLinea(edicion.lineaId, l => ({ ...l, codigoBarras: edicion.valor === null ? quitarClave(l.codigoBarras, 'codigoEscaneado') : { ...l.codigoBarras, codigoEscaneado: edicion.valor } }));
       break;
     case 'agregar_linea_manual': {
       if (!nuevoId) return rechazo('falta el generador de UUID');
