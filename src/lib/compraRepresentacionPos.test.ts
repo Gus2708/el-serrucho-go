@@ -97,6 +97,7 @@ function escenario(
     { tipo: 'decision_cabecera', campo: 'recepcionCompleta', valor: true },
     { tipo: 'decision_cabecera', campo: 'precioIncluyeIva', valor: false },
     ...creada.contenido.lineas.flatMap((linea, index): Edicion[] => [
+      { tipo: 'linea_escalar', lineaId: linea.lineaId, campo: 'tasaIva', valor: '16', motivo: 'Manual tax decision' },
       { tipo: 'factor_conversion', lineaId: linea.lineaId, valor: opciones.factor === undefined ? '1' : opciones.factor },
       {
         tipo: 'asociacion',

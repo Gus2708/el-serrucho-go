@@ -143,6 +143,9 @@ async function confirmEverything(): Promise<void> {
   await pressId('revision-decision-recepcionCompleta-si');
   await pressId('revision-decision-precioIncluyeIva-no');
   for (const n of [1, 2, 3]) {
+    await typeId(`revision-linea-${n}-tasaIva-valor`, '16');
+    await typeId(`revision-linea-${n}-tasaIva-motivo`, 'Manual tax decision');
+    await pressId(`revision-linea-${n}-tasaIva-aplicar`);
     await typeId(`revision-linea-${n}-factor-valor`, '1');
     await pressId(`revision-linea-${n}-factor-aplicar`);
     await typeId(`revision-linea-${n}-manual-codigo`, `SKU-${n}`);
@@ -192,6 +195,7 @@ async function fullHook() {
     await edit({ tipo: 'decision_cabecera', campo, valor: campo !== 'precioIncluyeIva' });
   }
   for (const l of current.contenido!.lineas) {
+    await edit({ tipo: 'linea_escalar', lineaId: l.lineaId, campo: 'tasaIva', valor: '16', motivo: 'Manual tax decision' });
     await edit({ tipo: 'factor_conversion', lineaId: l.lineaId, valor: '1' });
     await edit({ tipo: 'asociacion', lineaId: l.lineaId, asociacion: { tipo: 'confirmado', codigoInterno: 'SAME-SKU', evidencia: 'manual', motivo: 'Verified printed product' } });
   }
@@ -199,6 +203,25 @@ async function fullHook() {
 const blockerCodes = () => current.calculo!.bloqueos.map(b => b.codigo);
 
 // ── B1: barcode proof is bound to the current code, SKU and generation ──────
+
+describe('manual VAT authority', () => {
+  it('saves an explicit zero from the existing editor and removes it only on revert', async () => {
+    const repo = fakeRepo();
+    await startRevision(repo);
+    expect(textOf('revision-linea-1-tasaIva-original')).toContain('16');
+    await typeId('revision-linea-1-tasaIva-valor', '0');
+    await typeId('revision-linea-1-tasaIva-motivo', 'Sin IVA confirmado por el usuario');
+    await pressId('revision-linea-1-tasaIva-aplicar');
+    expect(textOf('revision-linea-1-tasaIva-corregido')).toContain('0');
+    expect(textOf('revision-linea-1-tasaIva-original')).toContain('16');
+    await typeId('revision-motivo-guardado', 'Manual VAT');
+    await pressId('revision-guardar');
+    expect(repo.guardarRevision.mock.calls[0][0].contenido.lineas[0].correcciones.tasaIva).toEqual({ valor: '0', motivo: 'Sin IVA confirmado por el usuario' });
+    await pressId('revision-linea-1-tasaIva-revertir');
+    expect(maybeId('revision-linea-1-tasaIva-corregido')).toBeNull();
+    expect(isDisabled('revision-aprobar')).toBe(true);
+  });
+});
 
 describe('B1 barcode uniqueness proof', () => {
   it('admits the proof for the current code and SKU (positive control)', async () => {

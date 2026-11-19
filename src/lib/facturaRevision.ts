@@ -523,7 +523,10 @@ export function aplicarEdicion(
     case 'linea_escalar':
       siguiente = actualizarLinea(edicion.lineaId, (l, origen) => ({
         ...l,
-        correcciones: conCorreccion(l.correcciones, edicion.campo, edicion.valor, origen ? origen[edicion.campo] : null, edicion.motivo),
+        // A tax entry is an explicit decision even when it matches the printed rate.
+        correcciones: edicion.campo === 'tasaIva'
+          ? { ...l.correcciones, tasaIva: { valor: edicion.valor, motivo: edicion.motivo } }
+          : conCorreccion(l.correcciones, edicion.campo, edicion.valor, origen ? origen[edicion.campo] : null, edicion.motivo),
       }));
       break;
     case 'linea_descuentos':
@@ -904,8 +907,8 @@ export function calcularRevision(input: {
     if (linea.asociacion.tipo === 'pendiente') bloquear('asociacion_pendiente', id);
     const cantidad = lectura('cantidad', FORMA_CANTIDAD, true);
     const precio = lectura('precioUnitario', FORMA_PRECIO, true);
-    const tasa = lectura('tasaIva', FORMA_PORCENTAJE, false);
-    if (tasa === null && linea.campos.tasaIva.valor === null) bloquear('iva_tasa_desconocida', id);
+    const tasa = linea.campos.tasaIva.corregido ? lectura('tasaIva', FORMA_PORCENTAJE, false) : null;
+    if (!linea.campos.tasaIva.corregido || linea.campos.tasaIva.valor === null) bloquear('iva_tasa_desconocida', id);
     const factor = linea.factorConversion === null ? null : parseDecimal(linea.factorConversion);
     if (factor === null) bloquear('conversion_no_confirmada', id);
 

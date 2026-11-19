@@ -244,6 +244,42 @@ describe('supplier invoice recalculation endpoint', () => {
     expect(text).not.toContain('SQL');
   });
 
+  it.each([
+    [null, null],
+    ['0', { base: '10.00', iva: '0.00', total: '10.00' }],
+    ['8', { base: '10.00', iva: '0.80', total: '10.80' }],
+    ['16', { base: '10.00', iva: '1.60', total: '11.60' }],
+  ])('recalculates stored manual VAT %s rather than detected VAT', async (rate, totals) => {
+    const content = createApprovedManualContent();
+    const corrections = { ...content.lineas[0].correcciones };
+    if (rate === null) delete corrections.tasaIva;
+    else corrections.tasaIva = { valor: rate, motivo: 'Manual tax decision' };
+    const stored = {
+      ...content,
+      extraccion_id: extractionId,
+      lineas: [{ ...content.lineas[0], origen: { numeroLinea: 1 }, correcciones: corrections }],
+    };
+    const extraction: FacturaExtraccionPayload = {
+      version: 1,
+      cabecera: { proveedorNombre: null, proveedorRif: null, numeroDocumento: null, numeroControl: null, fechaEmision: null, moneda: 'USD', tasaCambio: null, subtotal: null, descuentos: [], impuestos: [], total: null },
+      lineas: [{ numeroLinea: 1, pagina: 1, codigoProveedor: null, descripcion: 'Printed item', cantidad: '1', unidad: 'UND', precioUnitario: '10', descuentos: [], tasaIva: '16', total: null, incertidumbre: null }],
+      metadatos: { totalPaginas: 1, paginasProcesadas: [1], documentoCompleto: true, advertencias: [], confianzaGlobal: null },
+    };
+    const source = [{ ...baseSource, facturas_proveedores_revisiones: [{
+      ...baseSource.facturas_proveedores_revisiones[0], extraccion_id: extractionId,
+      contenido: JSON.parse(JSON.stringify(stored)),
+      facturas_proveedores_extracciones: { id: extractionId, factura_id: facturaId, estado: 'completado', factura_version: 1, documento_sha256: sha256, resultado: extraction },
+    }] }];
+    const before = JSON.stringify(source);
+    const { response } = await call(request(), source);
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.calculo.totales).toEqual(totals);
+    expect(body.calculo.bloqueos.some((b: { codigo: string }) => b.codigo === 'iva_tasa_desconocida')).toBe(rate === null);
+    expect(body.permisoImportacion).toBe(false);
+    expect(JSON.stringify(source)).toBe(before);
+  });
+
   it('parses and calculates a stored extraction using the public calculator', async () => {
     const extraction: FacturaExtraccionPayload = {
       version: 1,

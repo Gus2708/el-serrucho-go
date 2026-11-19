@@ -98,13 +98,16 @@ function crear(ext: FacturaExtraccionPayload): RevisionContenido {
 }
 
 /** Every confirmation explicit: complete document, full receipt, IVA not included, 1:1 units, confirmed products. */
-function confirmada(ext: FacturaExtraccionPayload, over: { incluyeIva?: boolean; factor?: string } = {}): RevisionContenido {
+function confirmada(ext: FacturaExtraccionPayload, over: { incluyeIva?: boolean; factor?: string; ivaManual?: boolean } = {}): RevisionContenido {
   const base = crear(ext);
   const ediciones: Edicion[] = [
     { tipo: 'decision_cabecera', campo: 'documentoCompletoConfirmado', valor: true },
     { tipo: 'decision_cabecera', campo: 'recepcionCompleta', valor: true },
     { tipo: 'decision_cabecera', campo: 'precioIncluyeIva', valor: over.incluyeIva ?? false },
-    ...base.lineas.flatMap((l): Edicion[] => [
+    ...base.lineas.flatMap((l, index): Edicion[] => [
+      ...(over.ivaManual !== false && ext.lineas[index].tasaIva !== null
+        ? [{ tipo: 'linea_escalar' as const, lineaId: l.lineaId, campo: 'tasaIva' as const, valor: ext.lineas[index].tasaIva, motivo: 'Manual tax decision' }]
+        : []),
       { tipo: 'factor_conversion', lineaId: l.lineaId, valor: over.factor ?? '1' },
       { tipo: 'asociacion', lineaId: l.lineaId, asociacion: { tipo: 'confirmado', codigoInterno: `SKU-${l.origen?.numeroLinea}`, evidencia: 'sugerencia', motivo: null } },
     ]),
@@ -593,6 +596,36 @@ describe('calcularRevision: global discounts', () => {
 });
 
 describe('calcularRevision: VAT per line', () => {
+  it.each(['0', '16'])('does not apply detected VAT %s without a manual decision', tasaIva => {
+    const ext = extraccion([linea(1, { cantidad: '1', precioUnitario: '100', tasaIva })]);
+    const contenido = confirmada(ext, { ivaManual: false });
+    const calculo = calcularRevision({ extraccion: ext, contenido });
+    expect(codigos(calculo.bloqueos)).toContain('iva_tasa_desconocida');
+    expect(calculo.lineas[0]).toMatchObject({ tasaIva: null, iva: null, base: null });
+    expect(calculo.totales).toBeNull();
+    expect(ext.lineas[0].tasaIva).toBe(tasaIva);
+  });
+
+  it.each([
+    ['0', '0.00', '100.00'],
+    ['8', '8.00', '108.00'],
+    ['16', '16.00', '116.00'],
+  ])('uses manual VAT %s after persistence and blocks again when reverted', (valor, iva, total) => {
+    const ext = extraccion([linea(1, { cantidad: '1', precioUnitario: '100', tasaIva: '16' })]);
+    const inicial = confirmada(ext, { ivaManual: false });
+    const lineaId = inicial.lineas[0].lineaId;
+    const corregida = aplicar(inicial, ext, { tipo: 'linea_escalar', lineaId, campo: 'tasaIva', valor, motivo: 'Manual tax decision' });
+    const persistida = JSON.parse(JSON.stringify(corregida)) as RevisionContenido;
+    expect(validarContenidoRevision(persistida, ext).ok).toBe(true);
+    const calculo = calcularRevision({ extraccion: ext, contenido: persistida });
+    expect(calculo.bloqueos).toEqual([]);
+    expect(calculo.totales).toEqual({ base: '100.00', iva, total });
+    expect(resolverFactura(ext, persistida).lineas[0].campos.tasaIva).toMatchObject({ original: '16', valor, corregido: true });
+    const revertida = aplicar(persistida, ext, { tipo: 'revertir_linea', lineaId, campo: 'tasaIva' });
+    expect(codigos(calcularRevision({ extraccion: ext, contenido: revertida }).bloqueos)).toContain('iva_tasa_desconocida');
+    expect(ext.lineas[0].tasaIva).toBe('16');
+  });
+
   it('keeps mixed 0 / 8 / 16 rates apart per line and per rate, never defaulting to 16', () => {
     const ext = extraccion([
       linea(1, { cantidad: '1', precioUnitario: '100', tasaIva: '16' }),
