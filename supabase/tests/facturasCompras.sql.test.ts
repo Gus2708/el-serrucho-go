@@ -69,7 +69,7 @@ async function actAsServiceRole(database: PGlite, sub = ''): Promise<void> {
   await database.exec('set role service_role');
 }
 
-async function initDb(withBinding: boolean): Promise<PGlite> {
+async function initDb(withBinding: boolean, withOrigin = withBinding): Promise<PGlite> {
   const database = await createMigratedDb();
   await database.exec(`
     create role service_role nologin bypassrls;
@@ -94,6 +94,7 @@ async function initDb(withBinding: boolean): Promise<PGlite> {
   await database.exec(comprasOwnerPolicies());
   if (withBinding) await database.exec(migrationSql('_facturas_proveedores_compras.sql'));
   if (withBinding) await database.exec(migrationSql('_materializar_compra_factura.sql'));
+  if (withOrigin) await database.exec(migrationSql('_invoice_writeback_origin.sql'));
   for (const [id, role, active] of [
     [ADMIN, 'admin', true],
     [OTHER_ADMIN, 'admin', true],
@@ -1163,6 +1164,268 @@ describe('facturas_proveedores_compras', () => {
         expect(await runManualControls(linkedDb, false)).toEqual(expected);
       } finally {
         await linkedDb.close();
+      }
+    });
+  });
+
+  describe('es_compra_de_factura: minimal service-only origin RPC', () => {
+    async function callOrigin(compraId: number | null, database = db): Promise<boolean> {
+      const r = await database.query<{ es_compra_de_factura: boolean }>(
+        'select public.es_compra_de_factura($1::bigint) as es_compra_de_factura',
+        [compraId]
+      );
+      expect(r.rows).toHaveLength(1);
+      expect(Object.keys(r.rows[0])).toEqual(['es_compra_de_factura']);
+      expect(typeof r.rows[0].es_compra_de_factura).toBe('boolean');
+      return r.rows[0].es_compra_de_factura;
+    }
+
+    async function callPrivateOrigin(compraId: number | null, database = db): Promise<boolean> {
+      const r = await database.query<{ r: boolean }>(
+        'select invoice_writeback_private.es_compra_de_factura($1::bigint) as r',
+        [compraId]
+      );
+      return r.rows[0].r;
+    }
+
+    it('returns true for linked purchases and false for manual purchases as service_role while keeping direct table SELECT denied', async () => {
+      const prepared = await prepare(await approved(ADMIN));
+      const matInvoice = await approved(SUPER);
+      const matPayload = {
+        header: { proveedor_codigo: null, proveedor_nombre: 'Proveedor Uno', numero_documento: 'DOC-001', nota: null, titulo: 'Factura DOC-001' },
+        items: [{ codigo_producto: 'SKU-1', descripcion: 'Articulo 1', cantidad: '2', costo: '1.5', precio: '2.5', referencia: null, es_nuevo: false }],
+      };
+      const materialized = await materializar(matInvoice, await stageMaterialization(matInvoice, matPayload));
+      const manualDraft = await insertManualDraft(ADMIN, 'manual-sin-vinculo');
+      await actAs(db, ADMIN, true);
+      const manualEmitted = (
+        await db.query<{ id: number }>(
+          "insert into public.compras_app (creado_por, proveedor_codigo, status, titulo) values ($1, 'P-1', 'emitido', 'manual-emitida') returning id",
+          [ADMIN]
+        )
+      ).rows[0].id;
+
+      const before = await snapshot();
+      await asService();
+      expect(await callOrigin(prepared.compra_id)).toBe(true);
+      expect(await callOrigin(materialized.compra_id)).toBe(true);
+      expect(await callOrigin(manualDraft)).toBe(false);
+      expect(await callOrigin(manualEmitted)).toBe(false);
+      // Direct SELECT on the canonical binding table remains revoked for service_role.
+      await expect(db.query(`select compra_id from ${BINDING} where compra_id = $1`, [prepared.compra_id])).rejects.toMatchObject({ code: '42501' });
+      // Read-only: every table stays byte-identical.
+      expect(await snapshot()).toBe(before);
+    });
+
+    it('decides from canonical binding state, never editable header labels, and isolates unrelated records', async () => {
+      const linked = await prepare(await approved(ADMIN));
+      const otherLinked = await prepare(await approved(SUPER));
+      await actAs(db, ADMIN, true);
+      await db.query("update public.compras_app set titulo = 'Compra manual', nota = 'manual' where id = $1", [linked.compra_id]);
+
+      const manualLookalike = await insertManualDraft(ADMIN, 'Factura DOC-001');
+      await actAs(db, ADMIN, true);
+      await db.query("update public.compras_app set nota = 'Factura proveedor', numero_documento = 'DOC-001' where id = $1", [manualLookalike]);
+
+      const before = await snapshot();
+      await asService();
+      expect(await callOrigin(linked.compra_id)).toBe(true);
+      expect(await callOrigin(otherLinked.compra_id)).toBe(true);
+      expect(await callOrigin(manualLookalike)).toBe(false);
+      expect(await snapshot()).toBe(before);
+
+      // Deleting the unrelated manual purchase does not disturb linked purchases; the deleted ID now fails closed with P0002.
+      await actAs(db, ADMIN, true);
+      await db.query('delete from public.compras_app where id = $1', [manualLookalike]);
+      await asService();
+      expect(await callOrigin(linked.compra_id)).toBe(true);
+      expect(await callOrigin(otherLinked.compra_id)).toBe(true);
+      await expectRejected(asService, () => callOrigin(manualLookalike), 'P0002', 'compra_no_encontrada');
+    });
+
+    it.each([
+      ['null input', null, '22023', 'compra_id_invalido'],
+      ['zero id', 0, '22023', 'compra_id_invalido'],
+      ['negative id', -7, '22023', 'compra_id_invalido'],
+      ['nonexistent purchase', 999999999, 'P0002', 'compra_no_encontrada'],
+    ])('fails closed on %s without returning false or mutating data', async (_label, input, code, message) => {
+      await expectRejected(asService, () => callOrigin(input), code, message);
+    });
+
+    it('denies anon, authenticated roles and spoofed service_role JWT claims on both public and private functions', async () => {
+      const linked = await prepare(await approved(ADMIN));
+      const manual = await insertManualDraft(ADMIN, 'manual-acl');
+
+      const deniedActors: [string, () => Promise<void>][] = [
+        ['anon', asAnon],
+        ['anon with spoofed service_role claim', async () => {
+          await asAnon();
+          await db.query("select set_config('request.jwt.claim.role', 'service_role', false)");
+        }],
+        ['admin', as(ADMIN)],
+        ['other admin', as(OTHER_ADMIN)],
+        ['superempleado', as(SUPER)],
+        ['empleado', as(EMPLEADO)],
+        ['inactive admin', as(INACTIVO)],
+        ['invalid session admin', as(ADMIN, false)],
+        ['authenticated admin with spoofed service_role claim', async () => {
+          await actAs(db, ADMIN, true);
+          await db.query("select set_config('request.jwt.claim.role', 'service_role', false)");
+        }],
+      ];
+
+      for (const [_label, actor] of deniedActors) {
+        await expectRejected(actor, () => callOrigin(linked.compra_id), '42501');
+        await expectRejected(actor, () => callOrigin(manual), '42501');
+        await expectRejected(actor, () => callPrivateOrigin(linked.compra_id), '42501');
+      }
+    });
+
+    it('enforces exact function security metadata, dedicated schema ACLs and no new write permissions', async () => {
+      const linked = await prepare(await approved(ADMIN));
+      await actAsOwner(db);
+
+      const pubSig = 'public.es_compra_de_factura(bigint)';
+      const privSig = 'invoice_writeback_private.es_compra_de_factura(bigint)';
+
+      const meta = await db.query<{
+        sig: string;
+        prosecdef: boolean;
+        provolatile: string;
+        proisstrict: boolean;
+        rettype: string;
+        argnames: string[] | null;
+        proconfig: string[] | null;
+        proacl: string | null;
+      }>(
+        `select oid::regprocedure::text as sig, prosecdef, provolatile, proisstrict,
+                prorettype::regtype::text as rettype, proargnames as argnames, proconfig, proacl::text
+           from pg_proc where oid in ($1::regprocedure, $2::regprocedure) order by sig`,
+        [pubSig, privSig]
+      );
+      expect(meta.rows).toHaveLength(2);
+      const pubMeta = meta.rows.find(r => r.sig === 'es_compra_de_factura(bigint)');
+      const privMeta = meta.rows.find(r => r.sig === 'invoice_writeback_private.es_compra_de_factura(bigint)');
+      expect(pubMeta).toMatchObject({
+        prosecdef: false,
+        provolatile: 's',
+        proisstrict: false,
+        rettype: 'boolean',
+        argnames: ['p_compra_id'],
+      });
+      expect(pubMeta?.proconfig).toContain('search_path=""');
+      expect(pubMeta?.proacl ?? '').not.toMatch(/(^\{|,)=X/);
+
+      expect(privMeta).toMatchObject({
+        prosecdef: true,
+        provolatile: 's',
+        proisstrict: false,
+        rettype: 'boolean',
+        argnames: ['p_compra_id'],
+      });
+      expect(privMeta?.proconfig).toContain('search_path=""');
+      expect(privMeta?.proacl ?? '').not.toMatch(/(^\{|,)=X/);
+
+      const fnExec = async (role: string, sig: string) =>
+        (await db.query<{ ok: boolean }>("select has_function_privilege($1, $2::regprocedure, 'EXECUTE') as ok", [role, sig])).rows[0].ok;
+      expect(await fnExec('service_role', pubSig)).toBe(true);
+      expect(await fnExec('authenticated', pubSig)).toBe(false);
+      expect(await fnExec('anon', pubSig)).toBe(false);
+      expect(await fnExec('service_role', privSig)).toBe(true);
+      expect(await fnExec('authenticated', privSig)).toBe(false);
+      expect(await fnExec('anon', privSig)).toBe(false);
+
+      const schemaPriv = async (role: string, priv: string) =>
+        (await db.query<{ ok: boolean }>('select has_schema_privilege($1, $2, $3) as ok', [role, 'invoice_writeback_private', priv])).rows[0].ok;
+      expect(await schemaPriv('service_role', 'USAGE')).toBe(true);
+      expect(await schemaPriv('service_role', 'CREATE')).toBe(false);
+      expect(await schemaPriv('authenticated', 'USAGE')).toBe(false);
+      expect(await schemaPriv('anon', 'USAGE')).toBe(false);
+
+      // Dedicated private schema introduces no tables, views or triggers.
+      const rels = await db.query<{ n: string }>(
+        "select relname as n from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'invoice_writeback_private'"
+      );
+      expect(rels.rows).toEqual([]);
+
+      // service_role gains no table read/write privileges and cannot emit or edit linked purchases.
+      for (const priv of ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) {
+        const has = (await db.query<{ ok: boolean }>('select has_table_privilege($1, $2, $3) as ok', ['service_role', BINDING, priv])).rows[0].ok;
+        expect(has).toBe(false);
+      }
+      await expectRejected(
+        asService,
+        () => db.query("update public.compras_app set status = 'emitido', proveedor_codigo = 'P-1' where id = $1", [linked.compra_id]),
+        '55000',
+        'compra_factura_bloqueada'
+      );
+    });
+
+    it('applies cleanly to a warmed session without changing existing OIDs, ACLs, policies, validators or replays', async () => {
+      const warmed = await initDb(true, false);
+      const mainDb = db;
+      db = warmed;
+      try {
+        const a = await approved(ADMIN);
+        const payload = {
+          header: { proveedor_codigo: null, proveedor_nombre: 'Proveedor Uno', numero_documento: 'DOC-001', nota: null, titulo: 'Factura DOC-001' },
+          items: [{ codigo_producto: 'SKU-1', descripcion: 'Articulo 1', cantidad: '1', costo: '1', precio: '2', referencia: null, es_nuevo: false }],
+        };
+        const first = await materializar(a, await stageMaterialization(a, payload));
+        const manualId = await insertManualDraft(ADMIN, 'warmed-manual');
+
+        // Origin RPC is absent before the additive migration runs.
+        await actAsServiceRole(warmed);
+        await expect(callOrigin(first.compra_id, warmed)).rejects.toMatchObject({ code: '42883' });
+
+        const captureState = async () => {
+          await actAsOwner(warmed);
+          const fns = await warmed.query<Json>(
+            `select p.oid::regprocedure::text as sig, p.oid::int as oid, p.proacl::text as acl, pg_get_functiondef(p.oid) as def
+               from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+              where n.nspname in ('public', 'facturas_privado')
+                and p.proname in (
+                  'preparar_compra_factura', 'materializar_compra_factura', 'registrar_stage_compra_factura',
+                  'proteger_vinculo_compra_factura', 'proteger_compra_vinculada', 'proteger_items_compra_vinculada',
+                  'proteger_truncate_compras_vinculadas', 'guardar_revision_factura', 'aprobar_revision_factura',
+                  'exigir_revision_completa'
+                )
+              order by sig`
+          );
+          const policies = await warmed.query<Json>(
+            `select tablename, policyname, cmd, roles::text as roles, qual, with_check
+               from pg_policies
+              where tablename in ('facturas_proveedores_compras', 'compras_app', 'compras_app_items')
+              order by tablename, policyname`
+          );
+          const acls = await warmed.query<Json>(
+            `select relname, relacl::text as acl from pg_class c join pg_namespace n on n.oid = c.relnamespace
+              where n.nspname = 'public' and relname in ('facturas_proveedores_compras', 'compras_app', 'compras_app_items')
+              order by relname`
+          );
+          const privateSchemaAcl = await warmed.query<Json>(
+            "select nspname, nspacl::text as acl from pg_namespace where nspname = 'facturas_privado'"
+          );
+          return { fns: fns.rows, policies: policies.rows, acls: acls.rows, privateSchemaAcl: privateSchemaAcl.rows };
+        };
+
+        const beforeState = await captureState();
+        const beforeTables = await snapshot(ALL_TABLES, warmed);
+
+        await actAsOwner(warmed);
+        await warmed.exec(migrationSql('_invoice_writeback_origin.sql'));
+
+        expect(await captureState()).toEqual(beforeState);
+        expect(await snapshot(ALL_TABLES, warmed)).toBe(beforeTables);
+
+        // Same warmed session immediately resolves pre-existing purchases and preserves replay.
+        await actAsServiceRole(warmed);
+        expect(await callOrigin(first.compra_id, warmed)).toBe(true);
+        expect(await callOrigin(manualId, warmed)).toBe(false);
+        expect(await materializar(a, await stageMaterialization(a, payload))).toMatchObject({ compra_id: first.compra_id, replay: true });
+      } finally {
+        db = mainDb;
+        await warmed.close();
       }
     });
   });
