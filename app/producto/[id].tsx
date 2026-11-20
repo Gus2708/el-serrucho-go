@@ -19,6 +19,8 @@ import { CurrencyText } from '../../src/components/CurrencyText';
 import { supabase, Producto } from '../../src/lib/supabase';
 import { useMovimientosProducto, MovimientoProducto } from '../../src/hooks/useMovimientosProducto';
 import { VentaDetailModal } from '../../src/components/VentaDetailModal';
+import { OrdenCambioDetailModal } from '../../src/components/OrdenCambioDetailModal';
+import { OrdenConItems } from '../../src/hooks/useOrdenesHistory';
 import { VentaHoy } from '../../src/hooks/useVentasHoy';
 import { buildPdfHtml, printHtml, DraftItem } from '../../src/utils/pdfGenerator';
 import { htmlToPdfBlob } from '../../src/utils/webPdf';
@@ -55,6 +57,7 @@ export default function ProductoDetail() {
   const pendingDelta = movimientos?.find(m => m.backend_status === 'pendiente' || m.backend_status === 'aplicando')?.cantidad ?? 0;
 
   const [selectedVentaId, setSelectedVentaId] = useState<number | null>(null);
+  const [selectedOrden, setSelectedOrden] = useState<OrdenConItems | null>(null);
 
   // BCV + markup for Bs pricing
   const { data: tasa } = useTazas();
@@ -389,9 +392,15 @@ export default function ProductoDetail() {
             isLoading={isLoadingMovs} 
             colors={colors} 
             onSelectVenta={setSelectedVentaId}
+            onSelectOrden={setSelectedOrden}
           />
         </ScrollView>
         </Animated.View>
+
+        <OrdenCambioDetailModal
+          orden={selectedOrden}
+          onClose={() => setSelectedOrden(null)}
+        />
 
         {/* Modal de Detalle de Venta */}
         <VentaDetailModal 
@@ -1437,6 +1446,7 @@ interface HistorialMovimientosProps {
   isLoading:      boolean;
   colors:         any;
   onSelectVenta:  (ventaId: number) => void;
+  onSelectOrden:  (orden: OrdenConItems) => void;
 }
 
 function HistorialMovimientos({
@@ -1444,6 +1454,7 @@ function HistorialMovimientos({
   isLoading,
   colors,
   onSelectVenta,
+  onSelectOrden,
 }: HistorialMovimientosProps): React.JSX.Element {
   const visibleMovs = movimientos?.slice(0, 15) ?? [];
   const rowAnims = useRef<Animated.Value[]>([]);
@@ -1585,12 +1596,19 @@ function HistorialMovimientos({
               </Animated.View>
             );
 
-            if (isVenta) {
+            const orden = mov.orden;
+            const isPressable = isVenta || !!orden;
+
+            if (isPressable) {
               return (
                 <PressableScale
                   key={mov.id}
                   onPress={() => {
-                    if (mov.ventaId) onSelectVenta(mov.ventaId);
+                    if (isVenta) {
+                      if (mov.ventaId) onSelectVenta(mov.ventaId);
+                    } else if (orden) {
+                      onSelectOrden(orden);
+                    }
                   }}
                   style={[
                     styles.movRow,
