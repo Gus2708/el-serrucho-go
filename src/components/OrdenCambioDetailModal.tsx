@@ -24,6 +24,7 @@ import { confirm, notify } from '../lib/notify';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { buildPdfHtml, printHtml } from '../utils/pdfGenerator';
+import { limpiarNotaLocal, resolverCreadorOrden, resolverOrigenLocal } from '../utils/ordenOrigen';
 import { PressableScale } from './PressableScale';
 import { pressScale } from '../theme/motion';
 import Svg, {
@@ -440,7 +441,7 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
         })),
         orden.nota || '',
         orden.id,
-        orden.creado_por_nombre
+        orden.creado_por_nombre || (!orden.creado_por ? resolverOrigenLocal(orden.nota) : undefined)
       );
 
       if (Platform.OS === 'web') {
@@ -486,12 +487,12 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
     labelTipoUpper = 'COMPRA DE INVENTARIO';
     labelTipo = 'Compra Local';
     badgeColor = colors.success;
-    cleanNota = cabeceraNota.replace(/\[Local Com ID:\s*\d+\]\s*-\s*/g, '');
+    cleanNota = limpiarNotaLocal(cabeceraNota);
   } else if (cabeceraNota.includes('[Local Inv ID:')) {
     labelTipoUpper = 'AJUSTE DE INVENTARIO';
     labelTipo = 'Ajuste (Local)';
     badgeColor = colors.primary;
-    cleanNota = cabeceraNota.replace(/\[Local Inv ID:\s*\d+\]\s*-\s*/g, '');
+    cleanNota = limpiarNotaLocal(cabeceraNota);
   } else if (cabeceraNota.toLowerCase().includes('fail')) {
     cleanNota = '';
   }
@@ -817,7 +818,7 @@ export function OrdenCambioDetailModal({ orden, onClose }: OrdenCambioDetailModa
                       <View style={styles.ticketFooterRow}>
                         <Text style={[styles.ticketFooterLabel, { color: colors.textMuted }]}>CREADO POR</Text>
                         <Text style={[styles.ticketFooterValue, { color: colors.text }]}>
-                          {orden.creado_por_nombre || 'Desconocido'}
+                          {resolverCreadorOrden(orden)}
                         </Text>
                       </View>
                       <View style={styles.ticketFooterRow}>

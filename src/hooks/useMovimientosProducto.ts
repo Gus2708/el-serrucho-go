@@ -2,6 +2,7 @@ import { useQuery, UseQueryResult } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { isDemoActive } from '../demo/useDemoStore';
 import { mergeLocalEchoes, MovimientoProducto } from '../lib/movimientosEco';
+import { limpiarNotaLocal, resolverOrigenLocal } from '../utils/ordenOrigen';
 
 export type { MovimientoProducto };
 
@@ -182,6 +183,26 @@ async function fetchMovimientos(codigoProducto: string): Promise<MovimientoProdu
 
   // 4. Mapear Ajustes y Compras locales/móviles
   if (adjData) {
+    const uniqueCreatorIds = [
+      ...new Set(
+        adjData
+          .map((o: any) => o.ordenes_cambio?.creado_por)
+          .filter(Boolean)
+      ),
+    ];
+    let profileMap: Record<string, string> = {};
+    if (uniqueCreatorIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, display_name')
+        .in('id', uniqueCreatorIds);
+      if (profiles) {
+        profileMap = Object.fromEntries(
+          profiles.map((p: any) => [p.id, p.display_name])
+        );
+      }
+    }
+
     adjData.forEach((o: any) => {
       const cabecera = o.ordenes_cambio;
       const cabeceraNota = cabecera?.nota || '';
@@ -200,12 +221,12 @@ async function fetchMovimientos(codigoProducto: string): Promise<MovimientoProdu
       // Detectar si proviene del backend como COMPRA (Ingreso)
       if (cabeceraNota.includes('[Local Com ID:')) {
         tipoMov = 'ingreso';
-        referencia = cabeceraNota.replace(/\[Local Com ID:\s*\d+\]\s*-\s*/g, '');
+        referencia = limpiarNotaLocal(cabeceraNota);
       } 
       // Detectar si proviene del backend como AJUSTE
       else if (cabeceraNota.includes('[Local Inv ID:')) {
         tipoMov = deltaVal > 0 ? 'ingreso' : 'ajuste';
-        referencia = cabeceraNota.replace(/\[Local Inv ID:\s*\d+\]\s*-\s*/g, '');
+        referencia = limpiarNotaLocal(cabeceraNota);
       }
       // Ajustes hechos directamente desde la App móvil
       else {
@@ -236,6 +257,7 @@ async function fetchMovimientos(codigoProducto: string): Promise<MovimientoProdu
           aprobado_en:       cabecera.aprobado_en ?? null,
           rechazo_motivo:    cabecera.rechazo_motivo ?? null,
           item_count:        cabecera.item_count || 0,
+          creado_por_nombre: profileMap[cabecera.creado_por] ?? (!cabecera.creado_por ? resolverOrigenLocal(cabecera.nota) : undefined),
         } : undefined,
       });
     });
