@@ -15,6 +15,7 @@ export interface CompraDraftItem {
   precio:          number;
   referencia:      string | null;   // opcional; null para productos existentes
   es_nuevo:        boolean;         // true = producto a dar de alta en Hybrid
+  es_ajuste?:      boolean;         // true = cantidad con "!" (ajustar existencia a esta cifra en vez de sumar)
 }
 
 export interface CompraEditDraft {
@@ -513,13 +514,13 @@ export const useCompra = create<CompraStore>()((set, get) => ({
  * existen en Hybrid, arrancan en cero).
  */
 async function compensarExistenciasNegativas(items: CompraDraftItem[]): Promise<CompraDraftItem[]> {
-  const codigos = items.filter(item => !item.es_nuevo).map(item => item.codigo_producto);
+  const codigos = items.filter(item => !item.es_nuevo && !item.es_ajuste).map(item => item.codigo_producto);
   if (codigos.length === 0) return items;
 
   const existencias = await fetchExistencias(codigos);
 
   return items.map(item => {
-    if (item.es_nuevo) return item;
+    if (item.es_nuevo || item.es_ajuste) return item;
     const faltante = faltantePorNegativo(existencias[item.codigo_producto]);
     if (faltante === 0) return item;
     const cantidades = calcularCantidadesCompra(item.cantidad, existencias[item.codigo_producto]);
@@ -537,5 +538,6 @@ function buildItemRows(compraId: number, items: CompraDraftItem[]): Record<strin
     precio:          item.precio,
     referencia:      item.referencia,
     es_nuevo:        item.es_nuevo,
+    es_ajuste:       Boolean(item.es_ajuste),
   }));
 }

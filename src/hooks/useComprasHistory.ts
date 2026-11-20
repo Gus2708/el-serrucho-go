@@ -117,7 +117,7 @@ async function fetchComprasHistory(): Promise<CompraConItems[]> {
 export async function fetchCompraItemsForEdit(compraId: number): Promise<CompraDraftItem[]> {
   const { data, error } = await supabase
     .from('compras_app_items')
-    .select('codigo_producto, descripcion, cantidad, costo, precio, referencia, es_nuevo')
+    .select('codigo_producto, descripcion, cantidad, costo, precio, referencia, es_nuevo, es_ajuste')
     .eq('compra_id', compraId);
 
   if (error) throw error;
@@ -130,5 +130,6 @@ export async function fetchCompraItemsForEdit(compraId: number): Promise<CompraD
     precio:          Number(it.precio),
     referencia:      it.referencia,
     es_nuevo:        Boolean(it.es_nuevo),
+    es_ajuste:       Boolean(it.es_ajuste),
   }));
 }

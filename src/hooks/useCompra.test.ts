@@ -216,4 +216,28 @@ describe('useCompra submit: negative-stock compensation at the emission boundary
     expect(mockInsert).not.toHaveBeenCalled();
     expect(useCompra.getState().isLoading).toBe(false);
   });
+
+  it('skips negative-stock compensation for es_ajuste items and persists es_ajuste flag', async () => {
+    stockOf({ 'P-001': -3, 'P-002': -4 });
+    useCompra.getState().addItem(item({ codigo_producto: 'P-001', cantidad: 5, es_ajuste: true }));
+    useCompra.getState().addItem(item({ codigo_producto: 'P-002', cantidad: 6, es_ajuste: false }));
+
+    await useCompra.getState().submit('user-123');
+
+    expect(sentItemRows()).toEqual([
+      expect.objectContaining({ codigo_producto: 'P-001', cantidad: 5, es_ajuste: true }),
+      expect.objectContaining({ codigo_producto: 'P-002', cantidad: 10, es_ajuste: false }),
+    ]);
+  });
+
+  it('defaults es_ajuste to false for normal items', async () => {
+    stockOf({ 'P-001': 2 });
+    useCompra.getState().addItem(item({ codigo_producto: 'P-001', cantidad: 4 }));
+
+    await useCompra.getState().submit('user-123');
+
+    expect(sentItemRows()).toEqual([
+      expect.objectContaining({ codigo_producto: 'P-001', cantidad: 4, es_ajuste: false }),
+    ]);
+  });
 });

@@ -43,6 +43,25 @@ import { isDemoActive } from '../demo/useDemoStore';
 // 63 chars -> mismatch -> alta cancelada -> compra entera marcada 'error').
 const DESCRIPCION_MAX = 60;
 
+export function parseCantidadConAjuste(raw: string): {
+  display: string;
+  cantidad: number;
+  esAjuste: boolean;
+} {
+  const normalized = raw
+    .replace(/\u2026/g, '...')
+    .replace(/,/g, '.')
+    .replace(/\.{3,}$/, '...');
+  const numericPart = normalized.replace(/\.+$/, '');
+  const cantidad = parseFloat(numericPart);
+  const esAjuste = normalized.endsWith('...') && !isNaN(cantidad);
+  return { display: normalized, cantidad, esAjuste };
+}
+
+export function formatCantidadConAjuste(cantidad: number, esAjuste?: boolean): string {
+  return esAjuste ? `${cantidad}...` : String(cantidad);
+}
+
 interface ComprasViewProps {
   router:        any;
   onEmitted?:    () => void;
@@ -109,12 +128,13 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
   const { data: colisiones } = useColisionesCodigo(codigosDeItems);
 
   function faltanteDe(item: CompraDraftItem): number {
-    if (item.es_nuevo) return 0;
+    if (item.es_nuevo || item.es_ajuste) return 0;
     return faltantePorNegativo(existencias?.[item.codigo_producto]);
   }
 
   const total = items.reduce((sum, item) => sum + (item.cantidad + faltanteDe(item)) * item.costo, 0);
   const itemsCompensados = items.filter(item => faltanteDe(item) > 0).length;
+  const itemsConAjuste = items.filter(item => Boolean(item.es_ajuste)).length;
 
   // Lo último agregado se muestra de PRIMERO: el ítem recién añadido queda justo
   // debajo de los botones de agregar y se edita sin scroll. Es solo
@@ -181,6 +201,7 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
       precio:          producto.precio_venta ?? 0,
       referencia:      producto.referencia ?? null,
       es_nuevo:        false,
+      es_ajuste:       false,
     });
     setProductoModalVisible(false);
   }
@@ -270,11 +291,14 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
     const avisoNegativos = itemsCompensados > 0
       ? `\n\n${itemsCompensados} ítem${itemsCompensados > 1 ? 's están' : ' está'} en negativo: se cargarán las unidades faltantes además de lo comprado, para que el stock quede en la cantidad que escribiste.`
       : '';
+    const avisoAjustes = itemsConAjuste > 0
+      ? `\n\n${itemsConAjuste} ítem${itemsConAjuste > 1 ? 's tienen' : ' tiene'} ajuste fijo (...): se ajustará su existencia a la cantidad indicada mediante Ajustes de Inventario en vez de sumarse.`
+      : '';
     confirm({
       title:       isEditing ? 'Reintentar compra' : 'Emitir compra',
       message:     (isEditing
         ? `Se reencolará C-${String(editingCompraId).padStart(4, '0')} a ${proveedorNombre} con ${items.length} ítem${items.length > 1 ? 's' : ''}.`
-        : `Se registrará una compra a ${proveedorNombre} con ${items.length} ítem${items.length > 1 ? 's' : ''}.`) + avisoNegativos,
+        : `Se registrará una compra a ${proveedorNombre} con ${items.length} ítem${items.length > 1 ? 's' : ''}.`) + avisoNegativos + avisoAjustes,
       confirmText: isEditing ? 'Reintentar' : 'Emitir',
       onConfirm:   performSubmit,
     });
@@ -707,24 +731,33 @@ interface CompraItemCardProps {
 
 function CompraItemCard({ item, existencia, colision, onRemove, onUpdate }: CompraItemCardProps): React.JSX.Element {
   const { colors, formatUSD } = useTheme();
-  const [cantidadInput, setCantidadInput] = useState<string>(String(item.cantidad));
+  const [cantidadInput, setCantidadInput] = useState<string>(() =>
+    formatCantidadConAjuste(item.cantidad, item.es_ajuste)
+  );
   const [costoInput, setCostoInput] = useState<string>(String(item.costo));
   const [precioInput, setPrecioInput] = useState<string>(String(item.precio));
 
   // Producto en negativo: al emitir se cargan también las unidades faltantes
   // para que el saldo final sea la cantidad escrita, no cantidad + negativo.
-  const faltante = faltantePorNegativo(existencia);
+  const faltante = item.es_ajuste ? 0 : faltantePorNegativo(existencia);
   const cantidadACargar = item.cantidad + faltante;
   const subtotal = cantidadACargar * item.costo;
   const decimalKeyboard = Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad';
 
   // Estos valores pueden cambiar por fuera de la tarjeta: volver a agregar el
   // mismo producto lo reemplaza con los valores frescos de la DB. Sin esto los
-  // inputs se quedan con lo viejo. Se compara el número para no pisar lo que el
-  // usuario está tecleando.
+  // inputs se quedan con lo viejo. Se compara el número y el modo ajuste para
+  // no pisar lo que el usuario está tecleando (incluidos los puntos intermedios).
   useEffect(() => {
-    setCantidadInput(prev => (parseFloat(prev) === item.cantidad ? prev : String(item.cantidad)));
-  }, [item.cantidad]);
+    setCantidadInput(prev => {
+      const parsed = parseCantidadConAjuste(prev);
+      const targetAjuste = Boolean(item.es_ajuste);
+      if (parsed.cantidad === item.cantidad && parsed.esAjuste === targetAjuste) {
+        return prev;
+      }
+      return formatCantidadConAjuste(item.cantidad, targetAjuste);
+    });
+  }, [item.cantidad, item.es_ajuste]);
 
   useEffect(() => {
     setCostoInput(prev => (parseFloat(prev) === item.costo ? prev : String(item.costo)));
@@ -748,10 +781,13 @@ function CompraItemCard({ item, existencia, colision, onRemove, onUpdate }: Comp
     : colors.success;
 
   function handleCantidadChange(v: string): void {
-    const val = v.replace(',', '.');
-    setCantidadInput(val);
-    const n = parseFloat(val);
-    if (!isNaN(n) && n >= 0) onUpdate({ cantidad: n });
+    const { display, cantidad, esAjuste } = parseCantidadConAjuste(v);
+    setCantidadInput(display);
+    if (!isNaN(cantidad) && cantidad >= 0) {
+      onUpdate({ cantidad, es_ajuste: esAjuste });
+    } else if (esAjuste !== Boolean(item.es_ajuste)) {
+      onUpdate({ es_ajuste: esAjuste });
+    }
   }
 
   function handleCostoChange(v: string): void {
@@ -774,7 +810,7 @@ function CompraItemCard({ item, existencia, colision, onRemove, onUpdate }: Comp
         <View style={styles.itemInfo}>
           <View style={styles.itemNameRow}>
             {item.es_nuevo ? (
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <TextInput
                   style={[styles.itemNameInput, { color: colors.text }]}
                   value={item.descripcion}
@@ -789,9 +825,20 @@ function CompraItemCard({ item, existencia, colision, onRemove, onUpdate }: Comp
                 ) : null}
               </View>
             ) : (
-              <Text style={[styles.itemName, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
-                {item.descripcion}
-              </Text>
+              <ScrollView
+                testID="compra-item-name-scroll"
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                nestedScrollEnabled
+                style={styles.itemNameScroll}
+              >
+                <Text
+                  style={[styles.itemName, { color: colors.text }]}
+                  numberOfLines={Platform.OS === 'web' ? undefined : 1}
+                >
+                  {item.descripcion}
+                </Text>
+              </ScrollView>
             )}
             {item.es_nuevo ? (
               <View style={[styles.nuevoBadge, { backgroundColor: colors.primary + '20', borderColor: colors.primary + '40' }]}>
@@ -815,6 +862,7 @@ function CompraItemCard({ item, existencia, colision, onRemove, onUpdate }: Comp
         <View style={styles.fieldColumn}>
           <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>CANTIDAD</Text>
           <TextInput
+            testID="compra-item-cantidad-input"
             style={[styles.fieldInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
             keyboardType={decimalKeyboard}
             value={cantidadInput}
@@ -846,7 +894,19 @@ function CompraItemCard({ item, existencia, colision, onRemove, onUpdate }: Comp
         </View>
       </View>
 
-      {faltante > 0 ? (
+      {item.es_ajuste ? (
+        <View
+          testID="compra-item-ajuste-aviso"
+          style={[styles.negativoAviso, { backgroundColor: colors.primary + '14', borderColor: colors.primary + '35' }]}
+        >
+          <Feather name="sliders" size={12} color={colors.primary} />
+          <Text style={[styles.negativoAvisoText, { color: colors.primary }]}>
+            {existencia !== null && !item.es_nuevo
+              ? `En ${existencia} · no se suma: se ajustará la existencia a ${item.cantidad}`
+              : `Ajuste fijo (...) · no se suma: la existencia quedará en ${item.cantidad}`}
+          </Text>
+        </View>
+      ) : faltante > 0 ? (
         <View style={[styles.negativoAviso, { backgroundColor: colors.warning + '14', borderColor: colors.warning + '30' }]}>
           <Feather name="corner-down-right" size={12} color={colors.warning} />
           <Text style={[styles.negativoAvisoText, { color: colors.warning }]}>
@@ -1187,7 +1247,7 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
   async function handleAdd(): Promise<void> {
     const codigoTrim = codigo.trim().toUpperCase();
     const descripcionTrim = descripcion.trim();
-    const cantidad = parseFloat(cantidadInput.replace(',', '.'));
+    const { cantidad, esAjuste } = parseCantidadConAjuste(cantidadInput);
     const costo = parseFloat(costoInput.replace(',', '.'));
     const precio = parseFloat(precioInput.replace(',', '.'));
 
@@ -1257,6 +1317,7 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
       costo,
       precio,
       es_nuevo:        true,
+      es_ajuste:       esAjuste,
     });
     resetForm();
     onClose();
@@ -1379,10 +1440,11 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
               <View style={[styles.formField, styles.formFieldFlex]}>
                 <Text style={[styles.formLabel, { color: colors.textMuted }]}>CANTIDAD</Text>
                 <TextInput
+                  testID="producto-nuevo-cantidad-input"
                   style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
                   keyboardType={decimalKeyboard}
                   value={cantidadInput}
-                  onChangeText={v => setCantidadInput(v.replace(',', '.'))}
+                  onChangeText={v => setCantidadInput(parseCantidadConAjuste(v).display)}
                   selectTextOnFocus
                 />
               </View>
@@ -1413,6 +1475,18 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
                 />
               </View>
             </View>
+
+            {parseCantidadConAjuste(cantidadInput).esAjuste ? (
+              <View
+                testID="producto-nuevo-ajuste-aviso"
+                style={[styles.negativoAviso, { backgroundColor: colors.primary + '14', borderColor: colors.primary + '35', marginBottom: 12 }]}
+              >
+                <Feather name="sliders" size={12} color={colors.primary} />
+                <Text style={[styles.negativoAvisoText, { color: colors.primary }]}>
+                  Ajuste fijo (...) · no se sumará: la existencia se ajustará a {parseCantidadConAjuste(cantidadInput).cantidad}
+                </Text>
+              </View>
+            ) : null}
 
             <PressableScale
               style={[
@@ -1545,9 +1619,14 @@ const styles = StyleSheet.create({
     alignItems:     'flex-start',
     justifyContent: 'space-between',
   },
-  itemInfo:  { flex: 1 },
-  itemNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  itemName:  { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', flexShrink: 1 },
+  itemInfo:  { flex: 1, minWidth: 0 },
+  itemNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
+  itemNameScroll: { flex: 1, minWidth: 0 },
+  itemName: {
+    fontSize:   scaleFont(13),
+    fontFamily: 'JetBrainsMono_700Bold',
+    ...(Platform.OS === 'web' ? { whiteSpace: 'nowrap' as any } : {}),
+  },
   itemNameInput: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', padding: 0 },
   itemDescCounter: { fontSize: scaleFont(9), fontFamily: 'JetBrainsMono_400Regular', marginTop: 2 },
   itemCode:  { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', marginTop: 1 },
