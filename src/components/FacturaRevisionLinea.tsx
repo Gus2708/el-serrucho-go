@@ -7,6 +7,7 @@ import type { LineMatch } from '../lib/facturaMatching';
 import { precioVentaValido, resolverPrecioVenta } from '../lib/facturaRevision';
 import type { CalculoLinea, Edicion, EstadoCodigoBarras, LineaCampoEscalar, LineaEfectiva, TipoDocumento } from '../lib/facturaRevision';
 import { Boton, CampoCorregible, Entrada, FilasLista, Texto, avisoImporteOculto, etiquetaMonto, formatoUsdExacto } from './FacturaRevisionCabecera';
+import FacturaCodigoBarrasNuevo, { type CapturaCodigoNuevoProps } from './FacturaCodigoBarrasNuevo';
 
 const CAMPOS: ReadonlyArray<{ campo: LineaCampoEscalar; label: string; decimal?: boolean; monetario?: boolean }> = [
   { campo: 'codigoProveedor', label: 'Código impreso del proveedor' },
@@ -48,6 +49,7 @@ export interface FacturaRevisionLineaProps {
   onBorradorPrecio: (lineaId: string, texto: string | null) => void;
   onEditar: (edicion: Edicion) => { ok: boolean };
   onElegirCandidato: (codigoInterno: string) => void;
+  capturaCodigo?: Omit<CapturaCodigoNuevoProps, 'id'> & { contexto: string };
 }
 
 function decisionTexto(efectiva: LineaEfectiva): string {
@@ -172,6 +174,9 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
       <View style={[styles.caja, { borderColor: colors.border }]}>
         <Texto small tone="muted">Producto del catálogo (decisión humana, distinta de la lectura OCR)</Texto>
         <Texto testID={`${id}-decision`} tone={efectiva.asociacion.tipo === 'pendiente' ? 'warning' : 'text'}>{decisionTexto(efectiva)}</Texto>
+        {efectiva.asociacion.tipo === 'producto_nuevo' && props.capturaCodigo ? (
+          <FacturaCodigoBarrasNuevo key={props.capturaCodigo.contexto} {...props.capturaCodigo} id={id} />
+        ) : null}
         {match?.feedback ? (
           <Texto testID={`${id}-feedback`} small tone="warning">
             {match.feedback.decision === 'producto_nuevo'
@@ -184,7 +189,7 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
             <Boton
               key={candidato.codigoInterno}
               testID={`${id}-candidato-${candidato.codigoInterno}`}
-              label={`${candidato.codigoInterno} · ${candidato.descripcion}`}
+              label={`Confirmar ${candidato.codigoInterno} · ${candidato.descripcion}`}
               selected={efectiva.asociacion.codigoInterno === candidato.codigoInterno}
               onPress={() => onElegirCandidato(candidato.codigoInterno)}
             />
@@ -216,7 +221,7 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
           }}
         />
         {efectiva.asociacion.tipo !== 'pendiente' ? (
-          <Boton testID={`${id}-pendiente`} label="Volver a sin decidir" danger onPress={() => onEditar({ tipo: 'asociacion', lineaId, asociacion: { tipo: 'pendiente', codigoInterno: null, evidencia: null, motivo: null } })} />
+          <Boton testID={`${id}-pendiente`} label="Cambiar producto (volver a sin decidir)" danger onPress={() => onEditar({ tipo: 'asociacion', lineaId, asociacion: { tipo: 'pendiente', codigoInterno: null, evidencia: null, motivo: null } })} />
         ) : null}
       </View>
 

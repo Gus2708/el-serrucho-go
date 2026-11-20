@@ -233,6 +233,7 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
           {efectiva.lineas.map((linea, index) => {
             const llave = linea.numeroLinea !== null ? String(linea.numeroLinea) : `m${index + 1}`;
             const origen = control.extraccion?.lineas.find(l => l.numeroLinea === linea.numeroLinea) ?? null;
+            const contextoCaptura = control.contextoActual();
             return (
               <FacturaRevisionLinea
                 key={linea.lineaId}
@@ -252,6 +253,13 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
                 onBorradorPrecio={setBorradorPrecio}
                 onEditar={control.editar}
                 onElegirCandidato={codigo => control.elegirCandidato(linea.numeroLinea ?? 0, linea.lineaId, codigo)}
+                capturaCodigo={control.carga === 'listo' && control.ocupado === null && !control.conflicto ? {
+                  contexto: `${contextoCaptura}|${contenido.extraccion_id}|${control.ultimaFila?.revision ?? 0}`,
+                  codigo: contenido.lineas.find(l => l.lineaId === linea.lineaId)?.codigoBarras.codigoEscaneado,
+                  estaVigente: () => control.contextoActual() === contextoCaptura && (props.getSessionUid ?? getFacturaSessionUid)() === ownerId,
+                  onCapturar: valor => control.capturarCodigoNuevo(linea.lineaId, valor, contextoCaptura),
+                  leerColisiones: (props.repository ?? facturaRevisionRepository).leerColisionesBarras,
+                } : undefined}
               />
             );
           })}

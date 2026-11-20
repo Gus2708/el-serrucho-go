@@ -28,6 +28,19 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 const SHA = 'a'.repeat(64);
 
 describe('saved feedback suggestions', () => {
+  it('invalidates the barcode capture epoch immediately when a revision reload starts', async () => {
+    const repo = fakeRepo();
+    await startHook(repo);
+    const before = current.contextoActual();
+    const late = deferred<RevisionRow[]>();
+    repo.leerRevisiones.mockReturnValueOnce(late.promise);
+    let reload: Promise<void>;
+    await act(async () => {
+      reload = current.recargar();
+      expect(current.contextoActual()).not.toBe(before);
+    });
+    await act(async () => { late.resolve([]); await reload!; });
+  });
   const chosen = { lineIndex: 0, decision: 'confirmado', codigoInterno: 'PAST' };
   const product = { codigo_interno: 'PAST', descripcion: 'Fijacion', codigo_barras: null, existencia: -3, costo: 1, precio_venta: 2, es_placeholder: false };
   it('passes saved choices to the real matcher without changing the human decision', async () => {

@@ -13,11 +13,19 @@ import {
 } from '../lib/facturaRevisionRepository';
 import { crearRevisionDesdeExtraccion, aplicarEdicion, type RevisionContenido } from '../lib/facturaRevision';
 import type { FacturaExtraccionPayload } from '../lib/facturaExtractionContract';
-import { OWNER_A, OWNER_B, FACTURA_1, renderWithProviders, settle } from '../test-utils/facturaUiHarness';
+import { OWNER_A, OWNER_B, FACTURA_1, deferred, renderWithProviders, settle } from '../test-utils/facturaUiHarness';
 import { elSerrucho } from '../theme/brands/el-serrucho';
 
 jest.mock('../lib/supabase', () => ({ supabase: { functions: { invoke: jest.fn() } } }));
 jest.mock('../hooks/useBorradores', () => ({ reanudarBorradorCompra: jest.fn() }));
+let mockScannerProps: { onScan: (code: string) => void; onClose: () => void } | null = null;
+jest.mock('./BarcodeScannerModal', () => ({ BarcodeScannerModal: ({ visible, onScan, onClose }: any) => {
+  if (!visible) return null;
+  mockScannerProps = { onScan, onClose };
+  return require('react').createElement(require('react-native').View, null,
+    require('react').createElement(require('react-native').Text, { testID: 'scanner-mock-capture', onPress: () => onScan('000123-ABC') }, 'Capture'),
+    require('react').createElement(require('react-native').Text, { testID: 'scanner-mock-close', onPress: onClose }, 'Close'));
+} }));
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: require('../test-utils/facturaUiHarness').asyncStorage,
@@ -124,6 +132,7 @@ const invokeMaterializar = jest.mocked(supabase.functions.invoke);
 const reanudarCompra = jest.mocked(reanudarBorradorCompra);
 
 beforeEach(() => {
+  mockScannerProps = null;
   invokeMaterializar.mockReset();
   reanudarCompra.mockReset();
 });
@@ -171,6 +180,110 @@ function savedRevision(over: Partial<RevisionRow> = {}, edit: (contenido: Revisi
   if (!base.ok) throw new Error('fixture');
   return { revision: 1, clave: 'c0000000-0000-4000-8000-0000000000aa', facturaVersion: 3, extraccionId: EXT, documentoSha256: SHA, contenido: edit(base.contenido), fingerprint: FP, motivo: null, creadoPor: OWNER_A, aprobadoPor: null, aprobadoEn: null, ...over };
 }
+
+describe('barcode capture safety', () => {
+  it('exposes explicit confirm, change and new-product decisions', async () => {
+    const repo = fakeRepo();
+    await startRevision(repo);
+    expect(textOf('revision-linea-3-candidato-AB-9')).toMatch(/Confirmar/);
+    await pressId('revision-linea-3-candidato-AB-9');
+    expect(textOf('revision-linea-3-pendiente')).toMatch(/Cambiar producto/);
+    await pressId('revision-linea-3-pendiente');
+    expect(textOf('revision-linea-3-decision')).toMatch(/Sin decidir/);
+    expect(textOf('revision-linea-3-nuevo-aplicar')).toMatch(/producto nuevo/);
+  });
+  async function ready(repo: Mocks, over: Partial<FacturaRevisionViewProps> = {}) {
+    const view = await startRevision(repo, over);
+    await typeId('revision-linea-3-nuevo-motivo', 'Pending registration');
+    await pressId('revision-linea-3-nuevo-aplicar');
+    return view;
+  }
+  it('cancels without capturing and ignores a closed camera callback after reopening', async () => {
+    await ready(fakeRepo());
+    await pressId('revision-linea-3-barras-escanear');
+    const old = mockScannerProps!;
+    await pressId('scanner-mock-close');
+    expect(textOf('revision-linea-3-barras-escaneado')).toBe('Sin código capturado');
+    await pressId('revision-linea-3-barras-escanear');
+    await act(async () => { old.onScan('STALE'); old.onClose(); });
+    expect(maybeId('scanner-mock-capture')).not.toBeNull();
+    expect(textOf('revision-linea-3-barras-escaneado')).toBe('Sin código capturado');
+    await act(async () => mockScannerProps!.onScan('000-NEW'));
+    await settle();
+    expect(textOf('revision-linea-3-barras-escaneado')).toBe('000-NEW');
+  });
+  it.each(['version', 'session', 'association'])('discards a camera result after the %s changes', async kind => {
+    const repo = fakeRepo();
+    let uid: string | null = OWNER_A;
+    const getSessionUid = () => uid;
+    const view = await ready(repo, { getSessionUid });
+    await pressId('revision-linea-3-barras-escanear');
+    const old = mockScannerProps!;
+    if (kind === 'association') await pressId('revision-linea-3-pendiente');
+    else {
+      if (kind === 'session') uid = null;
+      view.rerenderUi(<FacturaRevisionView {...props(repo, { getSessionUid, facturaVersion: kind === 'version' ? 4 : 3 })} />);
+      await settle();
+      if (kind === 'session') {
+        uid = OWNER_A;
+        view.rerenderUi(<FacturaRevisionView {...props(repo, { getSessionUid })} />);
+        await settle();
+      }
+    }
+    await act(async () => old.onScan('STALE'));
+    await settle();
+    expect(screen.queryByText('STALE')).toBeNull();
+    expect(repo.guardarRevision).not.toHaveBeenCalled();
+    expect(maybeId('scanner-mock-capture')).toBeNull();
+  });
+  it('ignores an old collision response after a different code is captured', async () => {
+    const old = deferred<any>();
+    const repo = fakeRepo({ leerColisionesBarras: jest.fn(async (codes: string[]) => codes[0] === 'OLD' ? old.promise : { NEW: { productos: [], completo: true } }) });
+    await ready(repo);
+    await typeId('revision-linea-3-barras-manual', 'OLD');
+    await pressId('revision-linea-3-barras-guardar');
+    await typeId('revision-linea-3-barras-manual', 'NEW');
+    await pressId('revision-linea-3-barras-guardar');
+    await act(async () => old.resolve({ OLD: { productos: [{ codigoInterno: 'WRONG', codigoBarras: 'OLD' }], completo: true } }));
+    await settle();
+    expect(textOf('revision-linea-3-barras-escaneado')).toBe('NEW');
+    expect(screen.queryByText(/WRONG/)).toBeNull();
+  });
+  it.each(['partial', 'error'])('reports incomplete evidence on %s without claiming uniqueness', async kind => {
+    const repo = fakeRepo({ leerColisionesBarras: jest.fn(async () => {
+      if (kind === 'error') throw new Error('PRIVATE');
+      return { CODE: { productos: [], completo: false } };
+    }) });
+    await ready(repo);
+    await typeId('revision-linea-3-barras-manual', 'CODE');
+    await pressId('revision-linea-3-barras-guardar');
+    expect(textOf('revision-linea-3-barras-verificacion')).toMatch(/incompleta|No se pudo verificar/i);
+    expect(screen.queryByText(/PRIVATE/)).toBeNull();
+  });
+  it('rejects invalid manual input and persists a valid code alongside the manual selling price', async () => {
+    const repo = fakeRepo();
+    repo.guardarRevision.mockImplementation(async (input: GuardarRevisionInput) => {
+      repo.leerRevisiones.mockResolvedValue([savedRevision({ contenido: input.contenido, clave: input.clave })]);
+      return { revision: 1, fingerprint: FP, replay: false };
+    });
+    const view = await ready(repo);
+    await typeId('revision-linea-3-barras-manual', ' BAD ');
+    await pressId('revision-linea-3-barras-guardar');
+    expect(textOf('revision-linea-3-barras-escaneado')).toBe('Sin código capturado');
+    expect(maybeId('revision-linea-3-barras-error')).not.toBeNull();
+    await typeId('revision-linea-3-barras-manual', '000-VALID');
+    await pressId('revision-linea-3-barras-guardar');
+    await typeId('revision-linea-3-pvp-valor', '12.34');
+    await pressId('revision-guardar');
+    const saved = repo.guardarRevision.mock.calls[0][0].contenido.lineas[2];
+    expect(saved.codigoBarras.codigoEscaneado).toBe('000-VALID');
+    expect(saved.precioVenta).toBe('12.34');
+    view.unmount();
+    await openView(repo);
+    expect(textOf('revision-linea-3-barras-escaneado')).toBe('000-VALID');
+    expect(byId('revision-linea-3-pvp-valor').props.value).toBe('12.34');
+  });
+});
 
 describe('availability and manual fallback', () => {
   it('shows an unavailable notice when the backend relation is missing and keeps the screen usable', async () => {
@@ -369,6 +482,36 @@ describe('review from an extraction', () => {
     expect(textOf('revision-linea-3-decision')).toMatch(/Producto nuevo/);
     expect(textOf('revision-linea-3-decision')).toMatch(/sin crear/i);
     expect(repo.guardarRevision).not.toHaveBeenCalled();
+  });
+
+  it('captures a physical barcode only after explicit new-product confirmation and keeps supplier code separate', async () => {
+    const repo = fakeRepo({ leerColisionesBarras: jest.fn(async () => ({ '000123-ABC': { productos: [{ codigoInterno: 'EXISTING', codigoBarras: '000123-ABC' }], completo: true } })) });
+    await startRevision(repo);
+    await typeId('revision-linea-3-nuevo-motivo', 'Alta pendiente');
+    await pressId('revision-linea-3-nuevo-aplicar');
+    expect(byId('revision-linea-3-barras-escanear')).toBeTruthy();
+    await pressId('revision-linea-3-barras-escanear');
+    await pressId('scanner-mock-capture');
+    expect(textOf('revision-linea-3-barras-escaneado')).toBe('000123-ABC');
+    expect(textOf('revision-linea-3-codigo')).toBe('AB-9');
+    expect(await screen.findByTestId('revision-linea-3-barras-colision')).toBeTruthy();
+    expect(textOf('revision-linea-3-barras-colision')).toMatch(/EXISTING.*no se asignó/i);
+    expect(repo.leerColisionesBarras).toHaveBeenCalledWith(['000123-ABC']);
+    expect(textOf('revision-linea-3-decision')).toMatch(/Producto nuevo/);
+    expect(repo.guardarRevision).not.toHaveBeenCalled();
+  });
+
+  it('offers manual code entry only for the explicitly new line and clears through the revision edit', async () => {
+    const repo = fakeRepo();
+    await startRevision(repo);
+    expect(maybeId('revision-linea-3-barras-escanear')).toBeNull();
+    await typeId('revision-linea-3-nuevo-motivo', 'Alta pendiente');
+    await pressId('revision-linea-3-nuevo-aplicar');
+    await typeId('revision-linea-3-barras-manual', '0000-A9');
+    await pressId('revision-linea-3-barras-guardar');
+    expect(textOf('revision-linea-3-barras-escaneado')).toBe('0000-A9');
+    await pressId('revision-linea-3-barras-limpiar');
+    expect(textOf('revision-linea-3-barras-escaneado')).toBe('Sin código capturado');
   });
 
   it('applies a motivated scalar correction, showing original, corrected and normalized values', async () => {

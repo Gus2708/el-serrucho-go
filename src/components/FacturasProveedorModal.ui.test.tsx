@@ -1,4 +1,5 @@
 import * as React from 'react';
+jest.mock('./BarcodeScannerModal', () => ({ BarcodeScannerModal: () => null }));
 import { act, fireEvent, screen } from '@testing-library/react-native';
 import FacturasProveedorModal from './FacturasProveedorModal';
 import { facturaEditorService, publishFacturaSession } from '../hooks/useFacturasProveedor';

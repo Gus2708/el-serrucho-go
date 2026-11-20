@@ -205,6 +205,8 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
     uidVisto.current = uidAhora;
   }
   const tokenActual = useCallback((): string => `${generacion.current.vida}.${generacion.current.sesion}`, []);
+  const generacionCaptura = useRef(0);
+  const contextoCaptura = useCallback((): string => `${tokenActual()}:${generacionCaptura.current}`, [tokenActual]);
   const estadoRef = useRef(estado);
   estadoRef.current = estado;
   const pendienteRef = useRef<{ firma: string; clave: string } | null>(null);
@@ -465,6 +467,23 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
     if (asociacion) editar({ tipo: 'asociacion', lineaId, asociacion });
   }, [editar]);
 
+  const capturarCodigoNuevo = useCallback((lineaId: string, valor: string | null, contexto: string): { ok: boolean } => {
+    const edicion: Edicion = { tipo: 'codigo_barras_escaneado', lineaId, valor };
+    const permite = (actual: Estado): boolean => contexto === contextoCaptura() && vigente(tokenActual()) && actual.carga === 'listo' &&
+      actual.ocupado === null && !actual.conflicto && actual.contenido?.lineas.some(line =>
+        line.lineaId === lineaId && line.asociacion.tipo === 'producto_nuevo') === true;
+    const actual = estadoRef.current;
+    if (!permite(actual) || !actual.contenido) return { ok: false };
+    if (!aplicarEdicion(actual.contenido, actual.extraccion, edicion).ok) return { ok: false };
+    // Re-check inside the state update: an association change queued in the same event must win.
+    patch(latest => {
+      if (!permite(latest) || !latest.contenido) return {};
+      const result = aplicarEdicion(latest.contenido, latest.extraccion, edicion);
+      return result.ok ? { contenido: result.contenido } : {};
+    });
+    return { ok: true };
+  }, [patch, vigente, tokenActual, contextoCaptura]);
+
   const aplicarExtraccion = useCallback((extraccionId: string, motivo: string | null): { ok: boolean } => {
     const actual = estadoRef.current;
     const fila = actual.extracciones.find(row => row.id === extraccionId);
@@ -603,6 +622,7 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
   }, [facturaId, facturaVersion, patch, vigente]);
 
   const recargar = useCallback(async (): Promise<void> => {
+    generacionCaptura.current += 1;
     await cargar(false);
   }, [cargar]);
 
@@ -633,6 +653,8 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
     puedeGuardar,
     puedeAprobar,
     editar,
+    contextoActual: contextoCaptura,
+    capturarCodigoNuevo,
     elegirCandidato,
     aplicarExtraccion,
     guardar,
