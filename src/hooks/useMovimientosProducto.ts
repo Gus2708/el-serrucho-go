@@ -1,18 +1,14 @@
 import { useQuery, UseQueryResult } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { isDemoActive } from '../demo/useDemoStore';
+import { mergeLocalEchoes, MovimientoProducto } from '../lib/movimientosEco';
 
-export interface MovimientoProducto {
-  id:              string;
-  tipo:            'venta' | 'ingreso' | 'ajuste';
-  cantidad:        number;
-  referencia:      string;
-  nota?:           string;
-  fechaFormateada: string;
-  timestamp:       number;
-  ventaId?:        number;
-  backend_status?: string;
-  backend_resultado?: string | null;
+export type { MovimientoProducto };
+
+function toTimestamp(dateStr: string | null | undefined): number | undefined {
+  if (!dateStr) return undefined;
+  const ts = new Date(dateStr).getTime();
+  return isNaN(ts) ? undefined : ts;
 }
 
 /**
@@ -136,10 +132,19 @@ async function fetchMovimientos(codigoProducto: string): Promise<MovimientoProdu
       nota,
       backend_status,
       backend_resultado,
+      backend_aplicado_en,
       ordenes_cambio:orden_id (
+        id,
+        creado_por,
         creado_en,
         nota,
-        status
+        status,
+        pdf_url,
+        item_count,
+        aprobacion_estado,
+        aprobado_por,
+        aprobado_en,
+        rechazo_motivo
       )
     `)
     .eq('codigo_producto', codigoProducto)
@@ -178,7 +183,8 @@ async function fetchMovimientos(codigoProducto: string): Promise<MovimientoProdu
   // 4. Mapear Ajustes y Compras locales/móviles
   if (adjData) {
     adjData.forEach((o: any) => {
-      const cabeceraNota = o.ordenes_cambio?.nota || '';
+      const cabecera = o.ordenes_cambio;
+      const cabeceraNota = cabecera?.nota || '';
       const deltaVal = Number(o.delta || 0);
       const dateStr  = o.ordenes_cambio?.creado_en;
       const dateObj  = dateStr ? new Date(dateStr) : new Date();
@@ -216,15 +222,30 @@ async function fetchMovimientos(codigoProducto: string): Promise<MovimientoProdu
         timestamp:       ts,
         backend_status:  o.backend_status,
         backend_resultado: o.backend_resultado,
+        aplicadoTs:      toTimestamp(o.backend_aplicado_en),
+        esEcoLocal:      cabeceraNota.includes('[Local Inv ID:'),
+        orden: cabecera ? {
+          id:                cabecera.id,
+          creado_por:        cabecera.creado_por,
+          nota:              cabecera.nota,
+          status:            cabecera.status,
+          pdf_url:           cabecera.pdf_url,
+          creado_en:         cabecera.creado_en,
+          aprobacion_estado: cabecera.aprobacion_estado ?? 'no_aplica',
+          aprobado_por:      cabecera.aprobado_por ?? null,
+          aprobado_en:       cabecera.aprobado_en ?? null,
+          rechazo_motivo:    cabecera.rechazo_motivo ?? null,
+          item_count:        cabecera.item_count || 0,
+        } : undefined,
       });
     });
   }
 
-  // 5. Fusionar, ordenar por fecha descendente y deduplicar defensivamente
+  // 5. Colapsar los ecos de HybridLite, ordenar por fecha descendente y deduplicar defensivamente
   const seenKeys = new Set<string>();
   const merged: MovimientoProducto[] = [];
-  
-  movimientos
+
+  mergeLocalEchoes(movimientos)
     .sort((a, b) => b.timestamp - a.timestamp)
     .forEach((m) => {
       // Clave única para evitar duplicados visuales: tipo + referencia + cantidad + fecha

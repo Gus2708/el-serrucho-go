@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '../src/lib/supabase';
+import { trackAuditEventNow } from '../src/lib/auditLog';
 import { notify, confirm } from '../src/lib/notify';
 import { useTheme } from '../src/theme/ThemeContext';
 import { useQueryClient } from '@tanstack/react-query';
@@ -292,6 +293,10 @@ export default function Perfil() {
     } catch (err) {
       console.warn('Error al liberar la sesión del dispositivo:', err);
     }
+    await trackAuditEventNow({
+      evento: 'auth_logout',
+      empleadoId: profile?.id ?? null,
+    });
     try {
       // En web, sin "global", signOut puede quedarse colgado intentando
       // contactar al endpoint de logout — usamos "local" que solo limpia

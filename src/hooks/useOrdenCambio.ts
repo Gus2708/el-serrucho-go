@@ -8,6 +8,7 @@ import { Platform } from 'react-native';
 import { buildPdfHtml, DraftItem } from '../utils/pdfGenerator';
 import { htmlToPdfBlob } from '../utils/webPdf';
 import { isDemoActive } from '../demo/useDemoStore';
+import { trackAuditEvent } from '../lib/auditLog';
 
 interface OrdenStore {
   items:     DraftItem[];
@@ -94,6 +95,18 @@ export const useOrdenCambio = create<OrdenStore>()((set, get) => ({
       );
 
       if (itemsError) throw itemsError;
+
+      trackAuditEvent({
+        evento: 'orden_borrador_emitida',
+        entidad: 'ordenes_cambio',
+        entidadId: orden.id,
+        empleadoId: userId,
+        detalle: {
+          items_count: items.length,
+          nota: nota || null,
+          codigos: items.slice(0, 15).map((item) => item.codigo_producto),
+        },
+      });
 
       // 3. Get the creator's display name
       const { data: profileData } = await supabase

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { BackendResumen, OrdenConItems } from './useOrdenesHistory';
 import { isDemoActive } from '../demo/useDemoStore';
+import { trackAuditEvent } from '../lib/auditLog';
 
 // ── Bandeja de aprobaciones ───────────────────────────────────────────────────
 // Ajustes creados por empleados normales que quedaron en espera. Solo admin y
@@ -104,6 +105,11 @@ export function useAprobarOrden() {
       if (isDemoActive()) return;
       const { error } = await supabase.rpc('aprobar_orden', { p_orden: ordenId });
       if (error) throw new Error(error.message);
+      trackAuditEvent({
+        evento: 'orden_aprobada',
+        entidad: 'ordenes_cambio',
+        entidadId: ordenId,
+      });
     },
     onSuccess: () => invalidateAll(queryClient),
   });
@@ -119,6 +125,12 @@ export function useRechazarOrden() {
         p_motivo: motivo ?? null,
       });
       if (error) throw new Error(error.message);
+      trackAuditEvent({
+        evento: 'orden_rechazada',
+        entidad: 'ordenes_cambio',
+        entidadId: ordenId,
+        detalle: { motivo: motivo ?? null },
+      });
     },
     onSuccess: () => invalidateAll(queryClient),
   });

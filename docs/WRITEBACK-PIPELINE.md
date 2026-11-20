@@ -87,8 +87,10 @@ Modelo de tres niveles para quién puede disparar el write-back:
 - **Eco esperado:** cuando el backend aplica una orden de la app, ese ajuste queda
   en el kardex de HybridLite y `sync_ajustes` lo espejará después como una orden
   local más. O sea: un mismo cambio puede aparecer dos veces en el historial de
-  movimientos (la orden de la app + su espejo local). Considerarlo en la UI si se
-  quiere deduplicar.
+  movimientos (la orden de la app + su espejo local). El historial del producto
+  los colapsa en `mergeLocalEchoes()` (`src/lib/movimientosEco.ts`): no hay ID que
+  los vincule, así que empareja por producto + delta + cercanía a
+  `backend_aplicado_en`.
 - **Tiempos:** el backend procesa de a un item (~30s de input real cada uno, lotes
   de hasta 10 por pasada, sondeo cada 8s) y solo dentro de su ventana horaria
   (`HYBRID_WRITE_WINDOW`, típicamente fuera del horario de la tienda). Un item

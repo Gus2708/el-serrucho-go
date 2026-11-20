@@ -25,6 +25,7 @@ import { ActivityIndicator, Platform, View, useWindowDimensions, Text, Pressable
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PressableScale } from '../src/components/PressableScale';
 import { initCrashLog, logBreadcrumb } from '../src/lib/crashLog';
+import { initAuditLog, notifyAuditSession } from '../src/lib/auditLog';
 import * as Sentry from '@sentry/react-native';
 import { isRunningInExpoGo } from 'expo';
 
@@ -43,6 +44,7 @@ Sentry.init({
 // Instalado lo antes posible: si el proceso muere más adelante (fuentes,
 // auth, push), esto ya está armado para subir el rastro apenas la app reabra.
 initCrashLog();
+initAuditLog();
 
 // SplashScreen is a no-op on web
 if (Platform.OS !== 'web') {
@@ -89,7 +91,7 @@ const queryPersister = createAsyncStoragePersister({
 const persistOptions = {
   persister: queryPersister,
   maxAge: 24 * 60 * 60_000,
-  buster: 'v1.2.6',
+  buster: 'v1.2.8',
   dehydrateOptions: {
     shouldDehydrateQuery: (query: { state: { status: string }; queryKey: readonly unknown[] }) =>
       query.state.status === 'success' && PERSISTED_QUERY_KEYS.has(String(query.queryKey[0])),
@@ -418,6 +420,7 @@ function RootLayout() {
           logBreadcrumb('auth: getSession resuelto', { haySesion: !!data.session });
           setSession(data.session);
           publishFacturaSession(data.session);
+          notifyAuditSession('BOOT_SESSION', data.session);
         }
       })
       .catch((err) => {
@@ -437,6 +440,7 @@ function RootLayout() {
       setSession(s);
       // The invoice editors check this account before every send and local write.
       publishFacturaSession(s);
+      notifyAuditSession(event, s);
       
       // Al entrar o recuperar sesión, invalidamos solo lo relacionado con auth
       // para que AuthGuard y useUserRole obtengan datos frescos inmediatamente.

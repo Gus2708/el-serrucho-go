@@ -19,12 +19,15 @@ import { CurrencyText } from '../../src/components/CurrencyText';
 import { supabase, Producto } from '../../src/lib/supabase';
 import { useMovimientosProducto, MovimientoProducto } from '../../src/hooks/useMovimientosProducto';
 import { VentaDetailModal } from '../../src/components/VentaDetailModal';
+import { OrdenCambioDetailModal } from '../../src/components/OrdenCambioDetailModal';
+import { OrdenConItems } from '../../src/hooks/useOrdenesHistory';
 import { VentaHoy } from '../../src/hooks/useVentasHoy';
 import { buildPdfHtml, printHtml, DraftItem } from '../../src/utils/pdfGenerator';
 import { htmlToPdfBlob } from '../../src/utils/webPdf';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { uploadPdfAndGetUrl } from '../../src/lib/pdfStorage';
+import { trackAuditEvent } from '../../src/lib/auditLog';
 import { useOrdenCambio } from '../../src/hooks/useOrdenCambio';
 import { useTazas } from '../../src/hooks/useTazas';
 import { usePresupuestoConfig } from '../../src/hooks/usePresupuestoConfig';
@@ -55,6 +58,7 @@ export default function ProductoDetail() {
   const pendingDelta = movimientos?.find(m => m.backend_status === 'pendiente' || m.backend_status === 'aplicando')?.cantidad ?? 0;
 
   const [selectedVentaId, setSelectedVentaId] = useState<number | null>(null);
+  const [selectedOrden, setSelectedOrden] = useState<OrdenConItems | null>(null);
 
   // BCV + markup for Bs pricing
   const { data: tasa } = useTazas();
@@ -342,6 +346,16 @@ export default function ProductoDetail() {
               setAdjustmentNote('');
               setErrorMsg(null);
               setShowAddSheet(true);
+              trackAuditEvent({
+                evento: 'producto_ajuste_modal_abierto',
+                entidad: 'productos',
+                entidadId: producto.codigo_interno,
+                detalle: {
+                  modal: 'stock',
+                  existencia_en_pantalla: producto.existencia,
+                  precio_en_pantalla: producto.precio_venta,
+                },
+              });
             }}
           >
             <Feather name="sliders" size={16} color={colors.primary} />
@@ -358,6 +372,16 @@ export default function ProductoDetail() {
               setAdjustmentNote('');
               setErrorMsg(null);
               setShowPriceSheet(true);
+              trackAuditEvent({
+                evento: 'producto_ajuste_modal_abierto',
+                entidad: 'productos',
+                entidadId: producto.codigo_interno,
+                detalle: {
+                  modal: 'precio',
+                  precio_en_pantalla: producto.precio_venta,
+                  costo_en_pantalla: producto.costo,
+                },
+              });
             }}
           >
             <Feather name="dollar-sign" size={16} color={colors.primary} />
@@ -375,6 +399,16 @@ export default function ProductoDetail() {
               setAdjustmentNote('');
               setErrorMsg(null);
               setShowEditSheet(true);
+              trackAuditEvent({
+                evento: 'producto_ajuste_modal_abierto',
+                entidad: 'productos',
+                entidadId: producto.codigo_interno,
+                detalle: {
+                  modal: 'datos',
+                  descripcion_actual: producto.descripcion,
+                  referencia_actual: producto.referencia ?? null,
+                },
+              });
             }}
           >
             <Feather name="edit-3" size={16} color={colors.primary} />
@@ -389,9 +423,15 @@ export default function ProductoDetail() {
             isLoading={isLoadingMovs} 
             colors={colors} 
             onSelectVenta={setSelectedVentaId}
+            onSelectOrden={setSelectedOrden}
           />
         </ScrollView>
         </Animated.View>
+
+        <OrdenCambioDetailModal
+          orden={selectedOrden}
+          onClose={() => setSelectedOrden(null)}
+        />
 
         {/* Modal de Detalle de Venta */}
         <VentaDetailModal 
@@ -596,6 +636,22 @@ export default function ProductoDetail() {
                       costo: producto.costo,
                     });
 
+                    trackAuditEvent({
+                      evento: 'ajuste_borrador_agregado',
+                      entidad: 'productos',
+                      entidadId: producto.codigo_interno,
+                      detalle: {
+                        tipo: 'stock',
+                        modo_ui: adjMode,
+                        operador_ui: adjMode === 'relative' ? adjOp : null,
+                        valor_tecleado: newQty,
+                        existencia_en_pantalla: producto.existencia,
+                        nueva_existencia: finalQty,
+                        delta: finalQty - producto.existencia,
+                        nota: adjustmentNote.trim() || 'Ajuste de stock',
+                      },
+                    });
+
                     notify('Éxito', 'Agregado al borrador de Ajustes');
                     setAdjustmentNote('');
                     setNewQty('');
@@ -681,6 +737,24 @@ export default function ProductoDetail() {
 
                       if (itemError) throw itemError;
 
+                      trackAuditEvent({
+                        evento: 'ajuste_rapido_enviado',
+                        entidad: 'ordenes_cambio',
+                        entidadId: orden.id,
+                        empleadoId: user.id,
+                        detalle: {
+                          tipo: 'stock',
+                          codigo_producto: producto.codigo_interno,
+                          modo_ui: adjMode,
+                          operador_ui: adjMode === 'relative' ? adjOp : null,
+                          valor_tecleado: newQty,
+                          existencia_en_pantalla: producto.existencia,
+                          nueva_existencia: finalQty,
+                          delta: finalQty - producto.existencia,
+                          nota: noteText,
+                        },
+                      });
+
                       const { data: profileData } = await supabase
                         .from('profiles')
                         .select('display_name')
@@ -716,15 +790,30 @@ export default function ProductoDetail() {
                       } else {
                         const { uri } = await Print.printToFileAsync({ html });
                         const fileName = `orden-${orden.id}-${Date.now()}.pdf`;
+                        let pdfSubido = false;
                         try {
                           const pdfUrl = await uploadPdfAndGetUrl(uri, fileName);
                           await supabase.from('ordenes_cambio').update({ status: 'emitido', pdf_url: pdfUrl }).eq('id', orden.id);
+                          pdfSubido = true;
                         } catch (err) {
                           console.error(err);
                           await supabase.from('ordenes_cambio').update({ status: 'emitido' }).eq('id', orden.id);
                         }
                         const canShare = await Sharing.isAvailableAsync();
+                        const shareStart = Date.now();
                         if (canShare) await Sharing.shareAsync(uri, { mimeType: 'application/pdf' });
+                        trackAuditEvent({
+                          evento: 'ajuste_rapido_pdf_compartido',
+                          entidad: 'ordenes_cambio',
+                          entidadId: orden.id,
+                          empleadoId: user.id,
+                          detalle: {
+                            tipo: 'stock',
+                            codigo_producto: producto.codigo_interno,
+                            pdf_subido: pdfSubido,
+                            share_ms: canShare ? Date.now() - shareStart : 0,
+                          },
+                        });
                       }
 
                       await supabase.from('comandos_remotos').insert([{ comando: 'sync_inventory', status: 'pendiente' }]);
@@ -959,6 +1048,20 @@ export default function ProductoDetail() {
                       nota: adjustmentNote.trim() || 'Ajuste de precio/costo',
                     });
 
+                    trackAuditEvent({
+                      evento: 'ajuste_borrador_agregado',
+                      entidad: 'productos',
+                      entidadId: producto.codigo_interno,
+                      detalle: {
+                        tipo: 'precio',
+                        precio_en_pantalla: producto.precio_venta,
+                        nuevo_precio: finalPrice,
+                        costo_en_pantalla: producto.costo,
+                        nuevo_costo: finalCost,
+                        nota: adjustmentNote.trim() || 'Ajuste de precio/costo',
+                      },
+                    });
+
                     notify('Éxito', 'Agregado al borrador de Ajustes');
                     setAdjustmentNote('');
                     setNewPrice('');
@@ -1041,6 +1144,22 @@ export default function ProductoDetail() {
                         });
 
                       if (itemError) throw itemError;
+
+                      trackAuditEvent({
+                        evento: 'ajuste_rapido_enviado',
+                        entidad: 'ordenes_cambio',
+                        entidadId: orden.id,
+                        empleadoId: user.id,
+                        detalle: {
+                          tipo: 'precio',
+                          codigo_producto: producto.codigo_interno,
+                          precio_en_pantalla: producto.precio_venta,
+                          nuevo_precio: finalPrice,
+                          costo_en_pantalla: producto.costo,
+                          nuevo_costo: finalCost,
+                          nota: noteText,
+                        },
+                      });
 
                       const { data: profileData } = await supabase
                         .from('profiles')
@@ -1310,6 +1429,22 @@ export default function ProductoDetail() {
 
                     if (itemError) throw itemError;
 
+                    trackAuditEvent({
+                      evento: 'ajuste_rapido_enviado',
+                      entidad: 'ordenes_cambio',
+                      entidadId: orden.id,
+                      empleadoId: user.id,
+                      detalle: {
+                        tipo: 'datos',
+                        codigo_producto: producto.codigo_interno,
+                        descripcion_anterior: producto.descripcion,
+                        nueva_descripcion: descChanged ? descTrim : null,
+                        referencia_anterior: producto.referencia ?? null,
+                        nueva_referencia: refChanged ? refTrim : null,
+                        nota: noteText,
+                      },
+                    });
+
                     await supabase.from('ordenes_cambio').update({ status: 'emitido' }).eq('id', orden.id);
                     await supabase.from('comandos_remotos').insert([{ comando: 'sync_inventory', status: 'pendiente' }]);
 
@@ -1437,6 +1572,7 @@ interface HistorialMovimientosProps {
   isLoading:      boolean;
   colors:         any;
   onSelectVenta:  (ventaId: number) => void;
+  onSelectOrden:  (orden: OrdenConItems) => void;
 }
 
 function HistorialMovimientos({
@@ -1444,6 +1580,7 @@ function HistorialMovimientos({
   isLoading,
   colors,
   onSelectVenta,
+  onSelectOrden,
 }: HistorialMovimientosProps): React.JSX.Element {
   const visibleMovs = movimientos?.slice(0, 15) ?? [];
   const rowAnims = useRef<Animated.Value[]>([]);
@@ -1585,12 +1722,19 @@ function HistorialMovimientos({
               </Animated.View>
             );
 
-            if (isVenta) {
+            const orden = mov.orden;
+            const isPressable = isVenta || !!orden;
+
+            if (isPressable) {
               return (
                 <PressableScale
                   key={mov.id}
                   onPress={() => {
-                    if (mov.ventaId) onSelectVenta(mov.ventaId);
+                    if (isVenta) {
+                      if (mov.ventaId) onSelectVenta(mov.ventaId);
+                    } else if (orden) {
+                      onSelectOrden(orden);
+                    }
                   }}
                   style={[
                     styles.movRow,

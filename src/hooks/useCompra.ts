@@ -5,6 +5,7 @@ import { calcularCantidadesCompra } from '../lib/compraCantidades';
 import { fetchExistencias, faltantePorNegativo } from './useExistencias';
 import { fetchColisionesCodigo, describirColision, ColisionesMap } from './useColisionesCodigo';
 import { isDemoActive } from '../demo/useDemoStore';
+import { trackAuditEvent } from '../lib/auditLog';
 
 export interface CompraDraftItem {
   codigo_producto: string;
@@ -402,6 +403,20 @@ export const useCompra = create<CompraStore>()((set, get) => ({
         );
         if (updateError) throw updateError;
 
+        trackAuditEvent({
+          evento: 'compra_emitida',
+          entidad: 'compras_app',
+          entidadId: existingId,
+          empleadoId: userId,
+          detalle: {
+            items_count: items.length,
+            proveedor_codigo: proveedorCodigo,
+            proveedor_nombre: proveedorNombre ?? null,
+            numero_documento: numeroDocumento.trim() || null,
+            desde_borrador: true,
+          },
+        });
+
         set({ isLoading: false });
         return { compraId: existingId };
       } catch (err) {
@@ -457,6 +472,19 @@ export const useCompra = create<CompraStore>()((set, get) => ({
       );
 
       if (emitError) throw emitError;
+
+      trackAuditEvent({
+        evento: 'compra_emitida',
+        entidad: 'compras_app',
+        entidadId: compra.id,
+        empleadoId: userId,
+        detalle: {
+          items_count: items.length,
+          proveedor_codigo: proveedorCodigo,
+          proveedor_nombre: proveedorNombre ?? null,
+          numero_documento: numeroDocumento || null,
+        },
+      });
 
       set({ isLoading: false });
       return { compraId: compra.id };
