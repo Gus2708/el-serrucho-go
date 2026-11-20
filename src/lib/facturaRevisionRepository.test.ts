@@ -1,4 +1,4 @@
-import { createFacturaRevisionRepository, RevisionRepositoryError, type RevisionClient } from './facturaRevisionRepository';
+import { createFacturaRevisionRepository, RevisionRepositoryError, type ContextoBusquedaHibrida, type RevisionClient } from './facturaRevisionRepository';
 import { crearRevisionManual } from './facturaRevision';
 import type { ExtraidaLinea } from './facturaExtractionContract';
 
@@ -20,7 +20,7 @@ interface Call {
 function fakeClient(options: {
   rpc?: Answer | (() => Promise<Answer>);
   tables?: Record<string, Answer | ((call: Call) => Answer)>;
-  invoke?: () => Promise<{ data: unknown; error: unknown }>;
+  invoke?: (...args: any[]) => Promise<{ data: unknown; error: unknown }>;
 }) {
   const calls: Call[] = [];
   const rpc = jest.fn(async (..._args: unknown[]) => {
@@ -296,6 +296,191 @@ describe('bounded catalog reads', () => {
     const { client } = fakeClient({ tables: { productos_view: { data: [producto('A'), producto('A')] } } });
     const result = await createFacturaRevisionRepository(client).buscarCandidatos([linea(1), linea(2)]);
     expect(result.productos.map(p => p.codigo_interno)).toEqual(['A']);
+  });
+
+  describe('hybrid retrieval context', () => {
+    const contexto = { facturaId: FACTURA, extraccionId: EXTRACCION, versionEsperada: 3 };
+    const syn = { ...producto('SYN-1'), descripcion: 'Fijacion metalica de anclaje', existencia: -3 };
+    const rank = (codigoInterno: string, value: unknown = 1) => ({ codigoInterno, rank: value });
+    const answer = (hybridRanks: unknown, ...flag: [unknown?]) => async () => ({ data: { hybridRanks, parcial: flag.length > 0 ? flag[0] : false }, error: null });
+    const buscar = (client: RevisionClient, lineas: ExtraidaLinea[] = [linea(1)], ctx: unknown = contexto) =>
+      createFacturaRevisionRepository(client).buscarCandidatos(lineas, ctx as ContextoBusquedaHibrida);
+    const hydrationReads = (calls: Call[], sku: string) =>
+      calls.filter(call => stepsOf(call, 'in').some(([, column, values]) => column === 'codigo_interno' && Array.isArray(values) && values.includes(sku)));
+    const catalog = (...extra: Array<ReturnType<typeof producto>>) => ({ productos_view: responderCatalogo([syn, producto('COD1'), ...extra]) });
+
+    it('invokes the endpoint once with only the invoice, extraction and version', async () => {
+      const { client, invoke } = fakeClient({ tables: catalog(), invoke: answer([]) });
+      await buscar(client, [linea(1, { descripcion: 'Tornillo secreto', codigoProveedor: 'COD1' })]);
+      expect(invoke).toHaveBeenCalledTimes(1);
+      expect(invoke).toHaveBeenCalledWith('consultar-productos-semantico', { body: contexto });
+      expect(Object.keys(invoke.mock.calls[0][1].body).sort()).toEqual(['extraccionId', 'facturaId', 'versionEsperada']);
+      expect(JSON.stringify(invoke.mock.calls)).not.toContain('secreto');
+    });
+
+    it('hydrates a retrieved SKU from the current catalog and forwards its rank without trusting the endpoint', async () => {
+      const { client, calls } = fakeClient({ tables: catalog(), invoke: answer([{ lineIndex: 0, semantic: [rank('SYN-1')] }]) });
+      const result = await buscar(client);
+      expect(result.productos).toContainEqual(syn);
+      expect(result.productos.find(p => p.codigo_interno === 'SYN-1')?.existencia).toBe(-3);
+      expect(result.hybridRanks).toEqual([{ lineIndex: 0, semantic: [{ codigoInterno: 'SYN-1', rank: 1 }] }]);
+      expect(result.parcial).toBe(false);
+      const read = hydrationReads(calls, 'SYN-1')[0];
+      expect(stepsOf(read, 'in')).toEqual([['in', 'codigo_interno', ['SYN-1']]]);
+      expect(stepsOf(read, 'limit').length).toBe(1);
+    });
+
+    it('keeps exact reads first and never duplicates a SKU the exact reads already found', async () => {
+      const { client, calls } = fakeClient({ tables: catalog(), invoke: answer([{ lineIndex: 0, lexical: [rank('COD1')], semantic: [rank('SYN-1', 1), rank('COD1', 2)] }]) });
+      const result = await buscar(client);
+      expect(result.productos.map(p => p.codigo_interno)).toEqual(['COD1', 'SYN-1']);
+      expect(hydrationReads(calls, 'COD1')).toHaveLength(1);
+    });
+
+    it('leaves a lookup without context exactly as before: no invoke, no ranks key, same output', async () => {
+      const { client, invoke } = fakeClient({ tables: catalog(), invoke: answer([{ lineIndex: 0, semantic: [rank('SYN-1')] }]) });
+      const result = await createFacturaRevisionRepository(client).buscarCandidatos([linea(1)]);
+      expect(invoke).not.toHaveBeenCalled();
+      expect(Object.keys(result)).toEqual(['productos', 'parcial']);
+      expect(result).toEqual({ productos: [producto('COD1')], parcial: false });
+    });
+
+    it.each([
+      ['non uuid invoice', { ...contexto, facturaId: 'nope' }],
+      ['non uuid extraction', { ...contexto, extraccionId: '123' }],
+      ['zero version', { ...contexto, versionEsperada: 0 }],
+      ['fractional version', { ...contexto, versionEsperada: 1.5 }],
+      ['string version', { ...contexto, versionEsperada: '3' }],
+      ['null context object', null],
+    ])('never invokes with an invalid context (%s) and keeps the exact reads partial', async (_name, ctx) => {
+      const { client, invoke } = fakeClient({ tables: catalog(), invoke: answer([{ lineIndex: 0, semantic: [rank('SYN-1')] }]) });
+      const result = await buscar(client, [linea(1)], ctx);
+      expect(invoke).not.toHaveBeenCalled();
+      expect(result.productos.map(p => p.codigo_interno)).toEqual(['COD1']);
+      expect(result.parcial).toBe(true);
+      expect(result.hybridRanks).toBeUndefined();
+    });
+
+    it('keeps leading zeros and alphanumerics exactly and ties ranks to the original line index', async () => {
+      const zeros = { ...producto('00123-A'), descripcion: 'Anclaje quimico' };
+      const lineas = [linea(7, { codigoProveedor: null }), linea(9, { codigoProveedor: null, descripcion: 'Otro articulo' })];
+      const { client } = fakeClient({ tables: catalog(zeros), invoke: answer([{ lineIndex: 1, lexical: [rank('00123-A')] }]) });
+      const result = await buscar(client, lineas);
+      expect(result.hybridRanks).toEqual([{ lineIndex: 1, lexical: [{ codigoInterno: '00123-A', rank: 1 }] }]);
+      expect(result.productos.map(p => p.codigo_interno)).toContain('00123-A');
+    });
+
+    it.each([
+      ['negative', -1],
+      ['past the last line', 1],
+      ['fractional', 0.5],
+      ['textual', '0'],
+    ])('drops a group whose line index is %s and marks the result partial', async (_name, lineIndex) => {
+      const { client } = fakeClient({ tables: catalog(), invoke: answer([{ lineIndex, semantic: [rank('SYN-1')] }, { lineIndex: 0, semantic: [rank('SYN-1')] }]) });
+      const result = await buscar(client);
+      expect(result.hybridRanks).toEqual([{ lineIndex: 0, semantic: [{ codigoInterno: 'SYN-1', rank: 1 }] }]);
+      expect(result.parcial).toBe(true);
+    });
+
+    it.each([
+      ['comma and parenthesis', 'A,B)'],
+      ['quote', 'A"B'],
+      ['blank', '   '],
+      ['over 120 characters', 'A'.repeat(121)],
+      ['non text', 7],
+    ])('never puts an unsafe SKU (%s) in a filter and drops its rank', async (_name, sku) => {
+      const { client, calls } = fakeClient({ tables: catalog(), invoke: answer([{ lineIndex: 0, lexical: [rank(sku as string)], semantic: [rank('SYN-1')] }]) });
+      const result = await buscar(client);
+      expect(result.hybridRanks).toEqual([{ lineIndex: 0, semantic: [{ codigoInterno: 'SYN-1', rank: 1 }] }]);
+      expect(result.parcial).toBe(true);
+      const filtered = calls.flatMap(call => stepsOf(call, 'in')).flatMap(([, , values]) => values as unknown[]);
+      expect(filtered).not.toContain(sku);
+    });
+
+    it('drops the ranks of SKUs missing from the current catalog, keeps exact reads and marks partial', async () => {
+      const { client } = fakeClient({ tables: catalog(), invoke: answer([{ lineIndex: 0, semantic: [rank('GONE-1')] }]) });
+      const result = await buscar(client);
+      expect(result.hybridRanks).toBeUndefined();
+      expect(result.productos.map(p => p.codigo_interno)).toEqual(['COD1']);
+      expect(result.parcial).toBe(true);
+    });
+
+    it('ignores a hydration row the SKU filter did not ask for', async () => {
+      const intruder = producto('INTRUDER');
+      const { client } = fakeClient({ tables: { productos_view: (call: Call) => (hydrationReads([call], 'SYN-1').length ? { data: [intruder] } : responderCatalogo([producto('COD1')])(call)) }, invoke: answer([{ lineIndex: 0, semantic: [rank('SYN-1')] }]) });
+      const result = await buscar(client);
+      expect(result.productos.map(p => p.codigo_interno)).toEqual(['COD1']);
+      expect(result.hybridRanks).toBeUndefined();
+      expect(result.parcial).toBe(true);
+    });
+
+    it('keeps exact reads and marks partial when the hydration read fails', async () => {
+      const { client } = fakeClient({ tables: { productos_view: (call: Call) => (hydrationReads([call], 'SYN-1').length ? { error: { code: 'XX000' } } : responderCatalogo([producto('COD1')])(call)) }, invoke: answer([{ lineIndex: 0, semantic: [rank('SYN-1')] }]) });
+      const result = await buscar(client);
+      expect(result.productos.map(p => p.codigo_interno)).toEqual(['COD1']);
+      expect(result.hybridRanks).toBeUndefined();
+      expect(result.parcial).toBe(true);
+    });
+
+    it.each([
+      ['relay error', async () => ({ data: null, error: { name: 'FunctionsRelayError' } })],
+      ['401', async () => ({ data: null, error: { name: 'FunctionsHttpError', context: { status: 401 } } })],
+      ['404', async () => ({ data: null, error: { name: 'FunctionsHttpError', context: { status: 404 } } })],
+      ['503', async () => ({ data: null, error: { name: 'FunctionsHttpError', context: { status: 503 } } })],
+      ['thrown invoke', () => Promise.reject(new Error('SECRET-NETWORK'))],
+      ['null data', async () => ({ data: null, error: null })],
+      ['text data', async () => ({ data: 'ok', error: null })],
+      ['ranks not a list', async () => ({ data: { hybridRanks: 'x', parcial: false }, error: null })],
+      ['missing ranks', async () => ({ data: { parcial: false }, error: null })],
+    ])('keeps the exact reads, marks partial and never retries when the endpoint answers %s', async (_name, invoke) => {
+      const fake = fakeClient({ tables: catalog(), invoke });
+      const result = await buscar(fake.client);
+      expect(fake.invoke).toHaveBeenCalledTimes(1);
+      expect(result.productos.map(p => p.codigo_interno)).toEqual(['COD1']);
+      expect(result.parcial).toBe(true);
+      expect(result.hybridRanks).toBeUndefined();
+    });
+
+    it.each([
+      ['endpoint says partial', true, true],
+      ['partial flag missing', undefined, true],
+      ['partial flag not boolean', 'false', true],
+      ['endpoint says complete', false, false],
+    ])('propagates parcial when the %s without discarding usable ranks', async (_name, flag, expected) => {
+      const { client } = fakeClient({ tables: catalog(), invoke: answer([{ lineIndex: 0, semantic: [rank('SYN-1')] }], flag) });
+      const result = await buscar(client);
+      expect(result.parcial).toBe(expected);
+      expect(result.hybridRanks).toEqual([{ lineIndex: 0, semantic: [{ codigoInterno: 'SYN-1', rank: 1 }] }]);
+    });
+
+    it('bounds the answer to 200 groups and 8 entries per list and marks the truncation partial', async () => {
+      const many = Array.from({ length: 10 }, (_x, i) => rank(`S${i + 1}`, i + 1));
+      const manyProducts = Array.from({ length: 10 }, (_x, i) => producto(`S${i + 1}`));
+      const tooManyGroups = Array.from({ length: 201 }, () => ({ lineIndex: 0, semantic: [rank('SYN-1')] }));
+      const lists = fakeClient({ tables: { productos_view: responderCatalogo(manyProducts) }, invoke: answer([{ lineIndex: 0, lexical: many }]) });
+      const listResult = await buscar(lists.client);
+      expect(listResult.hybridRanks?.[0].lexical).toHaveLength(8);
+      expect(listResult.parcial).toBe(true);
+      expect(hydrationReads(lists.calls, 'S9')).toEqual([]);
+      const groups = fakeClient({ tables: catalog(), invoke: answer(tooManyGroups) });
+      const groupResult = await buscar(groups.client);
+      expect(groupResult.hybridRanks).toHaveLength(200);
+      expect(groupResult.parcial).toBe(true);
+    });
+
+    it.each([['zero', 0], ['nine', 9], ['fractional', 1.5], ['text', '1'], ['null', null]])('drops an entry whose rank is %s and marks partial', async (_name, value) => {
+      const { client } = fakeClient({ tables: catalog(), invoke: answer([{ lineIndex: 0, semantic: [rank('SYN-1', value), rank('COD1', 2)] }]) });
+      const result = await buscar(client);
+      expect(result.hybridRanks).toEqual([{ lineIndex: 0, semantic: [{ codigoInterno: 'COD1', rank: 2 }] }]);
+      expect(result.parcial).toBe(true);
+    });
+
+    it('keeps the best rank of a SKU repeated in a list and never normalizes the SKU', async () => {
+      const lower = { ...producto('syn-1'), descripcion: 'Otro' };
+      const { client } = fakeClient({ tables: catalog(lower), invoke: answer([{ lineIndex: 0, semantic: [rank('SYN-1', 3), rank('SYN-1', 2), rank('syn-1', 4)] }]) });
+      const result = await buscar(client);
+      expect(result.hybridRanks).toEqual([{ lineIndex: 0, semantic: [{ codigoInterno: 'SYN-1', rank: 2 }, { codigoInterno: 'syn-1', rank: 4 }] }]);
+    });
   });
 
   describe('barcode collisions', () => {

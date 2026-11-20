@@ -1,11 +1,13 @@
 import * as React from 'react';
 import { act, fireEvent, screen } from '@testing-library/react-native';
 import FacturaRevisionView, { type FacturaRevisionViewProps } from './FacturaRevisionView';
-import type {
-  ExtraccionRow,
-  FacturaRevisionRepository,
-  GuardarRevisionInput,
-  RevisionRow,
+import {
+  createFacturaRevisionRepository,
+  type ExtraccionRow,
+  type FacturaRevisionRepository,
+  type GuardarRevisionInput,
+  type RevisionClient,
+  type RevisionRow,
 } from '../lib/facturaRevisionRepository';
 import { aplicarEdicion, crearRevisionDesdeExtraccion, type RevisionContenido } from '../lib/facturaRevision';
 import type { FacturaExtraccionPayload } from '../lib/facturaExtractionContract';
@@ -17,6 +19,7 @@ import { OWNER_A, OWNER_B, FACTURA_1, deferred, renderWithProviders, settle } fr
 // B5 lifecycle generations, A1 session eligibility). The mocked session is NOT production proof.
 
 jest.mock('../lib/supabase', () => ({ supabase: {} }));
+jest.mock('./BarcodeScannerModal', () => ({ BarcodeScannerModal: ({ visible, onScan, onClose }: any) => visible ? require('react').createElement(require('react-native').View, null, require('react').createElement(require('react-native').Text, { testID: 'scanner-mock-capture', onPress: () => onScan('000123-ABC') }, 'Capture'), require('react').createElement(require('react-native').Text, { testID: 'scanner-mock-close', onPress: onClose }, 'Close')) : null }));
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: require('../test-utils/facturaUiHarness').asyncStorage,
@@ -875,5 +878,90 @@ describe('A1 session eligibility', () => {
     expect(current.puedeGuardar).toBe(false);
     expect(current.puedeExtraer).toBe(false);
     expect(current.contenido).not.toBeNull();
+  });
+});
+
+// ── T8.4b2: hybrid retrieval reaches the real matcher through the real repository read ──────────────
+
+describe('T8.4b2 hybrid retrieval wiring', () => {
+  const SYNONYM = { codigo_interno: 'SYN-1', descripcion: 'Fijacion metalica de anclaje', codigo_barras: null, existencia: -3, costo: 1, precio_venta: 2, es_placeholder: false };
+
+  // Fake Supabase client: the filtered `in` reads answer from `catalog`; description reads find nothing, so a
+  // product reaches the suggestions only through its exact code or through the hybrid endpoint.
+  function hybridClient(invokeAnswer: () => Promise<{ data: unknown; error: unknown }>, catalog: Array<Record<string, unknown>> = [SYNONYM]) {
+    const invoke = jest.fn(invokeAnswer);
+    const from = jest.fn(() => {
+      const steps: Array<[string, unknown[]]> = [];
+      const proxy: Record<string, unknown> = {};
+      for (const method of ['select', 'order', 'limit', 'eq', 'in', 'ilike']) {
+        proxy[method] = (...args: unknown[]) => {
+          steps.push([method, args]);
+          return proxy;
+        };
+      }
+      proxy.then = (resolve: (value: unknown) => unknown) => {
+        const filters = steps.filter(([method]) => method === 'in');
+        const data = steps.some(([method]) => method === 'ilike') ? [] : catalog.filter(row => filters.every(([, [column, values]]) => (values as unknown[]).includes(row[column as string])));
+        return Promise.resolve({ data, error: null }).then(resolve);
+      };
+      return proxy;
+    });
+    return { client: { from, rpc: jest.fn(), functions: { invoke } } as unknown as RevisionClient, invoke };
+  }
+
+  const answer = (hybridRanks: unknown, parcial = false) => async () => ({ data: { hybridRanks, parcial }, error: null });
+  const realRepo = (client: RevisionClient) => fakeRepo({ buscarCandidatos: jest.fn(createFacturaRevisionRepository(client).buscarCandidatos) });
+
+  it('hands the current invoice, extraction and version to the retrieval read', async () => {
+    const repo = fakeRepo();
+    await startHook(repo);
+    expect(repo.buscarCandidatos).toHaveBeenCalledTimes(1);
+    expect(repo.buscarCandidatos).toHaveBeenCalledWith(expect.any(Array), { facturaId: FACTURA_1, extraccionId: EXT, versionEsperada: 3 });
+  });
+
+  it('offers a synonym-only product found by the semantic rank, still pending human review', async () => {
+    const { client, invoke } = hybridClient(answer([{ lineIndex: 0, semantic: [{ codigoInterno: 'SYN-1', rank: 1 }] }]));
+    await startHook(realRepo(client));
+    expect(invoke).toHaveBeenCalledTimes(1);
+    const match = current.candidatos[1];
+    expect(match.candidates.map(candidate => candidate.codigoInterno)).toEqual(['SYN-1']);
+    expect(match.status).toBe('review');
+    expect(current.catalogoParcial).toBe(false);
+    expect(current.efectiva!.lineas[0].asociacion.tipo).toBe('pendiente');
+  });
+
+  it('offers nothing for the same synonym product when the endpoint returns no rank (control)', async () => {
+    const { client } = hybridClient(answer([]));
+    await startHook(realRepo(client));
+    expect(current.candidatos[1].candidates).toEqual([]);
+  });
+
+  it.each([
+    ['throws', () => Promise.reject(new Error('SECRET-NETWORK'))],
+    ['answers 503', async () => ({ data: null, error: { name: 'FunctionsHttpError', context: { status: 503 } } })],
+    ['returns garbage', async () => ({ data: { hybridRanks: [{ lineIndex: 'x' }] }, error: null })],
+  ])('keeps the exact-code suggestion and flags the catalog partial when the endpoint %s', async (_name, failing) => {
+    const { client, invoke } = hybridClient(failing, PRODUCTOS);
+    await startHook(realRepo(client));
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(current.candidatos[1].candidates[0].codigoInterno).toBe('00123');
+    expect(current.catalogoParcial).toBe(true);
+  });
+
+  it.each(['invoice', 'session'])('ignores a delayed hybrid result after a %s change', async kind => {
+    const late = deferred<{ productos: unknown[]; parcial: boolean; hybridRanks: unknown[] }>();
+    const repo = fakeRepo();
+    repo.buscarCandidatos.mockReturnValueOnce(late.promise).mockResolvedValue({ productos: [], parcial: false });
+    repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
+    const view = await mountHook(repo);
+    await act(async () => {
+      current.aplicarExtraccion(EXT, null);
+    });
+    await settle();
+    view.rerenderUi(<Hook {...hookProps(repo, kind === 'invoice' ? { facturaId: FACTURA_2 } : { getSessionUid: () => null })} />);
+    await settle();
+    await act(async () => late.resolve({ productos: [SYNONYM], parcial: false, hybridRanks: [{ lineIndex: 0, semantic: [{ codigoInterno: 'SYN-1', rank: 1 }] }] }));
+    await settle();
+    expect(current.candidatos).toEqual({});
   });
 });

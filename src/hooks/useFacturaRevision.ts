@@ -317,10 +317,12 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
     const token = tokenActual();
     const peticion = ++peticionCatalogo.current;
     const actual = () => peticion === peticionCatalogo.current && vigente(token);
-    void live.current.repository.buscarCandidatos(extraccion.lineas).then(
-      ({ productos, parcial }) => {
+    // The stored extraction and version go to the hybrid retrieval read; the repository adds at most one invoke for them.
+    const contexto = { facturaId, extraccionId, versionEsperada: facturaVersion };
+    void live.current.repository.buscarCandidatos(extraccion.lineas, contexto).then(
+      ({ productos, parcial, hybridRanks }) => {
         if (!actual()) return;
-        const resultado = matchInvoiceLines({ supplierKey: null, lines: extraccion.lineas, catalog: productos });
+        const resultado = matchInvoiceLines({ supplierKey: null, lines: extraccion.lineas, catalog: productos, hybridRanks });
         const candidatos: Record<number, LineMatch> = {};
         if (resultado.ok) for (const match of resultado.lines) candidatos[match.numeroLinea] = match;
         patch({ candidatos, candidatosDe: extraccionId, catalogoParcial: parcial || !resultado.ok });
@@ -329,7 +331,7 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
         if (actual()) patch({ candidatos: {}, candidatosDe: extraccionId, catalogoParcial: true });
       }
     );
-  }, [estado.extraccion, estado.contenido?.extraccion_id, estado.carga, vigente, tokenActual, patch]);
+  }, [estado.extraccion, estado.contenido?.extraccion_id, estado.carga, facturaId, facturaVersion, vigente, tokenActual, patch]);
 
   // Exact barcode checks run only for lines whose user explicitly chose to use the printed code.
   const efectiva: FacturaEfectiva | null = useMemo(

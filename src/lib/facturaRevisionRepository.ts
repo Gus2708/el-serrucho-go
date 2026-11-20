@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CatalogoCodigosBarras, RevisionContenido } from './facturaRevision';
 import type { ExtraidaLinea } from './facturaExtractionContract';
+import type { HybridLineRanks, HybridRankEntry } from './facturaMatching';
 import type { Producto } from './supabase';
 import { reportFacturaThrown, type FacturaOperation } from './facturaTelemetry';
 
@@ -106,6 +107,18 @@ export interface CatalogoAcotado {
   readonly productos: readonly Producto[];
   /** true when a query failed, hit its cap or was skipped for an unsafe term: absence proves nothing. */
   readonly parcial: boolean;
+  /**
+   * Validated hybrid retrieval ranks, keyed to the original zero-based line index and only for SKUs hydrated from the
+   * current catalog. Absent when no usable rank exists; never a proof that a product is new.
+   */
+  readonly hybridRanks?: readonly HybridLineRanks[];
+}
+
+/** Stored extraction the hybrid retrieval endpoint may read on the server; the only data the client sends. */
+export interface ContextoBusquedaHibrida {
+  readonly facturaId: string;
+  readonly extraccionId: string;
+  readonly versionEsperada: number;
 }
 
 export type RevisionClient = Pick<SupabaseClient, 'rpc' | 'from' | 'functions'>;
@@ -116,7 +129,8 @@ export interface FacturaRevisionRepository {
   guardarRevision(input: GuardarRevisionInput): Promise<RevisionResult>;
   aprobarRevision(input: AprobarRevisionInput): Promise<RevisionResult>;
   extraer(input: ExtraerInput): Promise<ExtraerResultado>;
-  buscarCandidatos(lineas: readonly ExtraidaLinea[]): Promise<CatalogoAcotado>;
+  /** Without `contexto` this is the plain bounded exact/description read; with it, one hybrid retrieval invoke is added. */
+  buscarCandidatos(lineas: readonly ExtraidaLinea[], contexto?: ContextoBusquedaHibrida): Promise<CatalogoAcotado>;
   leerColisionesBarras(codigos: readonly string[]): Promise<Record<string, CatalogoCodigosBarras>>;
 }
 
@@ -219,6 +233,12 @@ const MAX_DESCRIPTION_QUERIES = 40;
 const MAX_CODES_PER_QUERY = 100;
 /** Values that can ride inside a PostgREST in.(...) list without quoting or injection risk. */
 const SAFE_FILTER_VALUE = /^[A-Za-z0-9._/-]{1,80}$/;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const HYBRID_FUNCTION = 'consultar-productos-semantico';
+const MAX_HYBRID_GROUPS = 200;
+const MAX_HYBRID_ENTRIES = 8;
+const MAX_HYBRID_SKUS = MAX_CODES_PER_QUERY * 4;
+const HYBRID_SOURCES = ['lexical', 'semantic'] as const;
 
 function descriptionTerms(text: string | null): string[] | null {
   const words = (text ?? '').match(/[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ]{3,}/g);
@@ -265,6 +285,109 @@ async function classifyFunctionError(error: unknown): Promise<ExtraerResultado> 
   if (status === 404 && code !== 'factura_no_encontrada') return { tipo: 'no_disponible' };
   if (status >= 500 || status === 499 || status === 0) return { tipo: 'incierto' };
   return { tipo: 'rechazado', codigo: code ?? 'desconocido' };
+}
+
+// ── Hybrid retrieval (server ranks, client hydration) ───────────────────────
+
+type HybridGroup = { lineIndex: number; lexical: HybridRankEntry[]; semantic: HybridRankEntry[] };
+type ParsedHybrid = { groups: HybridGroup[]; parcial: boolean };
+
+const isRecord = (value: unknown): value is Row => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+function validContext(value: unknown): value is ContextoBusquedaHibrida {
+  return (
+    isRecord(value) &&
+    isText(value.facturaId) && UUID_REGEX.test(value.facturaId) &&
+    isText(value.extraccionId) && UUID_REGEX.test(value.extraccionId) &&
+    typeof value.versionEsperada === 'number' && Number.isSafeInteger(value.versionEsperada) && value.versionEsperada > 0
+  );
+}
+
+/** One call, never retried; any failure reads as "no ranks". Only identifiers leave the client. */
+async function requestHybridRanks(client: RevisionClient, contexto: ContextoBusquedaHibrida): Promise<unknown> {
+  try {
+    const { data, error } = await client.functions.invoke(HYBRID_FUNCTION, {
+      body: { facturaId: contexto.facturaId, extraccionId: contexto.extraccionId, versionEsperada: contexto.versionEsperada },
+    });
+    return error ? null : data;
+  } catch {
+    return null;
+  }
+}
+
+/** Valid entries only (best rank per SKU, ordered by rank); anything dropped or truncated makes the list partial. */
+function parseRankList(value: unknown): { entries: HybridRankEntry[]; parcial: boolean } {
+  if (value === undefined) return { entries: [], parcial: false };
+  if (!Array.isArray(value)) return { entries: [], parcial: true };
+  let parcial = value.length > MAX_HYBRID_ENTRIES;
+  const best = new Map<string, number>();
+  for (const entry of value.slice(0, MAX_HYBRID_ENTRIES) as unknown[]) {
+    const sku = isRecord(entry) ? entry.codigoInterno : undefined;
+    const rank = isRecord(entry) ? entry.rank : undefined;
+    if (!isText(sku) || !SAFE_FILTER_VALUE.test(sku) || !isInt(rank) || rank < 1 || rank > MAX_HYBRID_ENTRIES) {
+      parcial = true;
+      continue;
+    }
+    best.set(sku, Math.min(rank, best.get(sku) ?? rank));
+  }
+  const entries = [...best].map(([codigoInterno, rank]) => ({ codigoInterno, rank })).sort((a, b) => a.rank - b.rank);
+  return { entries, parcial };
+}
+
+function parseHybridPayload(data: unknown, lineCount: number): ParsedHybrid | null {
+  if (!isRecord(data) || !Array.isArray(data.hybridRanks)) return null;
+  let parcial = data.parcial !== false || data.hybridRanks.length > MAX_HYBRID_GROUPS;
+  const groups: HybridGroup[] = [];
+  for (const raw of data.hybridRanks.slice(0, MAX_HYBRID_GROUPS) as unknown[]) {
+    if (!isRecord(raw) || !isInt(raw.lineIndex) || raw.lineIndex < 0 || raw.lineIndex >= lineCount) {
+      parcial = true;
+      continue;
+    }
+    const [lexical, semantic] = HYBRID_SOURCES.map(source => parseRankList(raw[source]));
+    if (lexical.parcial || semantic.parcial) parcial = true;
+    groups.push({ lineIndex: raw.lineIndex, lexical: lexical.entries, semantic: semantic.entries });
+  }
+  return { groups, parcial };
+}
+
+/** Hydrates each returned SKU from the current catalog (same bounded reads) and keeps ranks only for SKUs that exist. */
+async function hydrateHybridRanks(
+  client: RevisionClient,
+  parsed: ParsedHybrid,
+  byCode: Map<string, Producto>,
+): Promise<{ ranks: HybridLineRanks[]; parcial: boolean }> {
+  let parcial = parsed.parcial;
+  const wanted = new Set(parsed.groups.flatMap(group => [...group.lexical, ...group.semantic].map(entry => entry.codigoInterno)));
+  const missing = [...wanted].filter(sku => !byCode.has(sku));
+  const toRead = missing.slice(0, MAX_HYBRID_SKUS);
+  if (toRead.length < missing.length) parcial = true;
+
+  const parts = chunk(toRead, MAX_CODES_PER_QUERY);
+  const reads = await Promise.all(parts.map(part =>
+    readCatalog(client.from('productos_view').select('*').in('codigo_interno', part).limit(CATALOG_QUERY_CAP), CATALOG_QUERY_CAP)
+  ));
+  reads.forEach((read, index) => {
+    if (!read.ok) parcial = true;
+    for (const row of read.rows) {
+      if (isText(row.codigo_interno) && parts[index].includes(row.codigo_interno) && !byCode.has(row.codigo_interno)) {
+        byCode.set(row.codigo_interno, row as unknown as Producto);
+      }
+    }
+  });
+
+  const ranks: HybridLineRanks[] = [];
+  for (const group of parsed.groups) {
+    const lexical = group.lexical.filter(entry => byCode.has(entry.codigoInterno));
+    const semantic = group.semantic.filter(entry => byCode.has(entry.codigoInterno));
+    if (lexical.length < group.lexical.length || semantic.length < group.semantic.length) parcial = true;
+    if (lexical.length === 0 && semantic.length === 0) continue;
+    ranks.push({
+      lineIndex: group.lineIndex,
+      ...(lexical.length > 0 ? { lexical } : {}),
+      ...(semantic.length > 0 ? { semantic } : {}),
+    });
+  }
+  return { ranks, parcial };
 }
 
 export function createFacturaRevisionRepository(client: RevisionClient): FacturaRevisionRepository {
@@ -345,7 +468,7 @@ export function createFacturaRevisionRepository(client: RevisionClient): Factura
       return { tipo: 'incierto' };
     },
 
-    async buscarCandidatos(lineas) {
+    async buscarCandidatos(lineas, contexto) {
       const codes = [...new Set(lineas.map(l => l.codigoProveedor).filter((c): c is string => c !== null && c !== ''))];
       const safeCodes = codes.filter(code => SAFE_FILTER_VALUE.test(code));
       let parcial = safeCodes.length !== codes.length;
@@ -366,6 +489,12 @@ export function createFacturaRevisionRepository(client: RevisionClient): Factura
         for (const term of terms) read = read.ilike('descripcion', `%${term}%`);
         reads.push(read.limit(CATALOG_QUERY_CAP));
       }
+      // At most one hybrid invoke per lookup, and only for a valid context: a plain lookup is never a billable request.
+      let hybridRequest: Promise<unknown> | null = null;
+      if (contexto !== undefined) {
+        if (validContext(contexto)) hybridRequest = requestHybridRanks(client, contexto);
+        else parcial = true;
+      }
       const results = await Promise.all(reads.map(read => readCatalog(read, CATALOG_QUERY_CAP)));
       const byCode = new Map<string, Producto>();
       for (const result of results) {
@@ -374,7 +503,16 @@ export function createFacturaRevisionRepository(client: RevisionClient): Factura
           if (isText(row.codigo_interno) && !byCode.has(row.codigo_interno)) byCode.set(row.codigo_interno, row as unknown as Producto);
         }
       }
-      return { productos: [...byCode.values()], parcial };
+      if (hybridRequest === null) return { productos: [...byCode.values()], parcial };
+
+      const parsed = parseHybridPayload(await hybridRequest, lineas.length);
+      if (!parsed) return { productos: [...byCode.values()], parcial: true };
+      const hydrated = await hydrateHybridRanks(client, parsed, byCode);
+      return {
+        productos: [...byCode.values()],
+        parcial: parcial || hydrated.parcial,
+        ...(hydrated.ranks.length > 0 ? { hybridRanks: hydrated.ranks } : {}),
+      };
     },
 
     async leerColisionesBarras(codigos) {
