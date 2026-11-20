@@ -320,9 +320,9 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
     // The stored extraction and version go to the hybrid retrieval read; the repository adds at most one invoke for them.
     const contexto = { facturaId, extraccionId, versionEsperada: facturaVersion };
     void live.current.repository.buscarCandidatos(extraccion.lineas, contexto).then(
-      ({ productos, parcial, hybridRanks }) => {
+      ({ productos, parcial, hybridRanks, feedback }) => {
         if (!actual()) return;
-        const resultado = matchInvoiceLines({ supplierKey: null, lines: extraccion.lineas, catalog: productos, hybridRanks });
+        const resultado = matchInvoiceLines({ supplierKey: null, lines: extraccion.lineas, catalog: productos, hybridRanks, feedback });
         const candidatos: Record<number, LineMatch> = {};
         if (resultado.ok) for (const match of resultado.lines) candidatos[match.numeroLinea] = match;
         patch({ candidatos, candidatosDe: extraccionId, catalogoParcial: parcial || !resultado.ok });

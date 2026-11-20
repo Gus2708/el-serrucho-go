@@ -10,8 +10,8 @@ or triggers a purchase.
 > made. The client code that calls it exists locally and is tested only with injected fake clients. Deploying
 > the function and sending invoice descriptions to the embedding provider both need their own explicit
 > authorization: until then a real invoice review gets `parcial` lookups (the invoke fails or is unavailable) and
-> keeps working with its exact-code and description reads. Search feedback (confirmed / changed / new
-> selections improving later ranking) is **not implemented yet**.
+> keeps working with its exact-code and description reads. Saved-feedback integration exists locally as
+> described below; its additive read RPC is not applied to the live database.
 
 ## API
 
@@ -142,3 +142,11 @@ decision (see the status above).
 
 `src/lib/facturaSemanticSearchHttp.test.ts` exercises the exported handler with injected `fetch`/config
 (no real HTTP): `node node_modules/jest/bin/jest.js src/lib/facturaSemanticSearchHttp.test.ts --runInBand`.
+
+## Saved human feedback
+
+For a valid source context the repository also reads buscar_feedback_productos_factura once. Its SQL migration must be applied separately with deployment authorization. Missing or rejected RPCs preserve the existing catalog suggestions and mark retrieval partial. The RPC is read-only: saved immutable revisions remain the only audit ledger. There is no click-training event, extra write, vote count, model fine-tuning or inventory re-embedding.
+
+Hints are isolated by authenticated owner, selected supplier and normalized printed code/description/unit. Only the latest still-current saved revision counts; a corrected or reset decision supersedes its predecessor, and repeated saves do not amplify it. A confirmed SKU is hydrated from the current visible catalog and preferred among non-code suggestions. Existing code conflicts, hard model/unit/size guards, placeholders and explicit human confirmation still apply. Hidden/deleted targets do not revive older confirmations.
+
+A previous producto_nuevo decision is displayed as a contextual reminder, not proof of catalog absence, an automatic association, product creation or a reason to hide current candidates. After a new product has a real catalog identity and a person explicitly confirms it in a saved revision, that confirmation can be reused. Unknown suppliers and other users' invoice histories never supply a hint. At most 200 recent eligible invoices and 200 extraction lines are considered; this is a bounded retrieval aid, not a guarantee of complete history.

@@ -24,7 +24,7 @@ function fakeClient(options: {
 }) {
   const calls: Call[] = [];
   const rpc = jest.fn(async (..._args: unknown[]) => {
-    const answer = typeof options.rpc === 'function' ? await options.rpc() : options.rpc ?? { data: null };
+    const answer = typeof options.rpc === 'function' ? await options.rpc() : options.rpc ?? { data: { decisiones: [] } };
     return { data: answer.data ?? null, error: answer.error ?? null, status: answer.status ?? 200 };
   });
   const invoke = jest.fn(options.invoke ?? (async () => ({ data: null, error: null })));
@@ -480,6 +480,64 @@ describe('bounded catalog reads', () => {
       const { client } = fakeClient({ tables: catalog(lower), invoke: answer([{ lineIndex: 0, semantic: [rank('SYN-1', 3), rank('SYN-1', 2), rank('syn-1', 4)] }]) });
       const result = await buscar(client);
       expect(result.hybridRanks).toEqual([{ lineIndex: 0, semantic: [{ codigoInterno: 'SYN-1', rank: 2 }, { codigoInterno: 'syn-1', rank: 4 }] }]);
+    });
+  });
+
+  describe('saved feedback retrieval', () => {
+    const context = { facturaId: FACTURA, extraccionId: EXTRACCION, versionEsperada: 4 };
+    const corrected = { lineIndex: 0, decision: 'confirmado', codigoInterno: '00123A' };
+    const invoke = async () => ({ data: { hybridRanks: [], parcial: false }, error: null });
+    const products = [{ ...producto('00123A'), existencia: -3 }, producto('COD1')];
+    const lookup = (client: RevisionClient) => createFacturaRevisionRepository(client).buscarCandidatos([linea(7, { codigoProveedor: 'COD1' })], context);
+
+    it('reads one source-bound feedback RPC and hydrates the remembered literal SKU', async () => {
+      const mock = fakeClient({ invoke, rpc: { data: { decisiones: [corrected] } }, tables: { productos_view: responderCatalogo(products) } });
+      const result = await lookup(mock.client);
+      expect(mock.rpc).toHaveBeenCalledTimes(1);
+      expect(mock.rpc).toHaveBeenCalledWith('buscar_feedback_productos_factura', { p_factura_id: FACTURA, p_extraccion_id: EXTRACCION, p_version_esperada: 4 });
+      expect((result as any).feedback).toEqual([corrected]);
+      expect(result.productos.some(p => p.codigo_interno === '00123A' && p.existencia === -3)).toBe(true);
+      expect(result.parcial).toBe(false);
+    });
+    it('retains saved feedback even when the semantic endpoint fails', async () => {
+      const mock = fakeClient({ invoke: async () => { throw new Error('offline'); }, rpc: { data: { decisiones: [corrected] } }, tables: { productos_view: responderCatalogo(products) } });
+      const result = await lookup(mock.client);
+      expect((result as any).feedback).toEqual([corrected]);
+      expect(result.parcial).toBe(true);
+    });
+    it('keeps a previous-new decision contextual without a fabricated catalog SKU', async () => {
+      const hint = { lineIndex: 0, decision: 'producto_nuevo', codigoInterno: null };
+      const mock = fakeClient({ invoke, rpc: { data: { decisiones: [hint] } }, tables: { productos_view: responderCatalogo(products) } });
+      const result = await lookup(mock.client);
+      expect((result as any).feedback).toEqual([hint]);
+      expect(result.productos.map(p => p.codigo_interno)).toEqual(['COD1']);
+    });
+    it.each([null, {}, { decisiones: [null] }, { decisiones: [{ ...corrected, lineIndex: 3 }] }, { decisiones: [corrected, { ...corrected, codigoInterno: 'COD1' }] }])('keeps exact reads and marks malformed feedback partial (%j)', async data => {
+      const mock = fakeClient({ invoke, rpc: { data }, tables: { productos_view: responderCatalogo(products) } });
+      const result = await lookup(mock.client);
+      expect(result.productos.map(p => p.codigo_interno)).toEqual(['COD1']);
+      expect((result as any).feedback).toBeUndefined();
+      expect(result.parcial).toBe(true);
+    });
+    it.each(['missing', 'placeholder'])('does not reuse a %s remembered SKU', async kind => {
+      const rows = kind === 'missing' ? [producto('COD1')] : [producto('COD1'), { ...producto('00123A'), es_placeholder: true }];
+      const mock = fakeClient({ invoke, rpc: { data: { decisiones: [corrected] } }, tables: { productos_view: responderCatalogo(rows) } });
+      const result = await lookup(mock.client);
+      expect((result as any).feedback).toBeUndefined();
+      expect(result.parcial).toBe(true);
+    });
+    it('leaves plain catalog reads free of feedback calls', async () => {
+      const mock = fakeClient({ invoke });
+      await createFacturaRevisionRepository(mock.client).buscarCandidatos([linea(1)]);
+      expect(mock.rpc).not.toHaveBeenCalled();
+      expect(mock.invoke).not.toHaveBeenCalled();
+    });
+    it('keeps exact reads on a rejected feedback RPC without leaking the error', async () => {
+      const mock = fakeClient({ invoke, rpc: { error: { code: '42501', message: 'PRIVATE' } }, tables: { productos_view: responderCatalogo(products) } });
+      const result = await lookup(mock.client);
+      expect(result.productos.map(p => p.codigo_interno)).toEqual(['COD1']);
+      expect(result.parcial).toBe(true);
+      expect(JSON.stringify(result)).not.toContain('PRIVATE');
     });
   });
 

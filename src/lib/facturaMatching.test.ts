@@ -8,6 +8,46 @@ import {
 } from './facturaMatching';
 import type { Producto } from './supabase';
 
+describe('saved product feedback', () => {
+  const lines = [line(9, { descripcion: 'Adhesivo blanco', unidad: 'UND' })];
+  const catalog = [prod('A', 'Adhesivo blanco'), prod('B', 'Pegamento', { existencia: -3 })];
+  const remembered = { lineIndex: 0, decision: 'confirmado', codigoInterno: 'B' };
+  function withFeedback(feedback: unknown, products = catalog) {
+    return run(lines, products, { feedback } as never)[0];
+  }
+
+  it('admits and prefers a saved corrected SKU without confirming its identity', () => {
+    const result = withFeedback([remembered]);
+    expect(result.candidates.map(c => c.codigoInterno)).toEqual(['B', 'A']);
+    expect(result.status).toBe('review');
+    expect((result as any).feedback).toEqual(remembered);
+  });
+  it('keeps a previous-new hint without hiding current catalog choices', () => {
+    const hint = { lineIndex: 0, decision: 'producto_nuevo', codigoInterno: null };
+    const result = withFeedback([hint]);
+    expect(result.candidates).toEqual(run(lines, catalog)[0].candidates);
+    expect((result as any).feedback).toEqual(hint);
+  });
+  it('does not bypass hard variant or placeholder guards', () => {
+    const variants = [prod('B', 'Pegamento MX40'), prod('A', 'Adhesivo MX30')];
+    const result = run([line(1, { descripcion: 'Adhesivo MX30', unidad: 'UND' })], variants, { feedback: [remembered] } as never)[0];
+    expect(result.candidates.map(c => c.codigoInterno)).toEqual(['A']);
+    expect((result as any).feedback).toBeUndefined();
+    expect(withFeedback([remembered], [prod('B', '.')]).candidates).toEqual([]);
+  });
+  it('keeps direct code precedence even when another SKU was remembered', () => {
+    const result = run([line(1, { codigoProveedor: 'A', descripcion: 'Adhesivo blanco', unidad: 'UND' })], catalog, { feedback: [remembered] } as never)[0];
+    expect(result.candidates.map(c => c.codigoInterno)).toEqual(['A', 'B']);
+  });
+  it.each([null, {}, [null], [{ ...remembered, lineIndex: 8 }], [{ ...remembered, decision: 'otro' }], [{ ...remembered, codigoInterno: null }]])('ignores malformed feedback without changing legacy output (%j)', feedback => {
+    expect(withFeedback(feedback)).toEqual(run(lines, catalog)[0]);
+  });
+  it('discards contradictory feedback and does not amplify identical duplicates', () => {
+    expect(withFeedback([remembered, remembered])).toEqual(withFeedback([remembered]));
+    expect(withFeedback([remembered, { ...remembered, codigoInterno: 'A' }])).toEqual(run(lines, catalog)[0]);
+  });
+});
+
 const SUPPLIER = 'J-123456789';
 
 function line(numeroLinea: number, over: Partial<ExtraidaLinea> = {}): ExtraidaLinea {

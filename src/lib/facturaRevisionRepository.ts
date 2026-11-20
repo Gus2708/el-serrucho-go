@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CatalogoCodigosBarras, RevisionContenido } from './facturaRevision';
 import type { ExtraidaLinea } from './facturaExtractionContract';
-import type { HybridLineRanks, HybridRankEntry } from './facturaMatching';
+import { parseProductFeedback, type ProductFeedback, type HybridLineRanks, type HybridRankEntry } from './facturaMatching';
 import type { Producto } from './supabase';
 import { reportFacturaThrown, type FacturaOperation } from './facturaTelemetry';
 
@@ -112,6 +112,7 @@ export interface CatalogoAcotado {
    * current catalog. Absent when no usable rank exists; never a proof that a product is new.
    */
   readonly hybridRanks?: readonly HybridLineRanks[];
+  readonly feedback?: readonly ProductFeedback[];
 }
 
 /** Stored extraction the hybrid retrieval endpoint may read on the server; the only data the client sends. */
@@ -315,6 +316,19 @@ async function requestHybridRanks(client: RevisionClient, contexto: ContextoBusq
   }
 }
 
+async function requestSavedFeedback(client: RevisionClient, contexto: ContextoBusquedaHibrida): Promise<unknown> {
+  try {
+    const { data, error } = await client.rpc('buscar_feedback_productos_factura', {
+      p_factura_id: contexto.facturaId,
+      p_extraccion_id: contexto.extraccionId,
+      p_version_esperada: contexto.versionEsperada,
+    });
+    return error ? null : data;
+  } catch {
+    return null;
+  }
+}
+
 /** Valid entries only (best rank per SKU, ordered by rank); anything dropped or truncated makes the list partial. */
 function parseRankList(value: unknown): { entries: HybridRankEntry[]; parcial: boolean } {
   if (value === undefined) return { entries: [], parcial: false };
@@ -355,9 +369,13 @@ async function hydrateHybridRanks(
   client: RevisionClient,
   parsed: ParsedHybrid,
   byCode: Map<string, Producto>,
-): Promise<{ ranks: HybridLineRanks[]; parcial: boolean }> {
+  feedback: readonly ProductFeedback[],
+): Promise<{ ranks: HybridLineRanks[]; feedback: ProductFeedback[]; parcial: boolean }> {
   let parcial = parsed.parcial;
-  const wanted = new Set(parsed.groups.flatMap(group => [...group.lexical, ...group.semantic].map(entry => entry.codigoInterno)));
+  const wanted = new Set(feedback.flatMap(item => item.codigoInterno === null ? [] : [item.codigoInterno]));
+  for (const group of parsed.groups) {
+    for (const entry of [...group.lexical, ...group.semantic]) wanted.add(entry.codigoInterno);
+  }
   const missing = [...wanted].filter(sku => !byCode.has(sku));
   const toRead = missing.slice(0, MAX_HYBRID_SKUS);
   if (toRead.length < missing.length) parcial = true;
@@ -387,7 +405,16 @@ async function hydrateHybridRanks(
       ...(semantic.length > 0 ? { semantic } : {}),
     });
   }
-  return { ranks, parcial };
+  const decisions = feedback.filter(item => {
+    if (item.decision === 'producto_nuevo') return true;
+    const product = item.codigoInterno === null ? undefined : byCode.get(item.codigoInterno);
+    if (!product || product.es_placeholder === true) {
+      parcial = true;
+      return false;
+    }
+    return true;
+  });
+  return { ranks, feedback: decisions, parcial };
 }
 
 export function createFacturaRevisionRepository(client: RevisionClient): FacturaRevisionRepository {
@@ -491,8 +518,12 @@ export function createFacturaRevisionRepository(client: RevisionClient): Factura
       }
       // At most one hybrid invoke per lookup, and only for a valid context: a plain lookup is never a billable request.
       let hybridRequest: Promise<unknown> | null = null;
+      let feedbackRequest: Promise<unknown> | null = null;
       if (contexto !== undefined) {
-        if (validContext(contexto)) hybridRequest = requestHybridRanks(client, contexto);
+        if (validContext(contexto)) {
+          hybridRequest = requestHybridRanks(client, contexto);
+          feedbackRequest = requestSavedFeedback(client, contexto);
+        }
         else parcial = true;
       }
       const results = await Promise.all(reads.map(read => readCatalog(read, CATALOG_QUERY_CAP)));
@@ -505,13 +536,15 @@ export function createFacturaRevisionRepository(client: RevisionClient): Factura
       }
       if (hybridRequest === null) return { productos: [...byCode.values()], parcial };
 
-      const parsed = parseHybridPayload(await hybridRequest, lineas.length);
-      if (!parsed) return { productos: [...byCode.values()], parcial: true };
-      const hydrated = await hydrateHybridRanks(client, parsed, byCode);
+      const [hybridData, feedbackData] = await Promise.all([hybridRequest, feedbackRequest]);
+      const parsed = parseHybridPayload(hybridData, lineas.length) ?? { groups: [], parcial: true };
+      const saved = parseProductFeedback(isRecord(feedbackData) ? feedbackData.decisiones : null, lineas.length);
+      const hydrated = await hydrateHybridRanks(client, parsed, byCode, saved.decisiones);
       return {
         productos: [...byCode.values()],
-        parcial: parcial || hydrated.parcial,
+        parcial: parcial || hydrated.parcial || saved.parcial,
         ...(hydrated.ranks.length > 0 ? { hybridRanks: hydrated.ranks } : {}),
+        ...(hydrated.feedback.length > 0 ? { feedback: hydrated.feedback } : {}),
       };
     },
 

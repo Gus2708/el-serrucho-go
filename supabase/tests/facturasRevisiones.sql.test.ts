@@ -44,8 +44,9 @@ async function actAsServiceRole(database: PGlite): Promise<void> {
   await database.exec('set role service_role');
 }
 
-// `withPvp` false stops at the revisions migration so a test can apply the PVP migration later in the same engine.
-async function initTestDb(withPvp = true): Promise<PGlite> {
+// `withPvp` false stops at the revisions migration so a test can apply the PVP migration later in the same engine;
+// `withFeedback` false keeps the matching-feedback migration out so a test can apply it later to a warmed session.
+async function initTestDb(withPvp = true, withFeedback = true): Promise<PGlite> {
   const database = await createMigratedDb();
   await database.exec(`
     create role service_role nologin bypassrls;
@@ -58,6 +59,7 @@ async function initTestDb(withPvp = true): Promise<PGlite> {
   await database.exec(migrationSql('_facturas_proveedores_revisiones.sql'));
   if (withPvp) await database.exec(migrationSql('_facturas_revisiones_pvp.sql'));
   if (withPvp) await database.exec(migrationSql('_factura_revision_barcode_escaneado.sql'));
+  if (withPvp && withFeedback) await database.exec(migrationSql('_factura_matching_feedback.sql'));
   return database;
 }
 
@@ -126,7 +128,8 @@ interface Scenario {
 async function finalizeExtraction(
   facturaId: string,
   owner: string,
-  outcome: 'completado' | 'fallido'
+  outcome: 'completado' | 'fallido',
+  result: Json = extractionResult()
 ): Promise<string> {
   await actAs(db, owner, true);
   const requestId = uuid();
@@ -140,7 +143,7 @@ async function finalizeExtraction(
     facturaId,
     requestId,
     outcome,
-    outcome === 'completado' ? JSON.stringify(extractionResult()) : null,
+    outcome === 'completado' ? JSON.stringify(result) : null,
     outcome === 'fallido' ? 'timeout' : null,
   ]);
   await actAs(db, owner, true);
@@ -1375,5 +1378,531 @@ describe('facturas_proveedores_revisiones: PVP migration applied to a warmed ses
     // Everything else is still refused, with the tables untouched.
     const broken = { ...withKeys, cabecera: { ...(withKeys.cabecera as Json), otro: 1 } };
     await expectRejected(as(ADMIN), () => save({ id: s.facturaId, expectedRevision: 2, content: broken }), '22023', 'payload_invalido');
+  });
+});
+
+// ── T8.5a: saved human decisions are the search-feedback audit trail ────────────────────────────────────────
+// The catalog fixture below MODELS productos/productos_view (their production bodies are not in this repository):
+// a descriptive placeholder flag and negative stock are the only properties the contract relies on.
+const CATALOG_FIXTURE = `
+  create table public.productos (codigo_interno text primary key, descripcion text not null, existencia numeric);
+  create view public.productos_view as
+    select p.*, (btrim(p.descripcion) ~ '^[.]+$') as es_placeholder from public.productos p;
+  grant select on public.productos, public.productos_view to authenticated;
+  insert into public.productos (codigo_interno, descripcion, existencia) values
+    ('SKU-A', 'Anclaje A', 1), ('SKU-B', 'Anclaje B', -3), ('SKU-C', 'Anclaje C', 0), ('SKU-NEW', 'Producto recien creado', 0),
+    ('00123-A', 'Tornillo con ceros', 5), ('SKU-DEL', 'Producto por borrar', 0), ('PLACEHOLDER', '..', 0);
+`;
+
+type PrintedLine = [codigo: string | null, descripcion: string | null, unidad: string | null];
+const DEFAULT_PRINTED: PrintedLine[] = [['00123', 'Articulo 1', 'UND'], ['00123', 'Articulo 2', 'UND'], ['AB-9', 'Articulo 3', 'UND']];
+const FEEDBACK_TABLES = [...TABLES, 'public.productos'];
+
+function printedResult(lines: PrintedLine[]): Json {
+  return {
+    ...extractionResult(),
+    lineas: lines.map(([codigoProveedor, descripcion, unidad], i) => ({
+      numeroLinea: i + 1, pagina: 1, codigoProveedor, descripcion, cantidad: '1', unidad,
+      precioUnitario: '1', descuentos: [], tasaIva: '16', total: null, incertidumbre: null,
+    })),
+  };
+}
+
+interface FeedbackScenario {
+  facturaId: string;
+  extraccionId: string;
+  owner: string;
+  lineIds: string[];
+}
+
+let supplierCounter = 0;
+const newSupplier = (): string => `SUP-${(supplierCounter += 1)}`;
+
+// Each scenario is a real invoice with a real completed extraction; `supplier` is the invoice's own proveedor_codigo.
+async function feedbackScenario(opts: { owner?: string; supplier?: string | null; lines?: PrintedLine[] } = {}): Promise<FeedbackScenario> {
+  const owner = opts.owner ?? ADMIN;
+  const lines = opts.lines ?? DEFAULT_PRINTED;
+  const facturaId = uuid();
+  await seedInvoice(owner, facturaId);
+  if (opts.supplier !== undefined) {
+    await actAsOwner(db);
+    await db.query('update public.facturas_proveedores set proveedor_codigo = $1 where id = $2', [opts.supplier, facturaId]);
+  }
+  const extraccionId = await finalizeExtraction(facturaId, owner, 'completado', printedResult(lines));
+  return { facturaId, extraccionId, owner, lineIds: lines.map(() => uuid()) };
+}
+
+// 'pendiente' | 'nuevo' (producto_nuevo) | a catalog SKU (confirmado).
+function decision(value: string): Json {
+  if (value === 'pendiente') return { tipo: 'pendiente', codigoInterno: null, evidencia: null, motivo: null };
+  if (value === 'nuevo') return { tipo: 'producto_nuevo', codigoInterno: null, evidencia: 'manual', motivo: 'Producto nuevo' };
+  return { tipo: 'confirmado', codigoInterno: value, evidencia: 'sugerencia', motivo: null };
+}
+
+async function saveDecisions(
+  s: FeedbackScenario,
+  decisions: string[],
+  opts: { expectedRevision?: number; key?: string } = {}
+): Promise<Json> {
+  const lineas = decisions.map((value, i) => linea(i + 1, { lineaId: s.lineIds[i], asociacion: decision(value) }));
+  await actAs(db, s.owner, true);
+  return save({ id: s.facturaId, expectedRevision: opts.expectedRevision ?? 0, key: opts.key, content: contenido(s.extraccionId, lineas) });
+}
+
+interface FeedbackDecision {
+  lineIndex: number;
+  decision: 'confirmado' | 'producto_nuevo';
+  codigoInterno: string | null;
+}
+
+async function feedback(s: { facturaId: string; extraccionId: string }, version = 1, user = ADMIN, sessionValid = true): Promise<FeedbackDecision[]> {
+  await actAs(db, user, sessionValid);
+  const r = await db.query<{ r: { decisiones: FeedbackDecision[] } }>(
+    'select public.buscar_feedback_productos_factura($1::uuid, $2::uuid, $3::int) as r',
+    [s.facturaId, s.extraccionId, version]
+  );
+  return r.rows[0].r.decisiones;
+}
+
+const confirmed = (lineIndex: number, codigoInterno: string): FeedbackDecision => ({ lineIndex, decision: 'confirmado', codigoInterno });
+const brandNew = (lineIndex: number): FeedbackDecision => ({ lineIndex, decision: 'producto_nuevo', codigoInterno: null });
+
+describe('buscar_feedback_productos_factura: saved human decisions as search feedback', () => {
+  beforeAll(async () => {
+    db = await initTestDb();
+    await addUser(db, ADMIN, 'admin');
+    await addUser(db, OTHER_ADMIN, 'admin');
+    await addUser(db, SUPER, 'superempleado');
+    await addUser(db, EMPLEADO, 'empleado');
+    await addUser(db, INACTIVO, 'admin', false);
+    await db.exec(CATALOG_FIXTURE);
+  });
+
+  afterAll(async () => {
+    await db.close();
+  });
+
+  it('returns no decisions for an invoice whose supplier never had a saved review', async () => {
+    const s = await feedbackScenario({ supplier: newSupplier() });
+    expect(await feedback(s)).toEqual([]);
+  });
+
+  it('turns a saved confirmation and a saved new-product decision into hints for the same printed lines', async () => {
+    const supplier = newSupplier();
+    const first = await feedbackScenario({ supplier });
+    await saveDecisions(first, ['SKU-A', 'nuevo', 'pendiente']);
+    const later = await feedbackScenario({ supplier });
+
+    expect(await feedback(later)).toEqual([confirmed(0, 'SKU-A'), brandNew(1)]);
+    // The reviewed invoice itself benefits from its own current saved decisions.
+    expect(await feedback(first)).toEqual([confirmed(0, 'SKU-A'), brandNew(1)]);
+  });
+
+  it('exposes only line index, decision and SKU: no invoice, user, description or count', async () => {
+    const supplier = newSupplier();
+    const first = await feedbackScenario({ supplier });
+    await saveDecisions(first, ['SKU-A', 'SKU-A', 'SKU-A']);
+    const later = await feedbackScenario({ supplier });
+    const decisions = await feedback(later);
+    expect(decisions.length).toBeGreaterThan(0);
+    for (const d of decisions) expect(Object.keys(d).sort()).toEqual(['codigoInterno', 'decision', 'lineIndex']);
+    const raw = JSON.stringify(decisions);
+    for (const secret of [first.facturaId, ADMIN, 'Articulo', 'PROV']) expect(raw).not.toContain(secret);
+  });
+
+  it('lets a corrected selection B replace the saved A and never keeps reinforcing the rejected one', async () => {
+    const supplier = newSupplier();
+    const first = await feedbackScenario({ supplier });
+    await saveDecisions(first, ['SKU-A', 'pendiente', 'pendiente']);
+    await saveDecisions(first, ['SKU-B', 'pendiente', 'pendiente'], { expectedRevision: 1 });
+    const later = await feedbackScenario({ supplier });
+    expect(await feedback(later)).toEqual([confirmed(0, 'SKU-B')]);
+  });
+
+  it('lets the latest saved decision across invoices win, deterministically', async () => {
+    const supplier = newSupplier();
+    const a = await feedbackScenario({ supplier });
+    const b = await feedbackScenario({ supplier });
+    const target = await feedbackScenario({ supplier });
+    await saveDecisions(a, ['SKU-A', 'pendiente', 'pendiente']);
+    await saveDecisions(b, ['SKU-B', 'pendiente', 'pendiente']);
+    expect(await feedback(target)).toEqual([confirmed(0, 'SKU-B')]);
+    await saveDecisions(a, ['SKU-A', 'pendiente', 'pendiente'], { expectedRevision: 1 });
+    expect(await feedback(target)).toEqual([confirmed(0, 'SKU-A')]);
+    expect(await feedback(target)).toEqual(await feedback(target));
+  });
+
+  it('turns a later new-product decision into a new hint instead of the previously confirmed SKU', async () => {
+    const supplier = newSupplier();
+    const first = await feedbackScenario({ supplier });
+    await saveDecisions(first, ['SKU-A', 'pendiente', 'pendiente']);
+    await saveDecisions(first, ['nuevo', 'pendiente', 'pendiente'], { expectedRevision: 1 });
+    const later = await feedbackScenario({ supplier });
+    expect(await feedback(later)).toEqual([brandNew(0)]);
+  });
+
+  it('makes a genuinely new product reusable positive feedback once a later save confirms its registered SKU', async () => {
+    const supplier = newSupplier();
+    const first = await feedbackScenario({ supplier });
+    await saveDecisions(first, ['nuevo', 'pendiente', 'pendiente']);
+    const target = await feedbackScenario({ supplier });
+    expect(await feedback(target)).toEqual([brandNew(0)]);
+    const second = await feedbackScenario({ supplier });
+    await saveDecisions(second, ['SKU-NEW', 'pendiente', 'pendiente']);
+    expect(await feedback(target)).toEqual([confirmed(0, 'SKU-NEW')]);
+  });
+
+  it('does not revive an older confirmation after the line is reset to pending', async () => {
+    const supplier = newSupplier();
+    const first = await feedbackScenario({ supplier });
+    await saveDecisions(first, ['SKU-A', 'SKU-B', 'pendiente']);
+    await saveDecisions(first, ['pendiente', 'SKU-B', 'pendiente'], { expectedRevision: 1 });
+    const later = await feedbackScenario({ supplier });
+    expect(await feedback(later)).toEqual([confirmed(1, 'SKU-B')]);
+  });
+
+  it('does not revive an older confirmation after a rejected save or after the extraction is detached', async () => {
+    const supplier = newSupplier();
+    const first = await feedbackScenario({ supplier });
+    await saveDecisions(first, ['SKU-A', 'pendiente', 'pendiente']);
+    const target = await feedbackScenario({ supplier });
+    expect(await feedback(target)).toEqual([confirmed(0, 'SKU-A')]);
+
+    // A rejected save (stale revision) is not feedback and changes nothing.
+    await expect(saveDecisions(first, ['SKU-B', 'pendiente', 'pendiente'], { expectedRevision: 0 })).rejects.toMatchObject({ code: 'PR409' });
+    expect(await feedback(target)).toEqual([confirmed(0, 'SKU-A')]);
+
+    await actAs(db, ADMIN, true);
+    await save({ id: first.facturaId, expectedRevision: 1, content: contenido(null, []), extraccionId: null, motivo: 'Desvincular extraccion' });
+    expect(await feedback(target)).toEqual([]);
+  });
+
+  it('counts a replayed save and a repeated confirmation on another invoice once: no voting weight', async () => {
+    const supplier = newSupplier();
+    const first = await feedbackScenario({ supplier });
+    const key = uuid();
+    expect(await saveDecisions(first, ['SKU-A', 'pendiente', 'pendiente'], { key })).toMatchObject({ revision: 1, replay: false });
+    expect(await saveDecisions(first, ['SKU-A', 'pendiente', 'pendiente'], { key })).toMatchObject({ revision: 1, replay: true });
+    expect(await revisions(first.facturaId)).toHaveLength(1);
+    const target = await feedbackScenario({ supplier });
+    const once = await feedback(target);
+    const other = await feedbackScenario({ supplier });
+    await saveDecisions(other, ['SKU-A', 'pendiente', 'pendiente']);
+    expect(await feedback(target)).toEqual(once);
+    expect(once).toEqual([confirmed(0, 'SKU-A')]);
+  });
+
+  it('never learns across owners or suppliers', async () => {
+    const supplier = newSupplier();
+    const foreignOwner = await feedbackScenario({ owner: OTHER_ADMIN, supplier });
+    await saveDecisions(foreignOwner, ['SKU-B', 'SKU-B', 'SKU-B']);
+    const otherSupplier = await feedbackScenario({ supplier: newSupplier() });
+    await saveDecisions(otherSupplier, ['SKU-C', 'SKU-C', 'SKU-C']);
+
+    const mine = await feedbackScenario({ supplier });
+    expect(await feedback(mine)).toEqual([]);
+    // And the other owner never sees mine.
+    await saveDecisions(mine, ['SKU-A', 'pendiente', 'pendiente']);
+    expect(await feedback(foreignOwner, 1, OTHER_ADMIN)).toEqual([confirmed(0, 'SKU-B'), confirmed(1, 'SKU-B'), confirmed(2, 'SKU-B')]);
+    expect(await feedback(mine)).toEqual([confirmed(0, 'SKU-A')]);
+  });
+
+  it('keeps leading zeros, punctuation, model and unit apart and normalizes only whitespace and case', async () => {
+    const supplier = newSupplier();
+    const history = await feedbackScenario({ supplier, lines: [['00123', 'Tornillo 1/4', 'UND']] });
+    await saveDecisions(history, ['SKU-A']);
+    const target = await feedbackScenario({
+      supplier,
+      lines: [
+        ['123', 'Tornillo 1/4', 'UND'],
+        ['00123', 'Tornillo 1/4', 'UND'],
+        ['00123', 'Tornillo 3/8', 'UND'],
+        ['00123', 'Tornillo 1/4', 'CAJA'],
+        ['  00123 ', '  tornillo   1/4 ', 'und'],
+        ['0-0123', 'Tornillo 1/4', 'UND'],
+        ['00123', 'Tornillo 1/4.', 'UND'],
+      ],
+    });
+    expect(await feedback(target)).toEqual([confirmed(1, 'SKU-A'), confirmed(4, 'SKU-A')]);
+  });
+
+  it('learns from the raw printed line, not from corrected values, and ignores manual lines', async () => {
+    const supplier = newSupplier();
+    const history = await feedbackScenario({ supplier });
+    const lineas = [
+      linea(1, { lineaId: history.lineIds[0], asociacion: decision('SKU-A'), correcciones: { codigoProveedor: { valor: 'ZZZ-OTRO', motivo: 'Lectura corregida' }, descripcion: { valor: 'Otra cosa', motivo: 'Lectura corregida' } } }),
+      linea(2, { lineaId: history.lineIds[1], asociacion: decision('pendiente') }),
+      linea(3, { lineaId: history.lineIds[2], asociacion: decision('pendiente') }),
+      linea(null, { asociacion: decision('SKU-B'), correcciones: { descripcion: { valor: 'Articulo 2', motivo: 'Manual' }, codigoProveedor: { valor: '00123', motivo: 'Manual' }, unidad: { valor: 'UND', motivo: 'Manual' } } }),
+    ];
+    await actAs(db, ADMIN, true);
+    await save({ id: history.facturaId, content: contenido(history.extraccionId, lineas) });
+    const target = await feedbackScenario({ supplier });
+    expect(await feedback(target)).toEqual([confirmed(0, 'SKU-A')]);
+  });
+
+  it('only returns SKUs that exist now and are not placeholders, and never falls back to an older SKU', async () => {
+    const supplier = newSupplier();
+    const first = await feedbackScenario({ supplier });
+    await saveDecisions(first, ['SKU-A', 'pendiente', 'pendiente']);
+    const target = await feedbackScenario({ supplier });
+    expect(await feedback(target)).toEqual([confirmed(0, 'SKU-A')]);
+
+    const missing = await feedbackScenario({ supplier });
+    await saveDecisions(missing, ['NO-EXISTE', 'pendiente', 'pendiente']);
+    expect(await feedback(target)).toEqual([]);
+
+    const placeholder = await feedbackScenario({ supplier });
+    await saveDecisions(placeholder, ['PLACEHOLDER', 'pendiente', 'pendiente']);
+    expect(await feedback(target)).toEqual([]);
+
+    const negative = await feedbackScenario({ supplier });
+    await saveDecisions(negative, ['SKU-B', 'pendiente', 'pendiente']);
+    // SKU-B has negative stock: stock is never a filter.
+    expect(await feedback(target)).toEqual([confirmed(0, 'SKU-B')]);
+  });
+
+  it('returns nothing for a confirmed SKU deleted from the catalog since it was saved', async () => {
+    const supplier = newSupplier();
+    const first = await feedbackScenario({ supplier });
+    await saveDecisions(first, ['SKU-DEL', 'pendiente', 'pendiente']);
+    const target = await feedbackScenario({ supplier });
+    expect(await feedback(target)).toEqual([confirmed(0, 'SKU-DEL')]);
+    await actAsOwner(db);
+    await db.exec("delete from public.productos where codigo_interno = 'SKU-DEL'");
+    expect(await feedback(target)).toEqual([]);
+    await actAsOwner(db);
+    await db.exec("insert into public.productos (codigo_interno, descripcion, existencia) values ('SKU-DEL', 'Producto por borrar', 0)");
+  });
+
+  it('preserves the literal SKU, leading zeros included', async () => {
+    const supplier = newSupplier();
+    const first = await feedbackScenario({ supplier });
+    await saveDecisions(first, ['00123-A', 'pendiente', 'pendiente']);
+    const target = await feedbackScenario({ supplier });
+    expect(await feedback(target)).toEqual([confirmed(0, '00123-A')]);
+  });
+
+  it.each([
+    ['without a supplier code', null],
+    ['with a blank supplier code', '   '],
+  ])('learns nothing for an invoice %s, not even from other unknown-supplier invoices', async (_name, supplier) => {
+    const first = await feedbackScenario({ supplier });
+    await saveDecisions(first, ['SKU-A', 'SKU-A', 'SKU-A']);
+    const target = await feedbackScenario({ supplier });
+    expect(await feedback(target)).toEqual([]);
+    expect(await feedback(first)).toEqual([]);
+  });
+
+  it('ignores a historical revision whose invoice version or document changed after it was saved', async () => {
+    const supplier = newSupplier();
+    const stale = await feedbackScenario({ supplier });
+    await saveDecisions(stale, ['SKU-A', 'pendiente', 'pendiente']);
+    const target = await feedbackScenario({ supplier });
+    expect(await feedback(target)).toEqual([confirmed(0, 'SKU-A')]);
+    await reattachDocument(ADMIN, stale.facturaId, 1);
+    expect(await feedback(target)).toEqual([]);
+  });
+
+  it('maps repeated printed lines to each original index and is stable between calls', async () => {
+    const supplier = newSupplier();
+    const history = await feedbackScenario({ supplier, lines: [['R-1', 'Repetido', 'UND']] });
+    await saveDecisions(history, ['SKU-A']);
+    const target = await feedbackScenario({ supplier, lines: [['R-1', 'Repetido', 'UND'], ['R-2', 'Otro', 'UND'], ['R-1', 'Repetido', 'UND']] });
+    const first = await feedback(target);
+    expect(first).toEqual([confirmed(0, 'SKU-A'), confirmed(2, 'SKU-A')]);
+    expect(await feedback(target)).toEqual(first);
+  });
+
+  it('breaks a conflict between repeated saved lines of one revision by the highest line id', async () => {
+    const supplier = newSupplier();
+    const history = await feedbackScenario({ supplier, lines: [['R-1', 'Repetido', 'UND'], ['R-1', 'Repetido', 'UND']] });
+    await saveDecisions(history, ['SKU-A', 'SKU-B']);
+    const target = await feedbackScenario({ supplier, lines: [['R-1', 'Repetido', 'UND']] });
+    expect(history.lineIds[1] > history.lineIds[0]).toBe(true);
+    expect(await feedback(target)).toEqual([confirmed(0, 'SKU-B')]);
+  });
+
+  it('considers only the first 200 extraction lines', async () => {
+    const supplier = newSupplier();
+    const history = await feedbackScenario({ supplier, lines: [['BULK', 'Linea repetida', 'UND']] });
+    await saveDecisions(history, ['SKU-A']);
+    const target = await feedbackScenario({ supplier, lines: Array.from({ length: 205 }, (): PrintedLine => ['BULK', 'Linea repetida', 'UND']) });
+    const decisions = await feedback(target);
+    expect(decisions).toHaveLength(200);
+    expect(decisions[0]).toEqual(confirmed(0, 'SKU-A'));
+    expect(decisions[199]).toEqual(confirmed(199, 'SKU-A'));
+  });
+
+  it('does not reuse a decision outside the 200 most recent eligible invoices', async () => {
+    const supplier = newSupplier();
+    const original = await feedbackScenario({ supplier, lines: [['OLD', 'Old context', 'UND']] });
+    await saveDecisions(original, ['SKU-A']);
+    const target = await feedbackScenario({ supplier, lines: [['OLD', 'Old context', 'UND']] });
+    for (let i = 0; i < 199; i += 1) {
+      const newer = await feedbackScenario({ supplier, lines: [[`OTHER-${i}`, 'Different context', 'UND']] });
+      await saveDecisions(newer, ['SKU-B']);
+    }
+    expect(await feedback(target)).toEqual([confirmed(0, 'SKU-A')]);
+    const newest = await feedbackScenario({ supplier, lines: [['LAST', 'Different context', 'UND']] });
+    await saveDecisions(newest, ['SKU-B']);
+    expect(await feedback(target)).toEqual([]);
+  });
+
+  describe('source and caller guards', () => {
+    it.each([
+      ['an expected version that is not the current one', (s: FeedbackScenario) => feedback(s, 2), 'PV409'],
+      ['an unknown extraction', (s: FeedbackScenario) => feedback({ ...s, extraccionId: uuid() }, 1), 'P0002'],
+      ['a non-positive version', (s: FeedbackScenario) => feedback(s, 0), '22023'],
+    ])('rejects %s without touching any table', async (_name, call, code) => {
+      const s = await feedbackScenario({ supplier: newSupplier() });
+      await saveDecisions(s, ['SKU-A', 'pendiente', 'pendiente']);
+      const before = await snapshot(FEEDBACK_TABLES);
+      await expect(call(s)).rejects.toMatchObject({ code });
+      expect(await snapshot(FEEDBACK_TABLES)).toBe(before);
+    });
+
+    it('rejects an extraction of another invoice, a failed extraction and a stale attachment', async () => {
+      const supplier = newSupplier();
+      const s = await feedbackScenario({ supplier });
+      const foreign = await feedbackScenario({ supplier });
+      await expect(feedback({ facturaId: s.facturaId, extraccionId: foreign.extraccionId })).rejects.toMatchObject({ code: 'P0002' });
+
+      const failedInvoice = uuid();
+      await seedInvoice(ADMIN, failedInvoice);
+      const failedExtraction = await finalizeExtraction(failedInvoice, ADMIN, 'fallido');
+      await expect(feedback({ facturaId: failedInvoice, extraccionId: failedExtraction })).rejects.toMatchObject({ code: '22023' });
+
+      await reattachDocument(ADMIN, s.facturaId, 1);
+      await expect(feedback(s, 1)).rejects.toMatchObject({ code: 'PV409' });
+      await expect(feedback(s, 2)).rejects.toMatchObject({ code: 'PV409' });
+    });
+
+    it("hides another owner's invoice exactly like a missing one", async () => {
+      const mine = await feedbackScenario({ supplier: newSupplier() });
+      await expect(feedback(mine, 1, OTHER_ADMIN)).rejects.toMatchObject({ code: 'P0002', message: 'fuente_no_disponible' });
+      await expect(feedback({ facturaId: uuid(), extraccionId: uuid() })).rejects.toMatchObject({ code: 'P0002', message: 'fuente_no_disponible' });
+    });
+
+    it.each([
+      ['an employee', () => feedback({ facturaId: uuid(), extraccionId: uuid() }, 1, EMPLEADO)],
+      ['an inactive admin', () => feedback({ facturaId: uuid(), extraccionId: uuid() }, 1, INACTIVO)],
+      ['a user with an invalid session', () => feedback({ facturaId: uuid(), extraccionId: uuid() }, 1, ADMIN, false)],
+    ])('refuses %s with the stable authorization error and no writes', async (_name, call) => {
+      const before = await snapshot(FEEDBACK_TABLES);
+      await expect(call()).rejects.toMatchObject({ code: '42501', message: 'no_autorizado' });
+      expect(await snapshot(FEEDBACK_TABLES)).toBe(before);
+    });
+
+    it('lets a superempleado read their own feedback', async () => {
+      const supplier = newSupplier();
+      const s = await feedbackScenario({ owner: SUPER, supplier });
+      await saveDecisions(s, ['SKU-A', 'pendiente', 'pendiente']);
+      expect(await feedback(s, 1, SUPER)).toEqual([confirmed(0, 'SKU-A')]);
+    });
+
+    it('is not callable by anon or service_role', async () => {
+      const s = await feedbackScenario({ supplier: newSupplier() });
+      await actAsAnon(db);
+      await expect(db.query('select public.buscar_feedback_productos_factura($1::uuid, $2::uuid, 1)', [s.facturaId, s.extraccionId])).rejects.toMatchObject({ code: '42501' });
+      await actAsServiceRole(db);
+      await expect(db.query('select public.buscar_feedback_productos_factura($1::uuid, $2::uuid, 1)', [s.facturaId, s.extraccionId])).rejects.toMatchObject({ code: '42501' });
+    });
+
+    it('never writes: tables, catalog and history are byte-identical after successful reads', async () => {
+      const supplier = newSupplier();
+      const s = await feedbackScenario({ supplier });
+      await saveDecisions(s, ['SKU-A', 'nuevo', 'pendiente']);
+      const before = await snapshot(FEEDBACK_TABLES);
+      expect(await feedback(s)).toHaveLength(2);
+      expect(await snapshot(FEEDBACK_TABLES)).toBe(before);
+    });
+  });
+
+  describe('security metadata', () => {
+    it('is an invoker, stable, fixed-empty-search_path function executable by authenticated only', async () => {
+      await actAsOwner(db);
+      const sig = 'public.buscar_feedback_productos_factura(uuid, uuid, integer)';
+      const meta = await db.query<{ prosecdef: boolean; provolatile: string; proconfig: string[] | null; proacl: string | null }>(
+        'select prosecdef, provolatile, proconfig, proacl::text from pg_proc where oid = $1::regprocedure',
+        [sig]
+      );
+      expect(meta.rows).toHaveLength(1);
+      expect(meta.rows[0].prosecdef).toBe(false);
+      expect(meta.rows[0].provolatile).toBe('s');
+      expect(meta.rows[0].proconfig).toContain('search_path=""');
+      expect(meta.rows[0].proacl ?? '').not.toMatch(/(^\{|,)=X/);
+      const exec = async (role: string) => (await db.query<{ ok: boolean }>("select has_function_privilege($1, $2::regprocedure, 'EXECUTE') as ok", [role, sig])).rows[0].ok;
+      expect(await exec('authenticated')).toBe(true);
+      expect(await exec('anon')).toBe(false);
+      expect(await exec('service_role')).toBe(false);
+    });
+
+    it('adds no table, trigger or private function: the revision history stays the only ledger', async () => {
+      await actAsOwner(db);
+      const objects = await db.query<{ n: string }>(
+        `select p.oid::regprocedure::text as n from pg_proc p join pg_namespace s on s.oid = p.pronamespace
+          where s.nspname in ('public', 'facturas_privado') and p.proname like '%feedback%'`
+      );
+      expect(objects.rows.map(r => r.n)).toEqual(['buscar_feedback_productos_factura(uuid,uuid,integer)']);
+      const tables = await db.query<{ n: string }>("select tablename as n from pg_tables where schemaname = 'public' and tablename like '%feedback%'");
+      expect(tables.rows).toEqual([]);
+    });
+  });
+});
+
+describe('buscar_feedback_productos_factura: migration applied to a warmed session', () => {
+  beforeAll(async () => {
+    db = await initTestDb(true, false);
+    await addUser(db, ADMIN, 'admin');
+    await db.exec(CATALOG_FIXTURE);
+  });
+
+  afterAll(async () => {
+    await db.close();
+  });
+
+  const identities = async () => {
+    await actAsOwner(db);
+    const functions = await db.query<Record<string, unknown>>(
+      `select p.oid::regprocedure::text as sig, p.oid::int as oid, p.proacl::text as acl, pg_get_functiondef(p.oid) as def
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where p.proname in ('guardar_revision_factura', 'aprobar_revision_factura') and n.nspname in ('public', 'facturas_privado')
+        order by sig`
+    );
+    const policies = await db.query<Record<string, unknown>>(
+      `select policyname, cmd, roles::text as roles, qual, with_check from pg_policies
+        where tablename = 'facturas_proveedores_revisiones' order by policyname`
+    );
+    return { functions: functions.rows, policies: policies.rows };
+  };
+
+  it('leaves the save/approve functions, ACLs, policies, stored revisions and replays byte-identical', async () => {
+    const s = await scenario();
+    const key = uuid();
+    const content = fullContent(s);
+    const first = await save({ id: s.facturaId, key, content });
+    await approve(s.facturaId, 1, String(first.fingerprint));
+    // The new RPC does not exist yet.
+    await expect(feedback(s)).rejects.toMatchObject({ code: '42883' });
+
+    const identitiesBefore = await identities();
+    const rowsBefore = await revisions(s.facturaId);
+    const tablesBefore = await snapshot(FEEDBACK_TABLES);
+
+    await actAsOwner(db);
+    await db.exec(migrationSql('_factura_matching_feedback.sql'));
+
+    expect(await identities()).toEqual(identitiesBefore);
+    expect(await revisions(s.facturaId)).toEqual(rowsBefore);
+    expect(await snapshot(FEEDBACK_TABLES)).toBe(tablesBefore);
+    await actAs(db, ADMIN, true);
+    expect(await save({ id: s.facturaId, key, content })).toMatchObject({ revision: 1, replay: true, fingerprint: first.fingerprint });
+    expect(await approve(s.facturaId, 1, String(first.fingerprint))).toMatchObject({ replay: true });
+
+    // Same session, no reconnect: the new RPC answers, and the saved default-supplier history is readable.
+    expect(Array.isArray(await feedback(s))).toBe(true);
+    // A rejected command after the migration still leaves every table untouched.
+    await expectRejected(as(ADMIN), () => save({ id: s.facturaId, expectedRevision: 0, content }), 'PR409');
   });
 });

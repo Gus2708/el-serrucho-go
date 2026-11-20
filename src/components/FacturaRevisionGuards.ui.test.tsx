@@ -26,6 +26,46 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 }));
 
 const SHA = 'a'.repeat(64);
+
+describe('saved feedback suggestions', () => {
+  const chosen = { lineIndex: 0, decision: 'confirmado', codigoInterno: 'PAST' };
+  const product = { codigo_interno: 'PAST', descripcion: 'Fijacion', codigo_barras: null, existencia: -3, costo: 1, precio_venta: 2, es_placeholder: false };
+  it('passes saved choices to the real matcher without changing the human decision', async () => {
+    const repo = fakeRepo({ buscarCandidatos: jest.fn(async () => ({ productos: [product], parcial: false, feedback: [chosen] })) });
+    await startHook(repo);
+    expect(current.candidatos[1].candidates.map(c => c.codigoInterno)).toContain('PAST');
+    expect((current.candidatos[1] as any).feedback).toEqual(chosen);
+    expect(current.efectiva!.lineas[0].asociacion.tipo).toBe('pendiente');
+  });
+  it.each(['confirmado', 'producto_nuevo'])('shows the saved %s hint without assigning a product', async decision => {
+    const hint = { ...chosen, decision, codigoInterno: decision === 'confirmado' ? 'PAST' : null };
+    const repo = fakeRepo({ buscarCandidatos: jest.fn(async () => ({ productos: [product], parcial: false, feedback: [hint] })) });
+    await startRevision(repo);
+    expect(textOf('revision-linea-1-feedback')).toMatch(decision === 'confirmado' ? /PAST/ : /nuevo/);
+    expect(textOf('revision-linea-1-decision')).toMatch(/pendiente|Sin decidir/i);
+  });
+  it('ignores saved feedback from a previous invoice generation', async () => {
+    const late = deferred<any>();
+    const repo = fakeRepo({ buscarCandidatos: jest.fn().mockReturnValueOnce(late.promise).mockResolvedValue({ productos: [], parcial: false }) });
+    const view = await startHook(repo);
+    view.rerenderUi(<Hook {...hookProps(repo, { facturaId: FACTURA_2 })} />);
+    await settle();
+    await act(async () => late.resolve({ productos: [product], parcial: false, feedback: [chosen] }));
+    expect(current.candidatos).toEqual({});
+  });
+  it('does not overwrite a manual confirmation when saved feedback arrives later', async () => {
+    const late = deferred<any>();
+    const repo = fakeRepo({ buscarCandidatos: jest.fn().mockReturnValueOnce(late.promise) });
+    await startHook(repo);
+    await edit({ tipo: 'asociacion', lineaId: current.contenido!.lineas[0].lineaId, asociacion: {
+      tipo: 'confirmado', codigoInterno: 'MANUAL', evidencia: 'manual', motivo: 'Explicit current decision',
+    } });
+    await act(async () => late.resolve({ productos: [product], parcial: false, feedback: [chosen] }));
+    await settle();
+    expect(current.efectiva!.lineas[0].asociacion.codigoInterno).toBe('MANUAL');
+    expect((current.candidatos[1] as any).feedback).toEqual(chosen);
+  });
+});
 const EXT = 'e0000000-0000-4000-8000-000000000001';
 const EXT_2 = 'e0000000-0000-4000-8000-000000000002';
 const FACTURA_2 = 'f0000000-0000-4000-8000-000000000002';
@@ -906,7 +946,7 @@ describe('T8.4b2 hybrid retrieval wiring', () => {
       };
       return proxy;
     });
-    return { client: { from, rpc: jest.fn(), functions: { invoke } } as unknown as RevisionClient, invoke };
+    return { client: { from, rpc: jest.fn(async () => ({ data: { decisiones: [] }, error: null })), functions: { invoke } } as unknown as RevisionClient, invoke };
   }
 
   const answer = (hybridRanks: unknown, parcial = false) => async () => ({ data: { hybridRanks, parcial }, error: null });

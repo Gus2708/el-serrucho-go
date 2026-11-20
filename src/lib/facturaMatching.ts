@@ -41,6 +41,48 @@ export interface MatchInvoiceLinesInput {
   readonly bounds?: Partial<MatchingBounds>;
   /** Optional hosted retrieval ranks keyed to the original zero-based input line index. */
   readonly hybridRanks?: readonly HybridLineRanks[];
+  readonly feedback?: readonly ProductFeedback[];
+}
+
+export interface ProductFeedback {
+  readonly lineIndex: number;
+  readonly decision: 'confirmado' | 'producto_nuevo';
+  readonly codigoInterno: string | null;
+}
+
+/** A saved decision is a hint, not an identity. Contradictory duplicates are discarded, never voted on. */
+export function parseProductFeedback(
+  value: unknown,
+  lineCount: number,
+  limit = 200,
+): { decisiones: ProductFeedback[]; parcial: boolean } {
+  if (!Array.isArray(value)) return { decisiones: [], parcial: true };
+  let parcial = value.length > limit;
+  const decisions = new Map<number, ProductFeedback>();
+  const blocked = new Set<number>();
+  for (const item of value.slice(0, limit) as unknown[]) {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+      parcial = true;
+      continue;
+    }
+    const { lineIndex, decision, codigoInterno } = item as Record<string, unknown>;
+    const newDecision = decision === 'producto_nuevo' && codigoInterno === null;
+    const confirmed = decision === 'confirmado' && typeof codigoInterno === 'string' && /^[A-Za-z0-9._/-]{1,80}$/.test(codigoInterno);
+    if (typeof lineIndex !== 'number' || !Number.isSafeInteger(lineIndex) || lineIndex < 0 || lineIndex >= lineCount || !(newDecision || confirmed)) {
+      parcial = true;
+      continue;
+    }
+    if (blocked.has(lineIndex)) continue;
+    const previous = decisions.get(lineIndex);
+    if (previous && (previous.decision !== decision || previous.codigoInterno !== codigoInterno)) {
+      decisions.delete(lineIndex);
+      blocked.add(lineIndex);
+      parcial = true;
+    } else {
+      decisions.set(lineIndex, { lineIndex, decision, codigoInterno } as ProductFeedback);
+    }
+  }
+  return { decisiones: [...decisions.values()].sort((a, b) => a.lineIndex - b.lineIndex), parcial };
 }
 
 export interface HybridRankEntry {
@@ -103,6 +145,7 @@ export interface LineMatch {
   readonly conflicts: readonly MatchConflict[];
   readonly omittedCandidates: number;
   readonly reasons: readonly string[];
+  readonly feedback?: ProductFeedback;
 }
 
 export type MatchInvoiceLinesResult =
@@ -190,6 +233,7 @@ interface MatchContext {
   readonly aliases: readonly SupplierAlias[];
   readonly bounds: MatchingBounds;
   readonly hybrid: HybridIndex;
+  readonly feedback: ReadonlyMap<number, ProductFeedback>;
 }
 
 type HybridIndex = ReadonlyMap<number, ReadonlyMap<string, number>>;
@@ -405,10 +449,13 @@ function hasCodeEvidence(candidate: MatchCandidate): boolean {
 }
 
 // Code evidence keeps its priority and order; RRF only orders candidates that have no code evidence.
-function compareCandidates(a: MatchCandidate, b: MatchCandidate, hybrid: ReadonlyMap<string, number>): number {
+function compareCandidates(a: MatchCandidate, b: MatchCandidate, hybrid: ReadonlyMap<string, number>, remembered: string | null): number {
   const retrieval = hasCodeEvidence(a) ? 0 : (hybrid.get(b.codigoInterno) ?? 0) - (hybrid.get(a.codigoInterno) ?? 0);
+  const preference = hasCodeEvidence(a) || hasCodeEvidence(b) ? 0 :
+    Number(b.codigoInterno === remembered) - Number(a.codigoInterno === remembered);
   return (
     Number(!hasCodeEvidence(a)) - Number(!hasCodeEvidence(b)) ||
+    preference ||
     retrieval ||
     (b.similarity ?? -1) - (a.similarity ?? -1) ||
     compareText(a.codigoInterno, b.codigoInterno) ||
@@ -493,6 +540,8 @@ function matchLine(line: ExtraidaLinea, index: number, ctx: MatchContext): LineM
   const excluded: ExcludedCandidate[] = [];
   const incompatibleCodeIds: string[] = [];
   const hybrid = ctx.hybrid.get(index) ?? new Map<string, number>();
+  const feedback = ctx.feedback.get(index);
+  const remembered = feedback?.decision === 'confirmado' ? feedback.codigoInterno : null;
 
   for (const prepared of ctx.catalog) {
     const { product } = prepared;
@@ -503,7 +552,7 @@ function matchLine(line: ExtraidaLinea, index: number, ctx: MatchContext): LineM
     });
     const score = text === '' ? null : similarity(lineTrigrams, prepared.trigrams);
     const fuzzy = !prepared.placeholder && score !== null && score >= bounds.minSimilarity;
-    const retrieved = !prepared.placeholder && hybrid.has(product.codigo_interno);
+    const retrieved = !prepared.placeholder && (hybrid.has(product.codigo_interno) || remembered === product.codigo_interno);
     if (sources.length === 0 && !fuzzy && !retrieved) continue;
     if (prepared.placeholder) {
       excluded.push({ codigoInterno: product.codigo_interno, reasons: ['placeholder'] });
@@ -535,7 +584,7 @@ function matchLine(line: ExtraidaLinea, index: number, ctx: MatchContext): LineM
     });
   }
 
-  candidates.sort((a, b) => compareCandidates(a, b, hybrid));
+  candidates.sort((a, b) => compareCandidates(a, b, hybrid, remembered));
   excluded.sort((a, b) => compareText(a.codigoInterno, b.codigoInterno));
   // Conflicts and status read every candidate, so the per-line cap can never hide them.
   const conflicts = findConflicts(candidates, aliases.conflict, incompatibleCodeIds, text !== '');
@@ -551,6 +600,7 @@ function matchLine(line: ExtraidaLinea, index: number, ctx: MatchContext): LineM
     conflicts,
     omittedCandidates: candidates.length - kept.length,
     reasons: Array.from(reasons).sort(compareText),
+    ...(feedback && (feedback.decision === 'producto_nuevo' || kept.some(c => c.codigoInterno === remembered)) ? { feedback } : {}),
   };
 }
 
@@ -573,6 +623,7 @@ export function matchInvoiceLines(input: MatchInvoiceLinesInput): MatchInvoiceLi
     aliases,
     bounds,
     hybrid: indexHybridRanks(input.hybridRanks, input.lines.length, bounds),
+    feedback: new Map(parseProductFeedback(input.feedback ?? [], input.lines.length, bounds.maxLines).decisiones.map(item => [item.lineIndex, item])),
   };
   return { ok: true, lines: input.lines.map((line, index) => matchLine(line, index, ctx)) };
 }

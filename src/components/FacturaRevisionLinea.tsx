@@ -172,6 +172,13 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
       <View style={[styles.caja, { borderColor: colors.border }]}>
         <Texto small tone="muted">Producto del catálogo (decisión humana, distinta de la lectura OCR)</Texto>
         <Texto testID={`${id}-decision`} tone={efectiva.asociacion.tipo === 'pendiente' ? 'warning' : 'text'}>{decisionTexto(efectiva)}</Texto>
+        {match?.feedback ? (
+          <Texto testID={`${id}-feedback`} small tone="warning">
+            {match.feedback.decision === 'producto_nuevo'
+              ? 'Marcado como nuevo en una revisión anterior. Comprueba el catálogo antes de crear un producto.'
+              : `Coincidencia guardada anteriormente: ${match.feedback.codigoInterno}. Revisa y confirma el producto.`}
+          </Texto>
+        ) : null}
         {match && match.candidates.length > 0 ? (
           match.candidates.map(candidato => (
             <Boton
