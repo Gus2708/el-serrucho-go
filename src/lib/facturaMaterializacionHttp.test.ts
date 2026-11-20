@@ -99,13 +99,46 @@ it('preserves the existing approved-product payload and network path', async () 
   expect(result.calls).toHaveLength(4);
 });
 
-it.each([undefined, 'x'.repeat(101), ' A', 'A ', 'A,or.BAD'])('rejects missing or unsupported new codes without staging: %s', async code => {
+it.each([
+  [undefined, 409],
+  ['x'.repeat(81), 409],
+  ['x'.repeat(100), 409],
+  ['x'.repeat(101), 409],
+  ['A,or.BAD', 409],
+  [' A', 422],
+  ['A ', 422],
+] as const)('rejects missing or unsupported new codes without staging: %s', async (code, expectedStatus) => {
   const result = await run({ mutate: data => {
     data.content = { ...data.content, lineas: data.content.lineas.map(line => ({ ...line,
       codigoBarras: code === undefined ? { usarCodigoFactura: false } : { usarCodigoFactura: false, codigoEscaneado: code } })) };
   } });
-  expect(result.response.status).toBeGreaterThanOrEqual(400);
+  expect(result.response.status).toBe(expectedStatus);
   expect(result.payload).toBeNull();
+  expect(result.calls.some(call => call.url.includes('/productos_view?'))).toBe(false);
+});
+
+it('accepts an 80-character new captured code and preserves a distinct printed supplier reference', async () => {
+  const code80 = '0'.repeat(80);
+  const printedRef = '00-REF SUPPLIER 100';
+  const result = await run({ mutate: data => {
+    data.extraction = { ...data.extraction, lineas: data.extraction.lineas.map(line => ({ ...line, codigoProveedor: printedRef })) };
+    data.content = { ...data.content, lineas: data.content.lineas.map(line => ({ ...line,
+      codigoBarras: { usarCodigoFactura: false, codigoEscaneado: code80 } })) };
+  } });
+  expect(result.response.status).toBe(200);
+  expect(result.payload.items[0]).toMatchObject({ codigo_producto: code80, referencia: printedRef, es_nuevo: true });
+});
+
+it('does not apply the new-product captured-code rule to confirmed existing products', async () => {
+  const existingCode = 'SKU#1 80';
+  const result = await run({ mutate: data => {
+    data.content = { ...data.content, lineas: data.content.lineas.map(line => ({ ...line,
+      asociacion: { tipo: 'confirmado', codigoInterno: existingCode, evidencia: 'manual', motivo: 'Existing catalog SKU' },
+      codigoBarras: { usarCodigoFactura: false, codigoEscaneado: 'x'.repeat(100) } })) };
+  } });
+  expect(result.response.status).toBe(200);
+  expect(result.payload.items[0]).toMatchObject({ codigo_producto: existingCode, referencia: null, es_nuevo: false });
+  expect(result.calls).toHaveLength(4);
 });
 
 it('preserves alphanumeric captured codes and corrected invoice references', async () => {

@@ -231,6 +231,7 @@ const EXTRACTIONS_LIMIT = 20;
 const CATALOG_QUERY_CAP = 200;
 const COLLISION_QUERY_CAP = 500;
 const MAX_DESCRIPTION_QUERIES = 40;
+const MAX_CODE_FALLBACK_QUERIES = 40;
 const MAX_CODES_PER_QUERY = 100;
 /** Values that can ride inside a PostgREST in.(...) list without quoting or injection risk. */
 const SAFE_FILTER_VALUE = /^[A-Za-z0-9._/-]{1,80}$/;
@@ -240,6 +241,10 @@ const MAX_HYBRID_GROUPS = 200;
 const MAX_HYBRID_ENTRIES = 8;
 const MAX_HYBRID_SKUS = MAX_CODES_PER_QUERY * 4;
 const HYBRID_SOURCES = ['lexical', 'semantic'] as const;
+
+function escapeIlikeLiteral(value: string): string {
+  return value.replace(/[\\%_*]/g, '\\$&');
+}
 
 function descriptionTerms(text: string | null): string[] | null {
   const words = (text ?? '').match(/[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ]{3,}/g);
@@ -496,7 +501,7 @@ export function createFacturaRevisionRepository(client: RevisionClient): Factura
     },
 
     async buscarCandidatos(lineas, contexto) {
-      const codes = [...new Set(lineas.map(l => l.codigoProveedor).filter((c): c is string => c !== null && c !== ''))];
+      const codes = [...new Set(lineas.map(l => l.codigoProveedor?.trim() ?? '').filter(c => c !== ''))];
       const safeCodes = codes.filter(code => SAFE_FILTER_VALUE.test(code));
       let parcial = safeCodes.length !== codes.length;
       const reads: Read[] = [];
@@ -504,6 +509,7 @@ export function createFacturaRevisionRepository(client: RevisionClient): Factura
         reads.push(client.from('productos_view').select('*').in('codigo_interno', part).limit(CATALOG_QUERY_CAP));
         reads.push(client.from('productos_view').select('*').in('codigo_barras', part).limit(CATALOG_QUERY_CAP));
       }
+      const exactReadCount = reads.length;
       const patternsByTerms = new Map<string, string[]>();
       for (const linea of lineas) {
         const terms = descriptionTerms(linea.descripcion);
@@ -528,10 +534,39 @@ export function createFacturaRevisionRepository(client: RevisionClient): Factura
       }
       const results = await Promise.all(reads.map(read => readCatalog(read, CATALOG_QUERY_CAP)));
       const byCode = new Map<string, Producto>();
-      for (const result of results) {
+      const resolvedExact = new Set<string>();
+      results.forEach((result, index) => {
         if (!result.ok) parcial = true;
         for (const row of result.rows) {
+          if (index < exactReadCount) {
+            if (isText(row.codigo_interno)) resolvedExact.add(row.codigo_interno.toUpperCase());
+            if (isText(row.codigo_barras)) resolvedExact.add(row.codigo_barras.toUpperCase());
+          }
           if (isText(row.codigo_interno) && !byCode.has(row.codigo_interno)) byCode.set(row.codigo_interno, row as unknown as Producto);
+        }
+      });
+      // Bounded literal case-insensitive fallback only for letter-bearing safe codes unresolved by exact reads.
+      const fallbackByKey = new Map<string, string>();
+      for (const code of safeCodes) {
+        if (!/[A-Za-z]/.test(code)) continue;
+        const upper = code.toUpperCase();
+        if (!resolvedExact.has(upper) && !fallbackByKey.has(upper)) fallbackByKey.set(upper, code);
+      }
+      const fallbackCodes = [...fallbackByKey.values()];
+      if (fallbackCodes.length > MAX_CODE_FALLBACK_QUERIES) parcial = true;
+      if (fallbackCodes.length > 0) {
+        const fallbackReads: Read[] = [];
+        for (const code of fallbackCodes.slice(0, MAX_CODE_FALLBACK_QUERIES)) {
+          const literal = escapeIlikeLiteral(code);
+          fallbackReads.push(client.from('productos_view').select('*').ilike('codigo_interno', literal).limit(CATALOG_QUERY_CAP));
+          fallbackReads.push(client.from('productos_view').select('*').ilike('codigo_barras', literal).limit(CATALOG_QUERY_CAP));
+        }
+        const fallbackResults = await Promise.all(fallbackReads.map(read => readCatalog(read, CATALOG_QUERY_CAP)));
+        for (const result of fallbackResults) {
+          if (!result.ok) parcial = true;
+          for (const row of result.rows) {
+            if (isText(row.codigo_interno) && !byCode.has(row.codigo_interno)) byCode.set(row.codigo_interno, row as unknown as Producto);
+          }
         }
       }
       if (hybridRequest === null) return { productos: [...byCode.values()], parcial };

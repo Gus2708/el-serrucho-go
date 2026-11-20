@@ -153,7 +153,7 @@ function buildDraft(invoice: StoredInvoice, revision: StoredRevision, extraction
     const effectiveLine = effective.lineas.find(row => row.lineaId === line.lineaId);
     const isNew = line.decisionAsociacion.tipo === 'producto_nuevo';
     const capturedCode = reviewedLine?.codigoBarras.codigoEscaneado;
-    if (isNew && (!capturedCode || !/^[A-Za-z0-9._/-]{1,100}$/.test(capturedCode))) return null;
+    if (isNew && (!capturedCode || !/^[A-Za-z0-9._/-]{1,80}$/.test(capturedCode))) return null;
     const sku = isNew ? capturedCode : line.decisionAsociacion.codigoInterno;
     const reference = isNew ? effectiveLine?.campos.codigoProveedor.valor ?? null : null;
     if (reference !== null && (reference.length > 100 || reference !== reference.trim())) return null;

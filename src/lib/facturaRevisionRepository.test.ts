@@ -204,6 +204,24 @@ describe('bounded catalog reads', () => {
     precioUnitario: '1', descuentos: [], tasaIva: '16', total: null, incertidumbre: null, ...over,
   });
   const producto = (codigo: string, barras: string | null = null) => ({ codigo_interno: codigo, descripcion: `P ${codigo}`, codigo_barras: barras, existencia: 0, costo: 1, precio_venta: 2 });
+  function ilikeToRegex(pattern: string): RegExp {
+    let source = '^';
+    for (let i = 0; i < pattern.length; i += 1) {
+      const ch = pattern[i];
+      if (ch === '\\' && i + 1 < pattern.length) {
+        source += pattern[i + 1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        i += 1;
+      } else if (ch === '%') {
+        source += '.*';
+      } else if (ch === '_') {
+        source += '.';
+      } else {
+        source += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      }
+    }
+    return new RegExp(`${source}$`, 'i');
+  }
+
   const responderCatalogo = (catalog: ReturnType<typeof producto>[]) => (call: Call): Answer => {
     const rows = catalog.filter(row => {
       const inMatches = stepsOf(call, 'in').every(([, column, values]) =>
@@ -211,8 +229,7 @@ describe('bounded catalog reads', () => {
       );
       const descriptionMatches = stepsOf(call, 'ilike').every(([, column, pattern]) => {
         if (typeof pattern !== 'string') return false;
-        const regex = new RegExp(`^${pattern.split('%').map(part => part.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')).join('.*')}$`, 'i');
-        return regex.test(String(row[column as keyof typeof row] ?? ''));
+        return ilikeToRegex(pattern).test(String(row[column as keyof typeof row] ?? ''));
       });
       return inMatches && descriptionMatches;
     });
@@ -250,7 +267,7 @@ describe('bounded catalog reads', () => {
   it('keeps exact internal-code and barcode reads when descriptions are empty', async () => {
     const internal = producto('SKU-A');
     const barcode = producto('SKU-B', '00123A');
-    const { client } = fakeClient({ tables: { productos_view: responderCatalogo([internal, barcode]) } });
+    const { client, calls } = fakeClient({ tables: { productos_view: responderCatalogo([internal, barcode]) } });
 
     const result = await createFacturaRevisionRepository(client).buscarCandidatos([
       linea(1, { codigoProveedor: 'SKU-A', descripcion: null }),
@@ -259,6 +276,97 @@ describe('bounded catalog reads', () => {
 
     expect(result.productos).toEqual([internal, barcode]);
     expect(result.parcial).toBe(false);
+    expect(calls).toHaveLength(2);
+    expect(calls.flatMap(call => stepsOf(call, 'ilike'))).toEqual([]);
+  });
+
+  it('retrieves S23 supplier references and internal codes across case and edge-whitespace variance without mutating input', async () => {
+    const byRef = producto('7591234000018', 'AB-0042');
+    const byInternal = producto('00123A', 'SIN_CODIGO');
+    const numeric = producto('7590000000099', '00123');
+    const stripped = producto('7590000000088', '123');
+    const input = [
+      linea(1, { codigoProveedor: ' ab-0042 ', descripcion: null }),
+      linea(2, { codigoProveedor: '00123a', descripcion: null }),
+      linea(3, { codigoProveedor: ' 00123 ', descripcion: null }),
+    ];
+    const snapshot = JSON.stringify(input);
+    const { client, calls } = fakeClient({ tables: { productos_view: responderCatalogo([byRef, byInternal, numeric, stripped]) } });
+
+    const result = await createFacturaRevisionRepository(client).buscarCandidatos(input);
+
+    expect(JSON.stringify(input)).toBe(snapshot);
+    expect(result.productos.map(p => p.codigo_interno)).toEqual(['7590000000099', '7591234000018', '00123A']);
+    expect(result.parcial).toBe(false);
+    expect(calls.flatMap(call => stepsOf(call, 'or'))).toEqual([]);
+    const ilikePatterns = calls.flatMap(call => stepsOf(call, 'ilike')).map(([, , pattern]) => pattern);
+    expect(ilikePatterns).not.toContain('00123');
+  });
+
+  it('escapes underscores literally in case-insensitive fallback so wildcards never broaden matches', async () => {
+    const exactUnderscore = producto('7591234000018', 'AB_01');
+    const otherChar = producto('7591234000019', 'ABX01');
+    const hyphen = producto('7591234000020', 'AB-01');
+    const { client, calls } = fakeClient({
+      tables: { productos_view: responderCatalogo([exactUnderscore, otherChar, hyphen]) },
+    });
+
+    const result = await createFacturaRevisionRepository(client).buscarCandidatos([
+      linea(1, { codigoProveedor: 'ab_01', descripcion: null }),
+    ]);
+
+    expect(result.productos).toEqual([exactUnderscore]);
+    expect(result.parcial).toBe(false);
+    const ilikeSteps = calls.flatMap(call => stepsOf(call, 'ilike'));
+    expect(ilikeSteps).toEqual([
+      ['ilike', 'codigo_interno', 'ab\\_01'],
+      ['ilike', 'codigo_barras', 'ab\\_01'],
+    ]);
+  });
+
+  it('skips fallback for unresolved non-letter codes and bounds unresolved letter-code fallbacks', async () => {
+    const nonLetter = fakeClient({ tables: { productos_view: responderCatalogo([]) } });
+    const nonLetterResult = await createFacturaRevisionRepository(nonLetter.client).buscarCandidatos([
+      linea(1, { codigoProveedor: '00-123/45', descripcion: null }),
+    ]);
+    expect(nonLetterResult).toEqual({ productos: [], parcial: false });
+    expect(nonLetter.calls.flatMap(call => stepsOf(call, 'ilike'))).toEqual([]);
+
+    const manyLines = Array.from({ length: 45 }, (_x, i) => linea(i + 1, { codigoProveedor: `ref-${i + 1}`, descripcion: null }));
+    const many = fakeClient({ tables: { productos_view: responderCatalogo([]) } });
+    const manyResult = await createFacturaRevisionRepository(many.client).buscarCandidatos(manyLines);
+    expect(manyResult.parcial).toBe(true);
+    expect(many.calls.filter(call => stepsOf(call, 'ilike').length > 0)).toHaveLength(80);
+  });
+
+  it('marks partial when a case-insensitive fallback read fails or hits the cap and preserves hybrid/feedback flow', async () => {
+    const failing = fakeClient({
+      tables: {
+        productos_view: (call: Call) => (stepsOf(call, 'ilike').length > 0 ? { error: { code: 'XX000' } } : { data: [] }),
+      },
+    });
+    const failResult = await createFacturaRevisionRepository(failing.client).buscarCandidatos([
+      linea(1, { codigoProveedor: 'ab-0042', descripcion: null }),
+    ]);
+    expect(failResult).toEqual({ productos: [], parcial: true });
+
+    const matched = producto('7591234000018', 'AB-0042');
+    const context = { facturaId: FACTURA, extraccionId: EXTRACCION, versionEsperada: 3 };
+    const hybrid = fakeClient({
+      tables: { productos_view: responderCatalogo([matched]) },
+      invoke: async () => ({ data: { hybridRanks: [{ lineIndex: 0, lexical: [{ codigoInterno: '7591234000018', rank: 1 }] }], parcial: false }, error: null }),
+      rpc: { data: { decisiones: [{ lineIndex: 0, decision: 'confirmado', codigoInterno: '7591234000018' }] } },
+    });
+    const hybridResult = await createFacturaRevisionRepository(hybrid.client).buscarCandidatos(
+      [linea(1, { codigoProveedor: 'ab-0042', descripcion: null })],
+      context,
+    );
+    expect(hybridResult.productos).toEqual([matched]);
+    expect(hybridResult.parcial).toBe(false);
+    expect(hybridResult.hybridRanks).toEqual([{ lineIndex: 0, lexical: [{ codigoInterno: '7591234000018', rank: 1 }] }]);
+    expect(hybridResult.feedback).toEqual([{ lineIndex: 0, decision: 'confirmado', codigoInterno: '7591234000018' }]);
+    const hydrationCalls = hybrid.calls.filter(call => stepsOf(call, 'in').some(([, col, vals]) => col === 'codigo_interno' && Array.isArray(vals) && vals.includes('7591234000018')));
+    expect(hydrationCalls).toHaveLength(0);
   });
 
   it('returns no candidates without marking a blank code and description as a failed lookup', async () => {

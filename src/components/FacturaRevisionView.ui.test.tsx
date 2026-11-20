@@ -201,6 +201,7 @@ describe('barcode capture safety', () => {
   it('explains that the scan goes in C?digo and the invoice code in Referencia', async () => {
     await ready(fakeRepo());
     expect(screen.getByText('El código escaneado se usará en Código; el código de la factura, en Referencia.')).toBeTruthy();
+    expect(screen.getByText('Para preparar el borrador de compra, el código nuevo admite hasta 80 caracteres (letras, números, . _ / -), sin recortar.')).toBeTruthy();
   });
 
   it('cancels without capturing and ignores a closed camera callback after reopening', async () => {

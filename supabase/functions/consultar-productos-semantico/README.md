@@ -112,16 +112,22 @@ function is never invoked by this endpoint.
 
 `createFacturaRevisionRepository(client).buscarCandidatos(lineas, contexto?)` is the only caller.
 
-- **No `contexto`** (inventory, manual entry, any plain lookup): exactly the previous bounded exact-code, barcode
-  and description reads. It never invokes this endpoint, so a plain lookup is never a billable request.
+- **No `contexto`** (inventory, manual entry, any plain lookup): bounded exact-code, barcode, and description reads.
+  Printed supplier codes trim outer whitespace for query lookup only (stored OCR text, leading zeros, and punctuation
+  stay untouched), run exact `in('codigo_interno', ...)` / `in('codigo_barras', ...)` reads first, and fall back to
+  bounded literal case-insensitive `ilike` reads (escaping `_` literally, capped at 40 unique unresolved letter-bearing
+  codes) only for codes unresolved by the exact reads. It never invokes this endpoint, so a plain lookup is never a
+  billable request.
 - **With a valid `contexto`** `{ facturaId, extraccionId, versionEsperada }` (UUIDs, positive safe integer): the
   same reads plus **one** `client.functions.invoke('consultar-productos-semantico', { body })` per lookup. The
   body holds only those three fields: no descriptions, image, supplier or header data. An invalid context never
   invokes and marks the result `parcial`. The call is never retried.
 - The returned `hybridRanks` are **validated, never trusted**: at most 200 groups, `lineIndex` an integer inside
   the lines read, at most 8 entries per list, ranks integers 1 to 8, SKUs safe for a PostgREST `in` filter
-  (never normalized: leading zeros and case stay), the best rank kept per SKU and source. Any dropped or
-  truncated piece, or an endpoint `parcial` that is not exactly `false`, makes the result `parcial`.
+  (`^[A-Za-z0-9._/-]{1,80}$`, matching saved feedback and new-product draft preparation in
+  `materializar-compra-factura`, while printed supplier references stay distinct up to 100 chars; leading zeros and
+  case stay untouched), the best rank kept per SKU and source. Any dropped or truncated piece, or an endpoint
+  `parcial` that is not exactly `false`, makes the result `parcial`.
 - Each returned SKU is **hydrated** from `productos_view` with the existing bounded `in('codigo_interno', ...)`
   read (chunks of 100, cap-checked). Only rows that exist now are added to the catalog after the exact-read rows;
   no endpoint-supplied description or price is used. Ranks of SKUs that are missing, hidden or unreadable are

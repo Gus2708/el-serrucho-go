@@ -97,6 +97,7 @@ export default function FacturaCodigoBarrasNuevo(props: CapturaCodigoNuevoProps)
   return (
     <View>
       <Texto small tone="muted">El código escaneado se usará en Código; el código de la factura, en Referencia.</Texto>
+      <Texto small tone="muted">Para preparar el borrador de compra, el código nuevo admite hasta 80 caracteres (letras, números, . _ / -), sin recortar.</Texto>
       <Texto testID={`${id}-barras-escaneado`}>{codigo ?? 'Sin código capturado'}</Texto>
       <Boton testID={`${id}-barras-escanear`} label="Escanear código de barras" onPress={abrir} />
       <Entrada testID={`${id}-barras-manual`} label="Código de barras manual" value={manual} onChangeText={setManual} />
