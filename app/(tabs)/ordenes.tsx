@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { HIDE_ON_KEYBOARD, NO_BOTTOM_INSET_ON_KEYBOARD } from '../../src/web/keyboardMarkers';
 import { notify, confirm } from '../../src/lib/notify';
+import { trackAuditEvent } from '../../src/lib/auditLog';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -945,6 +946,12 @@ function HistorialView({
               throw new Error('No se pudo eliminar: sin permisos para este registro.');
             }
 
+            trackAuditEvent({
+              evento: 'orden_eliminada',
+              entidad: 'ordenes_cambio',
+              entidadId: o.id,
+            });
+
             // Force immediate refetch
             await queryClient.refetchQueries({ queryKey: ['ordenes-history'], type: 'all' });
           } else {
@@ -966,6 +973,12 @@ function HistorialView({
             if (headerCount === 0) {
               throw new Error('No se pudo eliminar: sin permisos para este registro.');
             }
+
+            trackAuditEvent({
+              evento: 'presupuesto_eliminado',
+              entidad: 'presupuestos',
+              entidadId: o.id,
+            });
 
             // Force total reset for infinite query then refetch
             queryClient.removeQueries({ queryKey: ['presupuestos-history'] });

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { Platform } from 'react-native';
 import { isDemoActive } from '../demo/useDemoStore';
+import { trackAuditEvent } from '../lib/auditLog';
 
 const WIDGET_URL = process.env.EXPO_PUBLIC_WIDGET_API_URL || 'http://192.168.1.143:5000';
 
@@ -80,7 +81,14 @@ export function useSyncStatus() {
       if (error) throw new Error('Error al encolar comando: ' + error.message);
       return { via: 'cloud' as const, queued: true };
     },
-    onSuccess: () => {
+    onSuccess: (result, mode) => {
+      if (result.via !== 'demo') {
+        trackAuditEvent({
+          evento: 'sync_manual',
+          entidad: 'comandos_remotos',
+          detalle: { modo: mode ?? 'sync_all', via: result.via },
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ['sync-status'] });
     },
   });
