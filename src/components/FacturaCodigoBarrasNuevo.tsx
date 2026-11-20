@@ -96,7 +96,7 @@ export default function FacturaCodigoBarrasNuevo(props: CapturaCodigoNuevoProps)
 
   return (
     <View>
-      <Texto small tone="muted">Código físico del producto nuevo (separado del código impreso del proveedor)</Texto>
+      <Texto small tone="muted">El código escaneado se usará en Código; el código de la factura, en Referencia.</Texto>
       <Texto testID={`${id}-barras-escaneado`}>{codigo ?? 'Sin código capturado'}</Texto>
       <Boton testID={`${id}-barras-escanear`} label="Escanear código de barras" onPress={abrir} />
       <Entrada testID={`${id}-barras-manual`} label="Código de barras manual" value={manual} onChangeText={setManual} />

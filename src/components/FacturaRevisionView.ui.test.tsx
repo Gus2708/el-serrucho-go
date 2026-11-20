@@ -198,6 +198,11 @@ describe('barcode capture safety', () => {
     await pressId('revision-linea-3-nuevo-aplicar');
     return view;
   }
+  it('explains that the scan goes in C?digo and the invoice code in Referencia', async () => {
+    await ready(fakeRepo());
+    expect(screen.getByText('El código escaneado se usará en Código; el código de la factura, en Referencia.')).toBeTruthy();
+  });
+
   it('cancels without capturing and ignores a closed camera callback after reopening', async () => {
     await ready(fakeRepo());
     await pressId('revision-linea-3-barras-escanear');

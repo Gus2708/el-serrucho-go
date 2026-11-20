@@ -1004,6 +1004,24 @@ describe('facturas_proveedores_compras', () => {
     });
   });
 
+  it('persists scanned new-product codes and invoice references in one replay-safe draft only', async () => {
+    const a = await approved();
+    const payload = {
+      header: { proveedor_codigo: null, proveedor_nombre: 'Supplier', numero_documento: '001', nota: null, titulo: 'Invoice 001' },
+      items: [{ codigo_producto: '0001234567890', descripcion: 'New pliers', cantidad: '2', costo: '6.06',
+        precio: '12', referencia: '00-INV-A', es_nuevo: true }],
+    };
+    const first = await materializar(a, await stageMaterialization(a, payload));
+    expect(await rows('select status from public.compras_app where id = $1', [first.compra_id]))
+      .toEqual([{ status: 'borrador' }]);
+    expect(await rows('select codigo_producto, referencia, es_nuevo, cantidad::text, costo::text, precio::text from public.compras_app_items where compra_id = $1', [first.compra_id]))
+      .toEqual([{ codigo_producto: '0001234567890', referencia: '00-INV-A', es_nuevo: true, cantidad: '2', costo: '6.06', precio: '12' }]);
+    const beforeReplay = await snapshot();
+    const replay = await materializar(a, await stageMaterialization(a, payload));
+    expect(replay).toMatchObject({ compra_id: first.compra_id, replay: true });
+    expect(await snapshot()).toBe(beforeReplay);
+  });
+
   describe('unlinked manual behavior is unchanged', () => {
     const TITLE = 'ctl';
 

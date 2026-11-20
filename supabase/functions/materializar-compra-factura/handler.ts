@@ -54,8 +54,8 @@ interface DraftItem {
   readonly cantidad: string;
   readonly costo: string;
   readonly precio: string;
-  readonly referencia: null;
-  readonly es_nuevo: false;
+  readonly referencia: string | null;
+  readonly es_nuevo: boolean;
 }
 
 interface DraftPayload {
@@ -149,7 +149,14 @@ function buildDraft(invoice: StoredInvoice, revision: StoredRevision, extraction
   const bySkuCost = new Map<string, string>();
   const bySkuPrice = new Map<string, string>();
   for (const line of calculation.lineas) {
-    const sku = line.decisionAsociacion.tipo === 'confirmado' ? line.decisionAsociacion.codigoInterno : null;
+    const reviewedLine = contenido.lineas.find(row => row.lineaId === line.lineaId);
+    const effectiveLine = effective.lineas.find(row => row.lineaId === line.lineaId);
+    const isNew = line.decisionAsociacion.tipo === 'producto_nuevo';
+    const capturedCode = reviewedLine?.codigoBarras.codigoEscaneado;
+    if (isNew && (!capturedCode || !/^[A-Za-z0-9._/-]{1,100}$/.test(capturedCode))) return null;
+    const sku = isNew ? capturedCode : line.decisionAsociacion.codigoInterno;
+    const reference = isNew ? effectiveLine?.campos.codigoProveedor.valor ?? null : null;
+    if (reference !== null && (reference.length > 100 || reference !== reference.trim())) return null;
     if (!sku || line.cantidadStock === null || line.costoNetoUnitarioStock === null || line.descripcion === null || line.descripcion.trim() === '') return null;
     const resolvedPrice = resolverPrecioVenta({
       tipoDocumento: contenido.cabecera.tipoDocumento ?? null,
@@ -174,14 +181,14 @@ function buildDraft(invoice: StoredInvoice, revision: StoredRevision, extraction
         cantidad: toDecimalString(parsedQuantity),
         costo: toDecimalString(parsedCost),
         precio: toDecimalString(parsedPrice),
-        referencia: null,
-        es_nuevo: false,
+        referencia: reference,
+        es_nuevo: isNew,
       });
       bySkuCost.set(sku, toDecimalString(parsedCost));
       bySkuPrice.set(sku, toDecimalString(parsedPrice));
       continue;
     }
-    if (current.descripcion !== line.descripcion || bySkuCost.get(sku) !== toDecimalString(parsedCost) || bySkuPrice.get(sku) !== toDecimalString(parsedPrice)) return null;
+    if (current.es_nuevo !== isNew || current.referencia !== reference || current.descripcion !== line.descripcion || bySkuCost.get(sku) !== toDecimalString(parsedCost) || bySkuPrice.get(sku) !== toDecimalString(parsedPrice)) return null;
     const priorQuantity = parseDecimal(current.cantidad);
     if (!priorQuantity) return null;
     const totalQuantity = addDecimal(priorQuantity, parsedQuantity);
@@ -202,6 +209,30 @@ function buildDraft(invoice: StoredInvoice, revision: StoredRevision, extraction
     },
     items: [...bySku.values()],
   };
+}
+
+/** Draft-time collision check only; execution must recheck identity before creating products. */
+async function newCodesAvailable(payload: DraftPayload, supabaseUrl: string, userJwt: string, anonKey: string, fetchFn: typeof fetch): Promise<boolean> {
+  const newItems = payload.items.filter(item => item.es_nuevo);
+  if (newItems.length > 200) return false;
+  const deadline = AbortSignal.timeout(15000);
+  for (const item of newItems) {
+    for (const field of ['codigo_interno', 'codigo_barras', 'referencia']) {
+      const query = new URLSearchParams({ select: 'codigo_interno', [field]: `eq.${item.codigo_producto}`, limit: '1' });
+      try {
+        const response = await fetchFn(`${supabaseUrl}/rest/v1/productos_view?${query}`, {
+          headers: { Authorization: `Bearer ${userJwt}`, apikey: anonKey, Prefer: 'count=exact' },
+          signal: deadline,
+        });
+        if (response.status !== 200 || response.headers.get('content-range') !== '*/0') return false;
+        const rows: unknown = await response.json();
+        if (!Array.isArray(rows) || rows.length !== 0) return false;
+      } catch {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 export async function handleFacturaMaterializationRequest(request: Request, deps: HandlerDependencies = {}): Promise<Response> {
@@ -276,6 +307,10 @@ export async function handleFacturaMaterializationRequest(request: Request, deps
   if (!validated.ok) return errorResponse('fuente_inconsistente', 'La revisión almacenada no es válida', 422);
   const payload = buildDraft(invoice, latest, parsedExtraction.data, validated.contenido);
   if (!payload) return errorResponse('revision_bloqueada', 'La revisión no puede representarse como compra sin cambiar líneas, costos o decisiones', 409);
+
+  if (!await newCodesAvailable(payload, supabaseUrl, userJwt, anonKey, fetchFn)) {
+    return errorResponse('codigo_nuevo_no_verificado', 'No se pudo verificar un c?digo nuevo sin coincidencias en el cat?logo', 409);
+  }
 
   const token = crypto.randomUUID();
   let stage: Response;
