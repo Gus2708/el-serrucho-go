@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { StyleSheet } from 'react-native';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react-native';
-import FacturaRevisionView, { type FacturaRevisionViewProps } from './FacturaRevisionView';
+import FacturaRevisionView, { type EtapaRevision, type FacturaRevisionViewProps } from './FacturaRevisionView';
 import { supabase } from '../lib/supabase';
 import { reanudarBorradorCompra } from '../hooks/useBorradores';
 import {
@@ -15,9 +15,11 @@ import { crearRevisionDesdeExtraccion, aplicarEdicion, type RevisionContenido } 
 import type { FacturaExtraccionPayload } from '../lib/facturaExtractionContract';
 import { OWNER_A, OWNER_B, FACTURA_1, deferred, renderWithProviders, settle } from '../test-utils/facturaUiHarness';
 import { elSerrucho } from '../theme/brands/el-serrucho';
+import { useDeviceSize } from '../hooks/useDeviceSize';
 
 jest.mock('../lib/supabase', () => ({ supabase: { functions: { invoke: jest.fn() } } }));
 jest.mock('../hooks/useBorradores', () => ({ reanudarBorradorCompra: jest.fn() }));
+jest.mock('../hooks/useDeviceSize', () => ({ useDeviceSize: jest.fn() }));
 let mockScannerProps: { onScan: (code: string) => void; onClose: () => void } | null = null;
 jest.mock('./BarcodeScannerModal', () => ({ BarcodeScannerModal: ({ visible, onScan, onClose }: any) => {
   if (!visible) return null;
@@ -113,40 +115,141 @@ async function openView(repo: Mocks, over: Partial<FacturaRevisionViewProps> = {
   return view;
 }
 
-const byId = (id: string) => screen.getByTestId(id);
-const maybeId = (id: string) => screen.queryByTestId(id);
-const textOf = (id: string): string => {
-  const node = byId(id);
+// ── Navigating the guided review ────────────────────────────────────────────
+// The review shows one stage at a time, one open line and collapsed disclosures. These helpers only open the stage, line
+// or disclosure that holds a control (through the real buttons); every assertion still goes through the control itself.
+const ETAPAS: readonly EtapaRevision[] = ['leer', 'productos', 'compra'];
+const CAMPOS_CABECERA_EXTRA = ['numeroControl', 'subtotal', 'total'];
+const CAMPOS_LINEA_CORREGIBLES = /^(codigoProveedor|descripcion|cantidad|unidad|precioUnitario|total)-/;
+const EN_FILA_O_DETALLE_ABIERTO = /^(|decision|abrir|estado|codigo)$/;
+const EN_MAS_OPCIONES = /^(importe-final|base|costo-unitario|pagina|ocr|descuentos-.*|quitar|barras-(codigo|usar|estado))$/;
+
+interface Ruta {
+  etapa: EtapaRevision | null;
+  /** Line whose detail must be open. */
+  linea?: string;
+  /** Disclosures to open, in order. */
+  despliegues: string[];
+}
+
+function rutaDe(id: string): Ruta {
+  const enLinea = /^revision-(linea|iva|factor)-(m?\d+)(?:-(.*))?$/.exec(id);
+  if (enLinea) {
+    const [, tipo, n, resto = ''] = enLinea;
+    const base = `revision-linea-${n}`;
+    if (tipo === 'linea' && EN_FILA_O_DETALLE_ABIERTO.test(resto)) return { etapa: 'productos', despliegues: [] };
+    const despliegues: string[] = [];
+    if (tipo === 'linea') {
+      if (CAMPOS_LINEA_CORREGIBLES.test(resto)) despliegues.push(`${base}-corregir`);
+      else if (resto.startsWith('tasaIva-')) despliegues.push(`revision-iva-${n}-otro`);
+      else if (resto.startsWith('factor-')) despliegues.push(`revision-factor-${n}-otro`);
+      else if (resto.startsWith('manual-')) despliegues.push(`${base}-manual-abrir`);
+      else if (resto.startsWith('nuevo-')) despliegues.push(`${base}-nuevo-abrir`);
+      else if (EN_MAS_OPCIONES.test(resto)) despliegues.push(`${base}-mas`);
+    }
+    return { etapa: 'productos', linea: n, despliegues };
+  }
+  const enCabecera = /^revision-cab-(\w+?)-(.*)$/.exec(id);
+  if (enCabecera) {
+    const campo = enCabecera[1];
+    return { etapa: 'leer', despliegues: [...(CAMPOS_CABECERA_EXTRA.includes(campo) ? ['revision-cab-mas'] : []), `revision-cab-${campo}-corregir`] };
+  }
+  if (/^revision-agregar-/.test(id)) return { etapa: 'productos', despliegues: ['revision-agregar-abrir'] };
+  if (/^revision-(extraer|iniciar-.*|aplicar-.*|reemplazo-motivo|cabecera-.*)$/.test(id)) return { etapa: 'leer', despliegues: ['revision-detalles-tecnicos'] };
+  if (/^revision-(tipo-.*|decision-precioIncluyeIva-.*)$/.test(id)) return { etapa: 'leer', despliegues: [] };
+  if (/^revision-(diferencias|pos|impacto-.*)$/.test(id)) return { etapa: 'compra', despliegues: ['revision-detalles-tecnicos'] };
+  if (/^revision-(totales|por-tasa|bloqueos|guardar|aprobar|materializar|motivo-guardado|pvp-pendiente|decision-.*)$/.test(id)) return { etapa: 'compra', despliegues: [] };
+  return { etapa: null, despliegues: [] };
+}
+
+function textoDe(nodo: { children?: unknown }): string {
   const parts: string[] = [];
   const walk = (value: unknown) => {
     if (typeof value === 'string') parts.push(value);
     else if (Array.isArray(value)) value.forEach(walk);
     else if (value && typeof value === 'object') walk((value as { children?: unknown }).children);
   };
-  walk(node.children);
+  walk(nodo.children);
   return parts.join('');
+}
+
+function abrirDespliegue(id: string): void {
+  const nodo = screen.queryByTestId(id);
+  if (nodo && nodo.props.accessibilityState?.expanded === false) fireEvent.press(nodo);
+}
+
+function irAEtapa(destino: EtapaRevision): void {
+  for (let paso = 0; paso < ETAPAS.length; paso++) {
+    const actual = ETAPAS.find(etapa => screen.queryByTestId(`revision-etapa-${etapa}`));
+    if (!actual || actual === destino) return;
+    const adelante = ETAPAS.indexOf(destino) > ETAPAS.indexOf(actual);
+    const boton = screen.queryByTestId(adelante ? 'revision-accion-principal' : 'revision-volver');
+    // Forward, the primary action only navigates when it says so: elsewhere it would read, save or approve.
+    if (!boton || (adelante && !/^Continuar/.test(textoDe(boton)))) return;
+    fireEvent.press(boton);
+  }
+}
+
+function visitar(id: string): void {
+  const ruta = rutaDe(id);
+  if (ruta.etapa) irAEtapa(ruta.etapa);
+  if (ruta.linea !== undefined && id !== `revision-linea-${ruta.linea}-abrir`) abrirDespliegue(`revision-linea-${ruta.linea}-abrir`);
+  for (const despliegue of ruta.despliegues) if (despliegue !== id) abrirDespliegue(despliegue);
+}
+
+const byId = (id: string) => {
+  visitar(id);
+  return screen.getByTestId(id);
+};
+const maybeId = (id: string) => {
+  visitar(id);
+  return screen.queryByTestId(id);
+};
+const textOf = (id: string): string => textoDe(byId(id));
+/** Like `screen.findByTestId`, after opening whatever holds the control. */
+const findId = async (id: string) => {
+  visitar(id);
+  return screen.findByTestId(id);
 };
 const isDisabled = (id: string): boolean => Boolean(byId(id).props.accessibilityState?.disabled);
+/** The footer holds one action: a control that is not the current action does not exist, which is as unavailable as disabled. */
+const noSePuede = (id: string): boolean => {
+  const nodo = maybeId(id);
+  return nodo === null || Boolean(nodo.props.accessibilityState?.disabled);
+};
 
 const invokeMaterializar = jest.mocked(supabase.functions.invoke);
 const reanudarCompra = jest.mocked(reanudarBorradorCompra);
 
+const TAMANO_TELEFONO = { width: 390, height: 800, isDesktop: false };
+const TAMANO_AMPLIO = { width: 1024, height: 800, isDesktop: true };
+const tamanoPantalla = jest.mocked(useDeviceSize);
+
 beforeEach(() => {
+  tamanoPantalla.mockReturnValue(TAMANO_TELEFONO);
   mockScannerProps = null;
   invokeMaterializar.mockReset();
   reanudarCompra.mockReset();
 });
 
 async function pressId(id: string): Promise<void> {
+  // Navigate first, outside the act below: its state updates only flush once that act ends.
+  visitar(id);
   await act(async () => {
-    fireEvent.press(byId(id));
+    fireEvent.press(screen.getByTestId(id));
   });
   await settle();
 }
 
+/** Presses a control only if it exists: a footer action that is not the current one is simply not there. */
+async function intentar(id: string): Promise<void> {
+  if (maybeId(id)) await pressId(id);
+}
+
 async function typeId(id: string, text: string): Promise<void> {
+  visitar(id);
   await act(async () => {
-    fireEvent.changeText(byId(id), text);
+    fireEvent.changeText(screen.getByTestId(id), text);
   });
 }
 
@@ -390,9 +493,11 @@ describe('review from an extraction', () => {
     await confirmEverything();
     await typeId('revision-motivo-guardado', 'Revision completa');
     await pressId('revision-guardar');
-    expect(screen.getByRole('button', { name: 'Preparar borrador de compra' })).toBeTruthy();
-    expect(isDisabled('revision-materializar')).toBe(true);
-    await pressId('revision-materializar');
+    // After saving, approval is the one current action; preparing is not offered yet.
+    expect(screen.getByRole('button', { name: 'Aprobar revisión' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Preparar borrador de compra' })).toBeNull();
+    expect(noSePuede('revision-materializar')).toBe(true);
+    await intentar('revision-materializar');
     expect(invokeMaterializar).not.toHaveBeenCalled();
     await pressId('revision-aprobar');
 
@@ -435,7 +540,7 @@ describe('review from an extraction', () => {
     const repo = fakeRepo();
     await startRevision(repo);
     expect(repo.buscarCandidatos).toHaveBeenCalledTimes(1);
-    expect(await screen.findByTestId('revision-linea-1-candidato-00123')).toBeTruthy();
+    expect(await findId('revision-linea-1-candidato-00123')).toBeTruthy();
     expect(textOf('revision-linea-1-decision')).toMatch(/Sin decidir/);
     await pressId('revision-linea-1-candidato-00123');
     expect(textOf('revision-linea-1-decision')).toMatch(/00123/);
@@ -457,7 +562,7 @@ describe('review from an extraction', () => {
 
     await startRevision(repo, {}, extraction);
 
-    expect(await screen.findByTestId('revision-linea-1-candidato-CAT-1')).toBeTruthy();
+    expect(await findId('revision-linea-1-candidato-CAT-1')).toBeTruthy();
     expect(textOf('revision-linea-1-decision')).toMatch(/Sin decidir/);
     expect(textOf('revision-linea-1-decision')).not.toMatch(/CAT-1/);
     await pressId('revision-linea-1-candidato-CAT-1');
@@ -468,13 +573,14 @@ describe('review from an extraction', () => {
   it('keeps a line without candidates unresolved and says why, never as a new product', async () => {
     const repo = fakeRepo({ buscarCandidatos: jest.fn(async () => ({ productos: [], parcial: false })) });
     await startRevision(repo);
-    expect(await screen.findByTestId('revision-linea-3-sin-candidatos')).toBeTruthy();
+    expect(await findId('revision-linea-3-sin-candidatos')).toBeTruthy();
     expect(textOf('revision-linea-3-decision')).toMatch(/Sin decidir/);
   });
 
   it('reports a partial catalog as unknown instead of implying there is no product', async () => {
     const repo = fakeRepo({ buscarCandidatos: jest.fn(async () => ({ productos: [], parcial: true })) });
     await startRevision(repo);
+    visitar('revision-linea-1');
     expect(await screen.findByText(/catálogo.*parcial|parcial.*catálogo/i)).toBeTruthy();
   });
 
@@ -500,7 +606,7 @@ describe('review from an extraction', () => {
     await pressId('scanner-mock-capture');
     expect(textOf('revision-linea-3-barras-escaneado')).toBe('000123-ABC');
     expect(textOf('revision-linea-3-codigo')).toBe('AB-9');
-    expect(await screen.findByTestId('revision-linea-3-barras-colision')).toBeTruthy();
+    expect(await findId('revision-linea-3-barras-colision')).toBeTruthy();
     expect(textOf('revision-linea-3-barras-colision')).toMatch(/EXISTING.*no se asignó/i);
     expect(repo.leerColisionesBarras).toHaveBeenCalledWith(['000123-ABC']);
     expect(textOf('revision-linea-3-decision')).toMatch(/Producto nuevo/);
@@ -588,9 +694,9 @@ describe('calculation, blockers and approval', () => {
     expect(blockers).toMatch(/recepción/i);
     expect(blockers).toMatch(/IVA/);
     expect(textOf('revision-estado')).toBe('Con bloqueos');
-    expect(isDisabled('revision-aprobar')).toBe(true);
-    expect(isDisabled('revision-materializar')).toBe(true);
-    await pressId('revision-materializar');
+    expect(noSePuede('revision-aprobar')).toBe(true);
+    expect(noSePuede('revision-materializar')).toBe(true);
+    await intentar('revision-materializar');
     expect(invokeMaterializar).not.toHaveBeenCalled();
   });
 
@@ -615,7 +721,7 @@ describe('calculation, blockers and approval', () => {
     await confirmEverything();
     expect(textOf('revision-bloqueos')).toMatch(/no es USD/);
     expect(textOf('revision-estado')).toBe('Con bloqueos');
-    expect(isDisabled('revision-aprobar')).toBe(true);
+    expect(noSePuede('revision-aprobar')).toBe(true);
   });
 
   it('shows an inexact included-VAT division as a blocker instead of rounding it', async () => {
@@ -631,7 +737,7 @@ describe('calculation, blockers and approval', () => {
     const repo = fakeRepo();
     await startRevision(repo);
     await confirmEverything();
-    expect(isDisabled('revision-aprobar')).toBe(true);
+    expect(noSePuede('revision-aprobar')).toBe(true);
     await typeId('revision-motivo-guardado', 'Primera revision completa');
     await pressId('revision-guardar');
 
@@ -654,13 +760,13 @@ describe('calculation, blockers and approval', () => {
     repo.leerRevisiones.mockResolvedValue([savedRevision()]);
     repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
     await openView(repo);
-    expect(isDisabled('revision-guardar')).toBe(true);
-    await pressId('revision-guardar');
+    expect(noSePuede('revision-guardar')).toBe(true);
+    await intentar('revision-guardar');
     expect(repo.guardarRevision).not.toHaveBeenCalled();
     await typeId('revision-linea-1-unidad-valor', 'UND');
     await typeId('revision-linea-1-unidad-motivo', 'sin cambio real');
     await pressId('revision-linea-1-unidad-aplicar');
-    expect(isDisabled('revision-guardar')).toBe(true);
+    expect(noSePuede('revision-guardar')).toBe(true);
   });
 });
 
@@ -728,9 +834,9 @@ describe('persistence, retry and conflicts', () => {
     expect(maybeId(`revision-iniciar-${EXT}`)).toBeNull();
     expect(textOf('revision-estado')).toBe('Con bloqueos');
     // Saved and unchanged, but the fresh calculation still has blockers: no attestation.
-    expect(isDisabled('revision-guardar')).toBe(true);
-    expect(isDisabled('revision-aprobar')).toBe(true);
-    await pressId('revision-aprobar');
+    expect(noSePuede('revision-guardar')).toBe(true);
+    expect(noSePuede('revision-aprobar')).toBe(true);
+    await intentar('revision-aprobar');
     expect(repo.aprobarRevision).not.toHaveBeenCalled();
   });
 
@@ -806,9 +912,9 @@ describe('identity fences and stale approval', () => {
     repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
     await openView(repo, { facturaVersion: 4 });
     expect(textOf('revision-estado')).toBe('Aprobación desactualizada');
-    expect(isDisabled('revision-aprobar')).toBe(true);
-    expect(isDisabled('revision-materializar')).toBe(true);
-    await pressId('revision-materializar');
+    expect(noSePuede('revision-aprobar')).toBe(true);
+    expect(noSePuede('revision-materializar')).toBe(true);
+    await intentar('revision-materializar');
     expect(invokeMaterializar).not.toHaveBeenCalled();
   });
 
@@ -825,9 +931,9 @@ describe('identity fences and stale approval', () => {
     repo.leerRevisiones.mockResolvedValue([savedRevision({ aprobadoPor: OWNER_A, aprobadoEn: '2026-10-23T12:00:00Z' })]);
     repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
     await openView(repo, { editorDirty: true });
-    expect(isDisabled('revision-aprobar')).toBe(true);
-    expect(isDisabled('revision-materializar')).toBe(true);
-    await pressId('revision-materializar');
+    expect(noSePuede('revision-aprobar')).toBe(true);
+    expect(noSePuede('revision-materializar')).toBe(true);
+    await intentar('revision-materializar');
     expect(invokeMaterializar).not.toHaveBeenCalled();
   });
 });
@@ -1045,7 +1151,7 @@ describe('PVP suggestion: document type, subdued placeholder, typed price (S18)'
     await openView(repo);
     await typeId(pvp(3), '20');
     expect(textOf('revision-estado')).toBe('Aprobación desactualizada');
-    expect(isDisabled('revision-aprobar')).toBe(true);
+    expect(noSePuede('revision-aprobar')).toBe(true);
     expect(isDisabled('revision-guardar')).toBe(false);
   });
 
@@ -1060,8 +1166,8 @@ describe('PVP suggestion: document type, subdued placeholder, typed price (S18)'
         expect(valueOf(pvp(3))).toBe(texto);
         expect(textOf(pvpEstado(3))).toMatch(/no válido/i);
         expect(textOf('revision-pvp-pendiente')).toMatch(/Corrige el precio de venta del renglón 3/);
-        expect(isDisabled('revision-guardar')).toBe(true);
-        expect(isDisabled('revision-aprobar')).toBe(true);
+        expect(noSePuede('revision-guardar')).toBe(true);
+        expect(noSePuede('revision-aprobar')).toBe(true);
         await pressId('revision-guardar');
         expect(repo.guardarRevision).not.toHaveBeenCalled();
       }
@@ -1081,7 +1187,7 @@ describe('PVP suggestion: document type, subdued placeholder, typed price (S18)'
       const repo = fakeRepo();
       await listaConCosto(repo);
       await typeId(pvp(3), '15.');
-      expect(isDisabled('revision-guardar')).toBe(true);
+      expect(noSePuede('revision-guardar')).toBe(true);
       await typeId(pvp(3), '15.5');
       expect(maybeId('revision-pvp-pendiente')).toBeNull();
       expect(isDisabled('revision-guardar')).toBe(false);
@@ -1182,5 +1288,780 @@ describe('PVP suggestion: document type, subdued placeholder, typed price (S18)'
       expect(maybeId('revision-pvp-pendiente')).toBeNull();
       expect(maybeId('revision-linea-1')).toBeNull();
     });
+  });
+});
+
+// ── Guided review: stages, statuses and progressive disclosure ──────────────
+// These tests press the real controls one by one; only the setup helpers below may jump between stages.
+
+const aqui = (id: string): boolean => screen.queryByTestId(id) !== null;
+const etapaActual = (): EtapaRevision | null => ETAPAS.find(etapa => aqui(`revision-etapa-${etapa}`)) ?? null;
+const desplegado = (id: string): boolean => Boolean(screen.getByTestId(id).props.accessibilityState?.expanded);
+const textoDeId = (id: string): string => textoDe(screen.getByTestId(id));
+
+async function pulsarYa(id: string): Promise<void> {
+  await act(async () => {
+    fireEvent.press(screen.getByTestId(id));
+  });
+  await settle();
+}
+
+async function escribirYa(id: string, text: string): Promise<void> {
+  await act(async () => {
+    fireEvent.changeText(screen.getByTestId(id), text);
+  });
+}
+
+/** Starts the review through the primary action ("Revisar lo leído"), the way a person does. */
+async function revisarLeido(repo: Mocks, over: Partial<FacturaRevisionViewProps> = {}, resultado: unknown = payload()) {
+  repo.leerExtracciones.mockResolvedValue([extraccionRow({}, resultado)]);
+  const view = await openView(repo, over);
+  await pulsarYa(`revision-iniciar-${EXT}`);
+  return view;
+}
+
+/** The two "Continuar" presses of a started review: Leer, then Productos, then Compra. */
+async function aProductos(): Promise<void> {
+  await pulsarYa('revision-accion-principal');
+}
+
+async function aCompra(): Promise<void> {
+  await aProductos();
+  await pulsarYa('revision-accion-principal');
+}
+
+describe('guided review: Leer', () => {
+  it('starts at Leer with one explicit primary action and never reads on its own', async () => {
+    const repo = fakeRepo();
+    await openView(repo);
+    expect(etapaActual()).toBe('leer');
+    expect(textoDeId('revision-extraer')).toBe('Leer factura');
+    expect(screen.getByText(/Usa un servicio externo y puede tener costo\. Solo se hace cuando tú lo pides\./)).toBeTruthy();
+    expect(repo.extraer).not.toHaveBeenCalled();
+    await pulsarYa('revision-extraer');
+    expect(repo.extraer).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts the review from a usable extraction only on an explicit press, then summarizes what was read', async () => {
+    const repo = fakeRepo();
+    repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
+    await openView(repo);
+    expect(textoDeId(`revision-iniciar-${EXT}`)).toBe('Revisar lo leído');
+    expect(textoDeId('revision-estado')).toBe('Sin revisión');
+    expect(aqui('revision-resumen')).toBe(false);
+
+    await pulsarYa(`revision-iniciar-${EXT}`);
+    expect(textoDeId('revision-resumen')).toContain('Proveedor Uno');
+    expect(textoDeId('revision-resumen')).toContain('DOC-1');
+    expect(textoDeId('revision-resumen')).toContain('2026-10-15');
+    expect(textoDeId('revision-accion-principal')).toBe('Continuar a productos');
+    expect(aqui('revision-linea-1')).toBe(false);
+  });
+
+  it('asks the two required questions in plain words, with the document-type choices', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    expect(screen.getByText('¿Es factura o nota de entrega?')).toBeTruthy();
+    expect(screen.getByText('¿Los precios incluyen IVA?')).toBeTruthy();
+    await pulsarYa('revision-tipo-nota_entrega');
+    expect(screen.getByTestId('revision-tipo-nota_entrega').props.accessibilityState.selected).toBe(true);
+    await pulsarYa('revision-decision-precioIncluyeIva-no');
+    expect(screen.getByTestId('revision-decision-precioIncluyeIva-no').props.accessibilityState.selected).toBe(true);
+  });
+
+  it('corrects a summary value only through its own disclosure, keeping the motive', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    expect(aqui('revision-cab-proveedorNombre-valor')).toBe(false);
+    await pulsarYa('revision-cab-proveedorNombre-corregir');
+    await escribirYa('revision-cab-proveedorNombre-valor', 'Proveedor Dos');
+    await escribirYa('revision-cab-proveedorNombre-motivo', 'Lectura equivocada');
+    await pulsarYa('revision-cab-proveedorNombre-aplicar');
+    expect(textoDeId('revision-resumen')).toContain('Proveedor Dos');
+    expect(textoDeId('revision-cab-proveedorNombre-motivo-aplicado')).toContain('Lectura equivocada');
+  });
+
+  it('shows a failed read with one retry and the manual way out, and hides the raw attempt details', async () => {
+    const repo = fakeRepo();
+    repo.leerExtracciones.mockResolvedValue([extraccionRow({ estado: 'fallido', errorCodigo: 'proveedor_timeout' }, null)]);
+    const onSeguirManual = jest.fn();
+    await openView(repo, { onSeguirManual });
+    expect(screen.getByText('No se pudo leer la factura.')).toBeTruthy();
+    expect(textoDeId('revision-extraer')).toBe('Intentar de nuevo');
+    expect(screen.queryByText(/proveedor_timeout/)).toBeNull();
+    await pulsarYa('revision-seguir-manual');
+    expect(onSeguirManual).toHaveBeenCalledTimes(1);
+    expect(repo.extraer).not.toHaveBeenCalled();
+
+    expect(desplegado('revision-detalles-tecnicos')).toBe(false);
+    await pulsarYa('revision-detalles-tecnicos');
+    expect(screen.getByText(/proveedor_timeout/)).toBeTruthy();
+  });
+
+  it('offers no manual way out when the parent does not provide one', async () => {
+    const repo = fakeRepo();
+    repo.leerExtracciones.mockResolvedValue([extraccionRow({ estado: 'fallido', errorCodigo: 'proveedor_timeout' }, null)]);
+    await openView(repo);
+    expect(aqui('revision-seguir-manual')).toBe(false);
+  });
+
+  it('keeps fatal states outside the disclosures', async () => {
+    const failing = fakeRepo({ leerRevisiones: jest.fn(async () => { throw new Error('boom'); }) });
+    await openView(failing);
+    expect(desplegado('revision-detalles-tecnicos')).toBe(false);
+    expect(aqui('revision-error')).toBe(true);
+    expect(aqui('revision-reintentar')).toBe(true);
+  });
+
+  it('keeps a session mismatch outside the disclosures and offers no footer action', async () => {
+    const repo = fakeRepo();
+    await openView(repo, { getSessionUid: () => OWNER_B });
+    expect(screen.getByText(/La sesión cambió o no coincide con esta factura/)).toBeTruthy();
+    expect(aqui('revision-accion-principal')).toBe(false);
+  });
+
+  it('keeps the diagnostics (attempts, extraction replacement) behind "Detalles técnicos"', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    expect(aqui('revision-extraer')).toBe(false);
+    expect(aqui('revision-cabecera-impuestos-agregar')).toBe(false);
+    await pulsarYa('revision-detalles-tecnicos');
+    expect(aqui('revision-extraer')).toBe(true);
+    expect(aqui('revision-cabecera-impuestos-agregar')).toBe(true);
+    expect(screen.getByText(/Intento 2026-10-23 10:00: completado/)).toBeTruthy();
+  });
+});
+
+describe('guided review: stage control', () => {
+  it('navigates by itself without a controlled stage and reports every change', async () => {
+    const repo = fakeRepo();
+    const onEtapaChange = jest.fn();
+    await revisarLeido(repo, { onEtapaChange });
+    await pulsarYa('revision-accion-principal');
+    expect(etapaActual()).toBe('productos');
+    expect(onEtapaChange).toHaveBeenLastCalledWith('productos');
+    await pulsarYa('revision-accion-principal');
+    expect(etapaActual()).toBe('compra');
+    expect(onEtapaChange).toHaveBeenLastCalledWith('compra');
+    await pulsarYa('revision-volver');
+    expect(etapaActual()).toBe('productos');
+    expect(onEtapaChange).toHaveBeenLastCalledWith('productos');
+  });
+
+  it('shows the stage the shell asks for, only reports requests, and stays mounted across stages', async () => {
+    const repo = fakeRepo();
+    const onEtapaChange = jest.fn();
+    const onDirtyChange = jest.fn();
+    const view = await revisarLeido(repo);
+    const controlada = (etapa: EtapaRevision) => <FacturaRevisionView {...props(repo, { etapa, onEtapaChange, onDirtyChange })} />;
+
+    view.rerenderUi(controlada('productos'));
+    await settle();
+    expect(etapaActual()).toBe('productos');
+    await pulsarYa('revision-linea-1-abrir');
+    await escribirYa('revision-linea-1-pvp-valor', '12,5');
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+
+    await pulsarYa('revision-accion-principal');
+    expect(onEtapaChange).toHaveBeenLastCalledWith('compra');
+    expect(etapaActual()).toBe('productos');
+
+    view.rerenderUi(controlada('compra'));
+    await settle();
+    expect(etapaActual()).toBe('compra');
+    expect(aqui('revision-pvp-pendiente')).toBe(true);
+
+    view.rerenderUi(controlada('productos'));
+    await settle();
+    expect(screen.getByTestId('revision-linea-1-pvp-valor').props.value).toBe('12,5');
+  });
+
+  it('sends the person back to Leer when a later stage is requested without content', async () => {
+    const repo = fakeRepo();
+    const onEtapaChange = jest.fn();
+    await openView(repo, { etapa: 'compra', onEtapaChange });
+    expect(etapaActual()).toBe('compra');
+    expect(textoDeId('revision-accion-principal')).toBe('Ir a Leer');
+    await pulsarYa('revision-accion-principal');
+    expect(onEtapaChange).toHaveBeenCalledWith('leer');
+  });
+});
+
+describe('guided review: Productos', () => {
+  it('shows what each line still needs and counts the ready ones as the decisions are made', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    expect(textoDeId('revision-productos-resumen')).toBe('0 de 3 listos');
+    for (const n of [1, 2, 3]) expect(textoDeId(`revision-linea-${n}-estado`)).toBe('Elegir producto');
+
+    await pulsarYa('revision-linea-1-abrir');
+    await pulsarYa('revision-linea-1-candidato-00123');
+    expect(textoDeId('revision-linea-1-estado')).toBe('Falta IVA');
+    await pulsarYa('revision-iva-1-16');
+    expect(textoDeId('revision-linea-1-estado')).toBe('Faltan unidades');
+    await pulsarYa('revision-factor-1-uno');
+    expect(textoDeId('revision-linea-1-estado')).toBe('Listo');
+    expect(textoDeId('revision-productos-resumen')).toBe('1 de 3 listos');
+  });
+
+  it('opens one line at a time and keeps the many inputs behind disclosures', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    expect(desplegado('revision-linea-1-abrir')).toBe(false);
+    expect(aqui('revision-linea-1-pvp-valor')).toBe(false);
+
+    await pulsarYa('revision-linea-1-abrir');
+    expect(desplegado('revision-linea-1-abrir')).toBe(true);
+    expect(aqui('revision-linea-1-pvp-valor')).toBe(true);
+    expect(aqui('revision-linea-1-cantidad-valor')).toBe(false);
+    expect(aqui('revision-linea-1-importe-final')).toBe(false);
+
+    await pulsarYa('revision-linea-3-abrir');
+    expect(desplegado('revision-linea-1-abrir')).toBe(false);
+    expect(aqui('revision-linea-1-pvp-valor')).toBe(false);
+    expect(aqui('revision-linea-3-pvp-valor')).toBe(true);
+
+    await pulsarYa('revision-linea-3-corregir');
+    expect(textoDeId('revision-linea-3-cantidad-original')).toContain('2');
+    await pulsarYa('revision-linea-3-mas');
+    expect(textoDeId('revision-linea-3-importe-final')).toContain('$6.20');
+  });
+
+  it('lets the person confirm, change and mark as new, sending the motives', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+
+    await pulsarYa('revision-linea-3-abrir');
+    await pulsarYa('revision-linea-3-candidato-AB-9');
+    expect(textoDeId('revision-linea-3-decision')).toMatch(/Asociado a AB-9/);
+    await pulsarYa('revision-linea-3-pendiente');
+    expect(textoDeId('revision-linea-3-decision')).toMatch(/Sin decidir/);
+    await pulsarYa('revision-linea-3-nuevo-abrir');
+    await escribirYa('revision-linea-3-nuevo-motivo', 'No está en el inventario');
+    await pulsarYa('revision-linea-3-nuevo-aplicar');
+    expect(textoDeId('revision-linea-3-decision')).toMatch(/Producto nuevo/);
+    expect(textoDeId('revision-linea-3-estado')).toBe('Falta IVA');
+    expect(aqui('revision-linea-3-barras-escanear')).toBe(true);
+
+    await pulsarYa('revision-linea-1-abrir');
+    await pulsarYa('revision-linea-1-manual-abrir');
+    await escribirYa('revision-linea-1-manual-codigo', 'SKU-1');
+    await escribirYa('revision-linea-1-manual-motivo', 'Mismo articulo');
+    await pulsarYa('revision-linea-1-manual-aplicar');
+    expect(textoDeId('revision-linea-1-decision')).toMatch(/SKU-1/);
+
+    await pulsarYa('revision-accion-principal');
+    expect(etapaActual()).toBe('compra');
+    expect(textoDeId('revision-guardar')).toBe('Guardar revisión');
+    await pulsarYa('revision-guardar');
+    const saved = repo.guardarRevision.mock.calls[0][0] as GuardarRevisionInput;
+    expect(saved.contenido.lineas[0].asociacion).toEqual({ tipo: 'confirmado', codigoInterno: 'SKU-1', evidencia: 'manual', motivo: 'Mismo articulo' });
+    expect(saved.contenido.lineas[2].asociacion).toEqual({ tipo: 'producto_nuevo', codigoInterno: null, evidencia: 'manual', motivo: 'No está en el inventario' });
+  });
+
+  it('moves on to the next line that is not ready', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    await pulsarYa('revision-linea-1-abrir');
+    await pulsarYa('revision-linea-1-siguiente');
+    expect(desplegado('revision-linea-1-abrir')).toBe(false);
+    expect(desplegado('revision-linea-2-abrir')).toBe(true);
+  });
+
+  it('filters the list by what is left to review', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    await pulsarYa('revision-linea-1-abrir');
+    await pulsarYa('revision-linea-1-candidato-00123');
+    await pulsarYa('revision-iva-1-16');
+    await pulsarYa('revision-factor-1-uno');
+    expect(textoDeId('revision-filtro-pendientes')).toBe('Por revisar (2)');
+    expect(textoDeId('revision-filtro-listos')).toBe('Listos (1)');
+    await pulsarYa('revision-filtro-pendientes');
+    expect(aqui('revision-linea-1')).toBe(false);
+    expect(aqui('revision-linea-2')).toBe(true);
+    await pulsarYa('revision-filtro-listos');
+    expect(aqui('revision-linea-1')).toBe(true);
+    expect(aqui('revision-linea-2')).toBe(false);
+  });
+
+  it('never turns a partial or empty catalog answer into a new product', async () => {
+    const repo = fakeRepo({ buscarCandidatos: jest.fn(async () => ({ productos: [], parcial: true })) });
+    await revisarLeido(repo);
+    await aProductos();
+    expect(screen.getByText(/Catálogo parcial/)).toBeTruthy();
+    expect(textoDeId('revision-linea-3-estado')).toBe('Elegir producto');
+    await pulsarYa('revision-linea-3-abrir');
+    expect(textoDeId('revision-linea-3-sin-candidatos')).toMatch(/no prueba que el producto no exista/);
+    expect(textoDeId('revision-linea-3-decision')).toMatch(/Sin decidir/);
+  });
+
+  it('does not contradict the barcode roles: a new line gets the scan as Código, only an existing product offers the printed code', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    await pulsarYa('revision-linea-3-abrir');
+    await pulsarYa('revision-linea-3-nuevo-abrir');
+    await escribirYa('revision-linea-3-nuevo-motivo', 'No está en el inventario');
+    await pulsarYa('revision-linea-3-nuevo-aplicar');
+    await pulsarYa('revision-linea-3-mas');
+    expect(screen.getByText('El código escaneado se usará en Código; el código de la factura, en Referencia.')).toBeTruthy();
+    expect(aqui('revision-linea-3-barras-usar')).toBe(false);
+    expect(screen.queryByText(/Código de barras propuesto/)).toBeNull();
+
+    await pulsarYa('revision-linea-1-abrir');
+    await pulsarYa('revision-linea-1-candidato-00123');
+    await pulsarYa('revision-linea-1-mas');
+    expect(aqui('revision-linea-1-barras-usar')).toBe(true);
+    expect(screen.getByText(/Código de barras propuesto/)).toBeTruthy();
+  });
+
+  it('lets a person turn off a printed-code reuse left on a new line, instead of trapping them', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    await pulsarYa('revision-linea-1-abrir');
+    await pulsarYa('revision-linea-1-mas');
+    await pulsarYa('revision-linea-1-barras-usar');
+    await pulsarYa('revision-linea-1-nuevo-abrir');
+    await escribirYa('revision-linea-1-nuevo-motivo', 'No está en el inventario');
+    await pulsarYa('revision-linea-1-nuevo-aplicar');
+    expect(screen.getByTestId('revision-linea-1-barras-usar').props.accessibilityState.selected).toBe(true);
+    await pulsarYa('revision-linea-1-barras-usar');
+    expect(aqui('revision-linea-1-barras-usar')).toBe(false);
+  });
+});
+
+describe('guided review: quick IVA and units controls', () => {
+  it('sends exactly the edits of the manual path and applies nothing before the person chooses', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+
+    await pulsarYa('revision-linea-1-abrir');
+    expect(textoDeId('revision-iva-1-estado')).toBe('Sin definir');
+    expect(screen.getByText(/El documento indica IVA 16\. Es solo referencia/)).toBeTruthy();
+    expect(textoDeId('revision-factor-1-estado')).toBe('Sin confirmar');
+    await pulsarYa('revision-iva-1-16');
+    await pulsarYa('revision-factor-1-uno');
+    expect(textoDeId('revision-iva-1-estado')).toBe('Indicado: 16 %');
+    expect(textoDeId('revision-factor-1-estado')).toBe('Confirmado: 1');
+
+    await pulsarYa('revision-linea-2-abrir');
+    await pulsarYa('revision-iva-2-otro');
+    await escribirYa('revision-linea-2-tasaIva-valor', '16');
+    await escribirYa('revision-linea-2-tasaIva-motivo', 'IVA indicado manualmente: 16 %');
+    await pulsarYa('revision-linea-2-tasaIva-aplicar');
+    await pulsarYa('revision-factor-2-otro');
+    await escribirYa('revision-linea-2-factor-valor', '1');
+    await pulsarYa('revision-linea-2-factor-aplicar');
+
+    await pulsarYa('revision-linea-3-abrir');
+    await pulsarYa('revision-iva-3-0');
+
+    await pulsarYa('revision-accion-principal');
+    await pulsarYa('revision-guardar');
+    const { lineas } = (repo.guardarRevision.mock.calls[0][0] as GuardarRevisionInput).contenido;
+    expect(lineas[0].correcciones.tasaIva).toEqual({ valor: '16', motivo: 'IVA indicado manualmente: 16 %' });
+    expect(lineas[0].correcciones.tasaIva).toEqual(lineas[1].correcciones.tasaIva);
+    expect(lineas[0].factorConversion).toBe('1');
+    expect(lineas[0].factorConversion).toBe(lineas[1].factorConversion);
+    expect(lineas[2].correcciones.tasaIva).toEqual({ valor: '0', motivo: 'IVA indicado manualmente: 0 %' });
+    expect(lineas[2].factorConversion).toBeNull();
+  });
+
+  it('applies no IVA or factor by default: every line saves without them', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aCompra();
+    await pulsarYa('revision-guardar');
+    const { lineas } = (repo.guardarRevision.mock.calls[0][0] as GuardarRevisionInput).contenido;
+    for (const linea of lineas) {
+      expect(linea.correcciones.tasaIva).toBeUndefined();
+      expect(linea.factorConversion).toBeNull();
+    }
+  });
+});
+
+describe('guided review: Compra', () => {
+  it('groups the purchase step and jumps from a blocker to its line', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aCompra();
+    expect(screen.getByText('¿El documento está completo?')).toBeTruthy();
+    expect(screen.getByText('¿Recibiste toda la mercancía?')).toBeTruthy();
+    expect(textoDeId('revision-bloqueos')).toMatch(/Renglón 1: Falta decidir la asociación/);
+    await pulsarYa('revision-ir-linea-1');
+    expect(etapaActual()).toBe('productos');
+    expect(desplegado('revision-linea-1-abrir')).toBe(true);
+  });
+
+  it('follows Guardar, Aprobar and Preparar with the primary action', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await confirmEverything();
+    irAEtapa('compra');
+    expect(etapaActual()).toBe('compra');
+    expect(textoDeId('revision-guardar')).toBe('Guardar revisión');
+    await pulsarYa('revision-guardar');
+    expect(repo.guardarRevision).toHaveBeenCalledTimes(1);
+    expect(textoDeId('revision-aprobar')).toBe('Aprobar revisión');
+    expect(screen.getByTestId('revision-aprobar').props.accessibilityState.disabled).toBe(false);
+    await pulsarYa('revision-aprobar');
+    expect(repo.aprobarRevision).toHaveBeenCalledTimes(1);
+    expect(textoDeId('revision-materializar')).toBe('Preparar borrador de compra');
+    expect(screen.getByTestId('revision-materializar').props.accessibilityState.disabled).toBe(false);
+  });
+
+  it('shows the reason when approving is not possible yet', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aCompra();
+    await pulsarYa('revision-guardar');
+    expect(textoDeId('revision-aprobar')).toBe('Aprobar revisión');
+    expect(screen.getByTestId('revision-aprobar').props.accessibilityState.disabled).toBe(true);
+    expect(textoDeId('revision-accion-razon')).toBe('Resuelve los bloqueos para aprobar.');
+  });
+
+  it('keeps the POS projection and the printed-vs-calculated differences behind "Detalles técnicos", while the emission stays announced as blocked', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await confirmEverything();
+    irAEtapa('compra');
+    expect(etapaActual()).toBe('compra');
+    expect(screen.getByText(/La emisión al POS sigue bloqueada/)).toBeTruthy();
+    expect(aqui('revision-pos')).toBe(false);
+    expect(aqui('revision-impacto-hybrid')).toBe(false);
+    await pulsarYa('revision-detalles-tecnicos');
+    expect(aqui('revision-pos')).toBe(true);
+    expect(aqui('revision-impacto-hybrid')).toBe(true);
+  });
+});
+
+describe('guided review: camera results across the new disclosures', () => {
+  it.each(['collapsing the line', 'leaving Productos'])('ignores a camera result that arrives after %s', async how => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    await pulsarYa('revision-linea-3-abrir');
+    await pulsarYa('revision-linea-3-nuevo-abrir');
+    await escribirYa('revision-linea-3-nuevo-motivo', 'No está en el inventario');
+    await pulsarYa('revision-linea-3-nuevo-aplicar');
+    await pulsarYa('revision-linea-3-barras-escanear');
+    const old = mockScannerProps!;
+
+    if (how === 'collapsing the line') {
+      await pulsarYa('revision-linea-3-abrir');
+    } else {
+      await pulsarYa('revision-accion-principal');
+      expect(etapaActual()).toBe('compra');
+    }
+    await act(async () => old.onScan('STALE'));
+    await settle();
+    if (how === 'collapsing the line') {
+      await pulsarYa('revision-linea-3-abrir');
+    } else {
+      await pulsarYa('revision-volver');
+    }
+
+    expect(screen.queryByText('STALE')).toBeNull();
+    expect(textoDeId('revision-linea-3-barras-escaneado')).toBe('Sin código capturado');
+    expect(repo.guardarRevision).not.toHaveBeenCalled();
+  });
+});
+
+describe('guided review: exactly one current primary action', () => {
+  /** Accessible buttons carrying one of these names, anywhere on screen. */
+  const botones = (nombre: string | RegExp) => screen.queryAllByRole('button', { name: nombre });
+  /** Buttons of the sticky footer other than "Volver". */
+  const accionesDelPie = () => within(screen.getByTestId('revision-pie')).queryAllByRole('button').filter(boton => boton.props.testID !== 'revision-volver');
+
+  it('offers the initial read once, even with the technical details open', async () => {
+    const repo = fakeRepo();
+    await openView(repo);
+    await pulsarYa('revision-detalles-tecnicos');
+    expect(botones(/^(Leer factura|Extraer datos|Intentar de nuevo)$/)).toHaveLength(1);
+    expect(accionesDelPie()).toHaveLength(1);
+    expect(textoDeId('revision-extraer')).toBe('Leer factura');
+    expect(within(screen.getByTestId('revision-pie')).getByTestId('revision-extraer')).toBeTruthy();
+    await pulsarYa('revision-extraer');
+    expect(repo.extraer).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers "Revisar lo leído" once and keeps no second start button for the same extraction', async () => {
+    const repo = fakeRepo();
+    repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
+    await openView(repo);
+    await pulsarYa('revision-detalles-tecnicos');
+    expect(botones(/^(Revisar lo leído|Iniciar revisión con esta extracción)$/)).toHaveLength(1);
+    expect(textoDeId(`revision-iniciar-${EXT}`)).toBe('Revisar lo leído');
+    expect(within(screen.getByTestId('revision-pie')).getByTestId(`revision-iniciar-${EXT}`)).toBeTruthy();
+    await pulsarYa(`revision-iniciar-${EXT}`);
+    expect(aqui('revision-resumen')).toBe(true);
+  });
+
+  it('keeps the re-read as a secondary control once there is content, never beside a primary read', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    expect(textoDeId('revision-accion-principal')).toBe('Continuar a productos');
+    await pulsarYa('revision-detalles-tecnicos');
+    expect(botones('Extraer datos')).toHaveLength(1);
+    expect(accionesDelPie()).toHaveLength(1);
+  });
+
+  it('shows one action at a time through save, approve and prepare, each with its stable id', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await confirmEverything();
+    irAEtapa('compra');
+    const nombres = ['Guardar revisión', 'Aprobar revisión', 'Preparar borrador de compra'];
+    const ids = ['revision-guardar', 'revision-aprobar', 'revision-materializar'];
+    const soloEsta = (actual: number) => {
+      nombres.forEach((nombre, i) => expect(botones(nombre)).toHaveLength(i === actual ? 1 : 0));
+      ids.forEach((id, i) => expect(aqui(id)).toBe(i === actual));
+      expect(accionesDelPie()).toHaveLength(1);
+      expect(within(screen.getByTestId('revision-pie')).getByTestId(ids[actual])).toBeTruthy();
+    };
+
+    soloEsta(0);
+    await pulsarYa('revision-guardar');
+    expect(repo.guardarRevision).toHaveBeenCalledTimes(1);
+    soloEsta(1);
+    await pulsarYa('revision-aprobar');
+    expect(repo.aprobarRevision).toHaveBeenCalledTimes(1);
+    soloEsta(2);
+  });
+
+  it('keeps the single action visible, disabled and explained when it cannot run yet', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    irAEtapa('compra');
+    await pulsarYa('revision-guardar');
+    expect(botones('Aprobar revisión')).toHaveLength(1);
+    expect(botones('Guardar revisión')).toHaveLength(0);
+    expect(noSePuede('revision-aprobar')).toBe(true);
+    expect(textoDeId('revision-accion-razon')).toBe('Resuelve los bloqueos para aprobar.');
+    expect(aqui('revision-materializar')).toBe(false);
+  });
+});
+
+// ── C1: collision readiness and the expanded two-pane layout ────────────────
+
+describe('guided review: a captured code is ready only after a clean lookup', () => {
+  const COLISION = { productos: [{ codigoInterno: '4411', codigoBarras: '7591234' }], completo: true };
+  const LIMPIO = { productos: [], completo: true };
+  const respuesta = (por: Record<string, unknown>) => jest.fn(async (codes: string[]) => ({ [codes[0]]: por[codes[0]] ?? LIMPIO }));
+
+  const resumenProductos = (): string => {
+    irAEtapa('productos');
+    return textOf('revision-productos-resumen');
+  };
+
+  /** Line 3 becomes a new product with a typed code, after everything else is ready. */
+  async function nuevoConCodigo(codigo: string): Promise<void> {
+    await pressId('revision-linea-3-pendiente');
+    await typeId('revision-linea-3-nuevo-motivo', 'No está en el inventario');
+    await pressId('revision-linea-3-nuevo-aplicar');
+    await typeId('revision-linea-3-barras-manual', codigo);
+    await pressId('revision-linea-3-barras-guardar');
+  }
+
+  async function listaConTresListos(repo: Mocks, over: Partial<FacturaRevisionViewProps> = {}) {
+    const view = await startRevision(repo, over);
+    await confirmEverything();
+    expect(resumenProductos()).toBe('3 de 3 listos');
+    return view;
+  }
+
+  it('keeps a colliding scanned code out of the ready count, with the collision still visible (P9)', async () => {
+    const repo = fakeRepo({ leerColisionesBarras: respuesta({ '7591234': COLISION }) });
+    await listaConTresListos(repo);
+    await pressId('revision-linea-3-pendiente');
+    await typeId('revision-linea-3-nuevo-motivo', 'No está en el inventario');
+    await pressId('revision-linea-3-nuevo-aplicar');
+    expect(textOf('revision-linea-3-estado')).toBe('Nuevo: falta código');
+    await pressId('revision-linea-3-barras-escanear');
+    await act(async () => { mockScannerProps?.onScan('7591234'); });
+    await settle();
+    expect(textOf('revision-linea-3-barras-colision')).toContain('4411');
+    expect(textOf('revision-linea-3-estado')).toBe('Código ya usado');
+    expect(resumenProductos()).toBe('2 de 3 listos');
+    expect(textOf('revision-filtro-pendientes')).toBe('Por revisar (1)');
+  });
+
+  it('does not count the line while the lookup is pending, and counts it once the lookup is clean', async () => {
+    const pendiente = deferred<unknown>();
+    const repo = fakeRepo({ leerColisionesBarras: jest.fn(() => pendiente.promise as never) });
+    await listaConTresListos(repo);
+    await nuevoConCodigo('7591234');
+    expect(textOf('revision-linea-3-estado')).toBe('Verificando código');
+    expect(resumenProductos()).toBe('2 de 3 listos');
+    await act(async () => pendiente.resolve({ '7591234': LIMPIO }));
+    await settle();
+    expect(textOf('revision-linea-3-estado')).toBe('Listo');
+    expect(resumenProductos()).toBe('3 de 3 listos');
+  });
+
+  it.each([
+    ['an incomplete catalog read', jest.fn(async () => ({ '7591234': { productos: [], completo: false } }))],
+    ['a failed read', jest.fn(async () => { throw new Error('down'); })],
+  ])('does not count the line after %s', async (_name, leer) => {
+    const repo = fakeRepo({ leerColisionesBarras: leer });
+    await listaConTresListos(repo);
+    await nuevoConCodigo('7591234');
+    expect(textOf('revision-linea-3-estado')).toBe('Código sin verificar');
+    expect(resumenProductos()).toBe('2 de 3 listos');
+  });
+
+  it('counts the line after a complete clean lookup, and not again after the code is cleared', async () => {
+    const repo = fakeRepo();
+    await listaConTresListos(repo);
+    await nuevoConCodigo('7591234');
+    expect(textOf('revision-linea-3-estado')).toBe('Listo');
+    expect(resumenProductos()).toBe('3 de 3 listos');
+    await pressId('revision-linea-3-barras-limpiar');
+    expect(textOf('revision-linea-3-estado')).toBe('Nuevo: falta código');
+    expect(resumenProductos()).toBe('2 de 3 listos');
+  });
+
+  it('judges a replaced code on its own lookup, never on a late answer for the old one', async () => {
+    const vieja = deferred<unknown>();
+    const repo = fakeRepo({ leerColisionesBarras: jest.fn((codes: string[]) => (codes[0] === 'OLD' ? (vieja.promise as never) : (Promise.resolve({ NEW: LIMPIO }) as never))) });
+    await listaConTresListos(repo);
+    await nuevoConCodigo('OLD');
+    await typeId('revision-linea-3-barras-manual', 'NEW');
+    await pressId('revision-linea-3-barras-guardar');
+    expect(textOf('revision-linea-3-estado')).toBe('Listo');
+    await act(async () => vieja.resolve({ OLD: { productos: [{ codigoInterno: '4411', codigoBarras: 'OLD' }], completo: true } }));
+    await settle();
+    expect(textOf('revision-linea-3-estado')).toBe('Listo');
+    expect(screen.queryByText(/4411/)).toBeNull();
+    expect(resumenProductos()).toBe('3 de 3 listos');
+  });
+
+  it('keeps the status after the line is collapsed, and for a saved review whose line was never opened', async () => {
+    const repo = fakeRepo({ leerColisionesBarras: respuesta({ SAVED: { productos: [{ codigoInterno: '4411', codigoBarras: 'SAVED' }], completo: true } }) });
+    repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
+    repo.leerRevisiones.mockResolvedValue([savedRevision({}, contenido => ({
+      ...contenido,
+      lineas: contenido.lineas.map((linea, i) => (i === 2
+        ? { ...linea, factorConversion: '1', correcciones: { ...linea.correcciones, tasaIva: { valor: '16', motivo: 'IVA indicado manualmente: 16 %' } }, asociacion: { tipo: 'producto_nuevo' as const, codigoInterno: null, evidencia: 'manual' as const, motivo: 'No está en el inventario' }, codigoBarras: { usarCodigoFactura: false, codigoEscaneado: 'SAVED' } }
+        : linea)),
+    }))]);
+    await openView(repo);
+    irAEtapa('productos');
+    expect(aqui('revision-linea-3-barras-colision')).toBe(false);
+    expect(textoDeId('revision-linea-3-estado')).toBe('Código ya usado');
+    expect(repo.leerColisionesBarras).toHaveBeenCalledWith(['SAVED']);
+  });
+
+  it('drops a lookup answer that arrives after the session changed, and verifies again for the new context', async () => {
+    const vieja = deferred<unknown>();
+    let uid: string | null = OWNER_A;
+    const getSessionUid = () => uid;
+    let llamadas = 0;
+    const repo = fakeRepo({ leerColisionesBarras: jest.fn((codes: string[]) => (++llamadas === 1 ? (vieja.promise as never) : (Promise.resolve({ [codes[0]]: LIMPIO }) as never))) });
+    const view = await listaConTresListos(repo, { getSessionUid });
+    await nuevoConCodigo('7591234');
+    expect(textOf('revision-linea-3-estado')).toBe('Verificando código');
+
+    uid = null;
+    view.rerenderUi(<FacturaRevisionView {...props(repo, { getSessionUid })} />);
+    await settle();
+    await act(async () => vieja.resolve({ '7591234': COLISION }));
+    await settle();
+    uid = OWNER_A;
+    view.rerenderUi(<FacturaRevisionView {...props(repo, { getSessionUid })} />);
+    await settle();
+    irAEtapa('productos');
+    expect(screen.queryByText(/4411/)).toBeNull();
+    expect(screen.queryByText('Código ya usado')).toBeNull();
+  });
+});
+
+describe('guided review: Productos on narrow and expanded screens', () => {
+  const lista = () => screen.getByTestId('revision-productos-lista');
+  const detalle = () => screen.getByTestId('revision-productos-detalle');
+  const estiloDe = (id: string) => StyleSheet.flatten(screen.getByTestId(id).props.style);
+
+  async function productos(repo = fakeRepo(), over: Partial<FacturaRevisionViewProps> = {}) {
+    const view = await revisarLeido(repo, over);
+    await aProductos();
+    return view;
+  }
+
+  it('keeps one column on a phone, with the detail inside the opened row', async () => {
+    tamanoPantalla.mockReturnValue(TAMANO_TELEFONO);
+    await productos();
+    expect(aqui('revision-productos-paneles')).toBe(false);
+    await pulsarYa('revision-linea-1-abrir');
+    expect(within(screen.getByTestId('revision-linea-1')).getByTestId('revision-linea-1-pvp-valor')).toBeTruthy();
+  });
+
+  it('shows the list and the selected detail side by side when the screen is expanded', async () => {
+    tamanoPantalla.mockReturnValue(TAMANO_AMPLIO);
+    await productos();
+    expect(estiloDe('revision-productos-paneles').flexDirection).toBe('row');
+    expect(within(lista()).getByTestId('revision-linea-1')).toBeTruthy();
+    expect(within(lista()).getByTestId('revision-linea-3')).toBeTruthy();
+    expect(screen.getByText('Elige un renglón de la lista para ver su detalle.')).toBeTruthy();
+
+    await pulsarYa('revision-linea-3-abrir');
+    expect(within(detalle()).getByTestId('revision-linea-3-pvp-valor')).toBeTruthy();
+    expect(within(lista()).queryByTestId('revision-linea-3-pvp-valor')).toBeNull();
+    expect(screen.getAllByTestId('revision-linea-3-pvp-valor')).toHaveLength(1);
+    expect(screen.getByTestId('revision-linea-3-abrir').props.accessibilityState.selected).toBe(true);
+    expect(screen.queryByText('Elige un renglón de la lista para ver su detalle.')).toBeNull();
+
+    await pulsarYa('revision-linea-1-abrir');
+    expect(aqui('revision-linea-3-pvp-valor')).toBe(false);
+    expect(within(detalle()).getByTestId('revision-linea-1-pvp-valor')).toBeTruthy();
+  });
+
+  it('mounts one detail and one scanner for the selected new line', async () => {
+    tamanoPantalla.mockReturnValue(TAMANO_AMPLIO);
+    await productos();
+    await pulsarYa('revision-linea-3-abrir');
+    await pulsarYa('revision-linea-3-nuevo-abrir');
+    await escribirYa('revision-linea-3-nuevo-motivo', 'No está en el inventario');
+    await pulsarYa('revision-linea-3-nuevo-aplicar');
+    await pulsarYa('revision-linea-3-barras-escanear');
+    expect(screen.getAllByTestId('scanner-mock-capture')).toHaveLength(1);
+    expect(screen.getAllByTestId('revision-linea-3-barras-escanear')).toHaveLength(1);
+    expect(screen.getAllByTestId('revision-linea-3-detalle')).toHaveLength(1);
+  });
+
+  it('keeps typed prices, the footer and the stage when the selection changes or the screen is resized', async () => {
+    tamanoPantalla.mockReturnValue(TAMANO_AMPLIO);
+    const repo = fakeRepo();
+    const view = await productos(repo);
+    await pulsarYa('revision-linea-1-abrir');
+    await escribirYa('revision-linea-1-pvp-valor', '12,5');
+    await pulsarYa('revision-linea-2-abrir');
+    expect(screen.getByTestId('revision-pie')).toBeTruthy();
+    await pulsarYa('revision-linea-1-abrir');
+    expect(screen.getByTestId('revision-linea-1-pvp-valor').props.value).toBe('12,5');
+
+    tamanoPantalla.mockReturnValue(TAMANO_TELEFONO);
+    view.rerenderUi(<FacturaRevisionView {...props(repo)} />);
+    await settle();
+    expect(etapaActual()).toBe('productos');
+    expect(aqui('revision-productos-paneles')).toBe(false);
+    expect(desplegado('revision-linea-1-abrir')).toBe(true);
+    expect(screen.getAllByTestId('revision-linea-1-pvp-valor')).toHaveLength(1);
+    expect(screen.getByTestId('revision-linea-1-pvp-valor').props.value).toBe('12,5');
+  });
+
+  it('moves the selection to the next line that is not ready without closing the detail', async () => {
+    tamanoPantalla.mockReturnValue(TAMANO_AMPLIO);
+    await productos();
+    await pulsarYa('revision-linea-1-abrir');
+    await pulsarYa('revision-linea-1-siguiente');
+    expect(within(detalle()).getByTestId('revision-linea-2-pvp-valor')).toBeTruthy();
   });
 });

@@ -1,21 +1,20 @@
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
-import type { FacturaRevisionRepository } from '../lib/facturaRevisionRepository';
+import type { VerificacionCodigo } from '../lib/facturaRevisionPasos';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { Boton, Entrada, Texto } from './FacturaRevisionCabecera';
 
 export interface CapturaCodigoNuevoProps {
   id: string;
   codigo: string | undefined;
+  /** Catalog lookup of `codigo`, owned by the review (it also drives the line's readiness); undefined = not answered yet. */
+  verificacion: VerificacionCodigo | undefined;
   estaVigente: () => boolean;
   onCapturar: (codigo: string | null) => { ok: boolean };
-  leerColisiones: FacturaRevisionRepository['leerColisionesBarras'];
 }
 
-type Verificacion = { tipo: 'cargando' | 'incompleta' | 'sin_coincidencias' | 'colision'; skus?: string[] };
-
-function verificationText(result: Verificacion): string {
+function verificationText(result: VerificacionCodigo): string {
   switch (result.tipo) {
     case 'colision': return `${(result.skus ?? []).join(', ')}: código encontrado en el catálogo; no se asignó ni se creó ningún producto.`;
     case 'cargando': return 'Verificando el código en el catálogo…';
@@ -26,7 +25,7 @@ function verificationText(result: Verificacion): string {
 
 /** Captures a draft value only. A camera result never creates a product or assigns a catalog barcode. */
 export default function FacturaCodigoBarrasNuevo(props: CapturaCodigoNuevoProps): React.JSX.Element {
-  const { id, codigo } = props;
+  const { id, codigo, verificacion } = props;
   const live = useRef(props);
   live.current = props;
   const mounted = useRef(true);
@@ -35,7 +34,6 @@ export default function FacturaCodigoBarrasNuevo(props: CapturaCodigoNuevoProps)
   const [camera, setCamera] = useState<number | null>(null);
   const [manual, setManual] = useState('');
   const [error, setError] = useState(false);
-  const [verification, setVerification] = useState<Verificacion>({ tipo: 'incompleta' });
 
   useEffect(() => {
     mounted.current = true;
@@ -46,31 +44,11 @@ export default function FacturaCodigoBarrasNuevo(props: CapturaCodigoNuevoProps)
     };
   }, []);
 
+  const estadoVerificacion: VerificacionCodigo = verificacion ?? { tipo: 'cargando' };
+
   function vigente(): boolean {
     return mounted.current && live.current.estaVigente();
   }
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!codigo) return;
-    setVerification({ tipo: 'cargando' });
-    function incomplete(): void {
-      if (!cancelled && vigente()) setVerification({ tipo: 'incompleta' });
-    }
-    void Promise.resolve().then(() => live.current.leerColisiones([codigo])).then(result => {
-      if (cancelled || !vigente()) return;
-      const read = result[codigo];
-      if (!read || !Array.isArray(read.productos) || read.productos.some(product =>
-        !product || typeof product.codigoInterno !== 'string' || product.codigoInterno === '')) {
-        incomplete();
-        return;
-      }
-      const skus = read.productos.map(product => product.codigoInterno).filter(sku => typeof sku === 'string' && sku !== '');
-      if (skus.length > 0) setVerification({ tipo: 'colision', skus });
-      else setVerification({ tipo: read.completo === true ? 'sin_coincidencias' : 'incompleta' });
-    }, incomplete);
-    return () => { cancelled = true; };
-  }, [codigo]);
 
   function guardar(value: string | null): void {
     if (!vigente()) return;
@@ -95,7 +73,7 @@ export default function FacturaCodigoBarrasNuevo(props: CapturaCodigoNuevoProps)
   }
 
   return (
-    <View>
+    <View style={{ gap: 8 }}>
       <Texto small tone="muted">El código escaneado se usará en Código; el código de la factura, en Referencia.</Texto>
       <Texto small tone="muted">Para preparar el borrador de compra, el código nuevo admite hasta 80 caracteres (letras, números, . _ / -), sin recortar.</Texto>
       <Texto testID={`${id}-barras-escaneado`}>{codigo ?? 'Sin código capturado'}</Texto>
@@ -105,8 +83,8 @@ export default function FacturaCodigoBarrasNuevo(props: CapturaCodigoNuevoProps)
       <Boton testID={`${id}-barras-limpiar`} label="Quitar código capturado" disabled={codigo === undefined} onPress={() => guardar(null)} />
       {error ? <Texto testID={`${id}-barras-error`} tone="danger">Código no válido. Conserva los ceros iniciales y evita espacios al principio o al final.</Texto> : null}
       {codigo ? (
-        <Texto testID={verification.tipo === 'colision' ? `${id}-barras-colision` : `${id}-barras-verificacion`} small tone="warning">
-          {verificationText(verification)}
+        <Texto testID={estadoVerificacion.tipo === 'colision' ? `${id}-barras-colision` : `${id}-barras-verificacion`} small tone="warning">
+          {verificationText(estadoVerificacion)}
         </Texto>
       ) : null}
       {camera !== null ? <BarcodeScannerModal key={camera} visible onClose={() => { cerrar(camera); }} onScan={value => {

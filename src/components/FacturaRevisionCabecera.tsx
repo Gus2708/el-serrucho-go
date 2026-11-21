@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { scaleFont } from '../theme/responsive';
 import { useTheme } from '../theme/ThemeContext';
 import type { ExtraidoDescuento, ExtraidoImpuesto } from '../lib/facturaExtractionContract';
@@ -44,11 +45,14 @@ interface BotonProps {
   disabled?: boolean;
   selected?: boolean;
   danger?: boolean;
+  /** The one gold action of a stage; everything else stays outlined. */
+  primary?: boolean;
 }
 
-export function Boton({ testID, label, onPress, disabled = false, selected = false, danger = false }: BotonProps): React.JSX.Element {
+export function Boton({ testID, label, onPress, disabled = false, selected = false, danger = false, primary = false }: BotonProps): React.JSX.Element {
   const { colors } = useTheme();
   const tone = danger ? colors.danger : colors.primary;
+  const filled = primary && !disabled;
   return (
     <Pressable
       testID={testID}
@@ -59,10 +63,32 @@ export function Boton({ testID, label, onPress, disabled = false, selected = fal
       onPress={onPress}
       style={({ pressed }) => [
         styles.boton,
-        { borderColor: disabled ? colors.border : tone, backgroundColor: selected ? colors.primaryFaded : colors.surface, opacity: disabled ? 0.45 : pressed ? 0.7 : 1 },
+        {
+          borderColor: disabled ? colors.border : tone,
+          backgroundColor: filled ? colors.primary : selected ? colors.primaryFaded : colors.surface,
+          opacity: disabled ? 0.45 : pressed ? 0.7 : 1,
+        },
       ]}
     >
-      <Text style={[styles.botonTexto, { color: disabled ? colors.textMuted : tone }]}>{label}</Text>
+      <Text style={[styles.botonTexto, { color: disabled ? colors.textMuted : filled ? colors.onPrimary : tone }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+/** Text button that opens or closes a disclosure; the open state is exposed to assistive technology. */
+export function BotonDespliegue({ testID, label, abierto, onPress }: { testID: string; label: string; abierto: boolean; onPress: () => void }): React.JSX.Element {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ expanded: abierto }}
+      onPress={onPress}
+      style={({ pressed }) => [styles.despliegue, { opacity: pressed ? 0.7 : 1 }]}
+    >
+      <Text style={[styles.botonTexto, { color: colors.primary }]}>{label}</Text>
+      <Feather name={abierto ? 'chevron-up' : 'chevron-down'} size={16} color={colors.primary} />
     </Pressable>
   );
 }
@@ -96,11 +122,13 @@ export function Entrada(props: {
   );
 }
 
-export function Texto({ testID, children, tone = 'text', small = false }: { testID?: string; children: React.ReactNode; tone?: 'text' | 'muted' | 'danger' | 'warning' | 'success' | 'primary'; small?: boolean }): React.JSX.Element {
+type TonoTexto = 'text' | 'muted' | 'danger' | 'warning' | 'success' | 'primary';
+
+export function Texto({ testID, children, tone = 'text', small = false, live = false }: { testID?: string; children: React.ReactNode; tone?: TonoTexto; small?: boolean; live?: boolean }): React.JSX.Element {
   const { colors } = useTheme();
   const color = { text: colors.text, muted: colors.textMuted, danger: colors.danger, warning: colors.warning, success: colors.success, primary: colors.primary }[tone];
   return (
-    <Text testID={testID} style={[small ? styles.chico : styles.texto, { color }]}>
+    <Text testID={testID} accessibilityLiveRegion={live ? 'polite' : undefined} style={[small ? styles.chico : styles.texto, { color }]}>
       {children}
     </Text>
   );
@@ -313,20 +341,29 @@ export function FilasLista(props: {
 
 // ── Header section ──────────────────────────────────────────────────────────
 
-const CAMPOS: ReadonlyArray<{ campo: CabeceraCampoEscalar; label: string; decimal?: boolean; monetario?: boolean }> = [
+interface CampoCabecera {
+  campo: CabeceraCampoEscalar;
+  label: string;
+  decimal?: boolean;
+  monetario?: boolean;
+}
+
+const CAMPOS_PRINCIPALES: ReadonlyArray<CampoCabecera> = [
   { campo: 'proveedorNombre', label: 'Proveedor' },
   { campo: 'numeroDocumento', label: 'Número de factura' },
-  { campo: 'numeroControl', label: 'Número de control' },
   { campo: 'fechaEmision', label: 'Fecha (AAAA-MM-DD)' },
   { campo: 'moneda', label: 'Moneda del documento' },
+];
+
+const CAMPOS_ADICIONALES: ReadonlyArray<CampoCabecera> = [
+  { campo: 'numeroControl', label: 'Número de control' },
   { campo: 'subtotal', label: 'Subtotal impreso', decimal: true, monetario: true },
   { campo: 'total', label: 'Total impreso', decimal: true, monetario: true },
 ];
 
-const DECISIONES: ReadonlyArray<{ campo: DecisionCabecera; label: string }> = [
-  { campo: 'documentoCompletoConfirmado', label: 'El documento está completo (todas las páginas y renglones)' },
-  { campo: 'recepcionCompleta', label: 'Se recibió toda la mercancía' },
-  { campo: 'precioIncluyeIva', label: 'Los precios incluyen IVA' },
+const PREGUNTAS_COMPRA: ReadonlyArray<{ campo: DecisionCabecera; label: string; ayuda: string }> = [
+  { campo: 'documentoCompletoConfirmado', label: '¿El documento está completo?', ayuda: 'Todas las páginas y todos los renglones.' },
+  { campo: 'recepcionCompleta', label: '¿Recibiste toda la mercancía?', ayuda: 'Confirma la recepción completa antes de aprobar.' },
 ];
 
 const TIPOS_DOCUMENTO: ReadonlyArray<{ valor: TipoDocumento | null; testID: string; label: string }> = [
@@ -335,33 +372,110 @@ const TIPOS_DOCUMENTO: ReadonlyArray<{ valor: TipoDocumento | null; testID: stri
   { valor: null, testID: 'revision-tipo-sin-definir', label: 'Sin definir' },
 ];
 
-export default function FacturaRevisionCabecera(props: {
-  efectiva: FacturaEfectiva;
-  decisiones: Readonly<Record<DecisionCabecera, boolean | null>>;
-  tipoDocumento: TipoDocumento | null;
-  calculo: CalculoRevision;
-  onEditar: (edicion: Edicion) => void;
-}): React.JSX.Element {
-  const { efectiva, decisiones, tipoDocumento, calculo, onEditar } = props;
-  const oculto = calculo.moneda === 'USD' ? null : avisoImporteOculto(calculo.moneda);
+type OnEditar = (edicion: Edicion) => void;
+
+function textoDelValor(valor: string | null, esMonto: boolean): string {
+  if (valor === null) return 'Sin dato';
+  return esMonto ? formatoUsdExacto(valor) : valor;
+}
+
+function FilaDato(props: { dato: CampoCabecera; efectivo: ValorEfectivo<string | null>; esUsd: boolean; oculto: string | null; onEditar: OnEditar }): React.JSX.Element {
+  const { dato, efectivo, esUsd, oculto, onEditar } = props;
+  const { campo, label, decimal, monetario } = dato;
+  const [abierta, setAbierta] = useState(false);
+  const base = `revision-cab-${campo}`;
+  const campoCorregible = (
+    <CampoCorregible
+      base={base}
+      label={label}
+      efectivo={efectivo}
+      keyboardType={decimal ? 'decimal-pad' : 'default'}
+      oculto={monetario ? oculto : null}
+      onAplicar={(valor, motivo) => onEditar({ tipo: 'cabecera_escalar', campo, valor, motivo })}
+      onRevertir={() => onEditar({ tipo: 'revertir_cabecera', campo })}
+    />
+  );
+  // A hidden amount has nothing to show or correct: its notice replaces the whole row.
+  if (monetario && oculto) return campoCorregible;
+  const valor = textoDelValor(efectivo.valor, monetario === true && esUsd);
   return (
-    <View style={styles.seccion}>
-      <Texto tone="primary">DATOS DEL DOCUMENTO</Texto>
-      {CAMPOS.map(({ campo, label, decimal, monetario }) => (
-        <CampoCorregible
-          key={campo}
-          base={`revision-cab-${campo}`}
-          label={label}
-          efectivo={efectiva.campos[campo]}
-          keyboardType={decimal ? 'decimal-pad' : 'default'}
-          oculto={monetario ? oculto : null}
-          onAplicar={(valor, motivo) => onEditar({ tipo: 'cabecera_escalar', campo, valor, motivo })}
-          onRevertir={() => onEditar({ tipo: 'revertir_cabecera', campo })}
-        />
-      ))}
+    <View style={styles.filaDatoCaja}>
+      <View style={styles.fila}>
+        <View style={styles.crece}>
+          <Texto small tone="muted">{label}</Texto>
+          <Texto tone={efectivo.valor === null ? 'warning' : 'text'}>{`${valor}${efectivo.corregido ? ' (corregido)' : ''}`}</Texto>
+        </View>
+        <BotonDespliegue testID={`${base}-corregir`} label="Corregir" abierto={abierta} onPress={() => setAbierta(actual => !actual)} />
+      </View>
+      {abierta ? campoCorregible : null}
+    </View>
+  );
+}
+
+/** What the reading found, one value per row; every correction keeps its motive and stays one tap away. */
+export function ResumenCabecera(props: { efectiva: FacturaEfectiva; calculo: CalculoRevision; onEditar: OnEditar }): React.JSX.Element {
+  const { colors } = useTheme();
+  const { efectiva, calculo, onEditar } = props;
+  const [masDatos, setMasDatos] = useState(false);
+  const esUsd = calculo.moneda === 'USD';
+  const oculto = esUsd ? null : avisoImporteOculto(calculo.moneda);
+  const fila = (dato: CampoCabecera) => <FilaDato key={dato.campo} dato={dato} efectivo={efectiva.campos[dato.campo]} esUsd={esUsd} oculto={oculto} onEditar={onEditar} />;
+  return (
+    <View testID="revision-resumen" style={[styles.tarjeta, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+      <Texto tone="primary">Lo que se leyó</Texto>
+      {CAMPOS_PRINCIPALES.map(fila)}
       {calculo.moneda !== null && calculo.moneda !== 'USD' ? (
         <Texto small tone="warning">{`Moneda ${calculo.moneda}: los importes se conservan sin convertir. No hay tasa de cambio aprobada, así que la conversión está bloqueada.`}</Texto>
       ) : null}
+      <BotonDespliegue testID="revision-cab-mas" label="Más datos del documento" abierto={masDatos} onPress={() => setMasDatos(actual => !actual)} />
+      {masDatos ? CAMPOS_ADICIONALES.map(fila) : null}
+    </View>
+  );
+}
+
+/** The two answers the calculation cannot guess: the document type and whether prices already include VAT. */
+export function PreguntasDocumento(props: { tipoDocumento: TipoDocumento | null; precioIncluyeIva: boolean | null; onEditar: OnEditar }): React.JSX.Element {
+  const { tipoDocumento, precioIncluyeIva, onEditar } = props;
+  return (
+    <View style={styles.seccion}>
+      <Texto tone="primary">¿Es factura o nota de entrega?</Texto>
+      <Texto small tone="muted">Nota de entrega: costo + 30 %. Factura: costo + 30 % y luego + 16 % de IVA. Solo sugiere un precio de venta; no cambia los impuestos ni los costos del documento.</Texto>
+      <View style={styles.fila}>
+        {TIPOS_DOCUMENTO.map(({ valor, testID, label }) => (
+          <Boton key={testID} testID={testID} label={label} selected={tipoDocumento === valor} onPress={() => onEditar({ tipo: 'tipo_documento', valor })} />
+        ))}
+      </View>
+      <Texto testID="revision-tipo-estado" small tone={tipoDocumento === null ? 'warning' : 'muted'}>
+        {tipoDocumento === null ? 'Tipo de documento sin definir: no hay precio sugerido.' : `Tipo de documento: ${tipoDocumento === 'factura' ? 'factura' : 'nota de entrega'}.`}
+      </Texto>
+      <Texto tone="primary">¿Los precios incluyen IVA?</Texto>
+      <Triestado base="revision-decision-precioIncluyeIva" label="Los precios del documento" valor={precioIncluyeIva} onChange={valor => onEditar({ tipo: 'decision_cabecera', campo: 'precioIncluyeIva', valor })} />
+    </View>
+  );
+}
+
+/** The two confirmations that close the purchase step. */
+export function ConfirmacionesCompra(props: { decisiones: Readonly<Record<DecisionCabecera, boolean | null>>; onEditar: OnEditar }): React.JSX.Element {
+  const { decisiones, onEditar } = props;
+  return (
+    <View style={styles.seccion}>
+      {PREGUNTAS_COMPRA.map(({ campo, label, ayuda }) => (
+        <View key={campo} style={styles.seccion}>
+          <Texto tone="primary">{label}</Texto>
+          <Texto small tone="muted">{ayuda}</Texto>
+          <Triestado base={`revision-decision-${campo}`} label="Tu respuesta" valor={decisiones[campo]} onChange={valor => onEditar({ tipo: 'decision_cabecera', campo, valor })} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** Printed discount and VAT tables: technical corrections, shown only inside "Detalles técnicos". */
+export function ListasTecnicasCabecera(props: { efectiva: FacturaEfectiva; calculo: CalculoRevision; onEditar: OnEditar }): React.JSX.Element {
+  const { efectiva, calculo, onEditar } = props;
+  const oculto = calculo.moneda === 'USD' ? null : avisoImporteOculto(calculo.moneda);
+  return (
+    <View style={styles.seccion}>
       <FilasLista
         base="revision-cabecera-descuentos"
         tipo="descuentos"
@@ -378,26 +492,32 @@ export default function FacturaRevisionCabecera(props: {
         efectivo={efectiva.impuestos}
         onAplicar={(valor, motivo) => onEditar({ tipo: 'cabecera_impuestos', valor: valor as ExtraidoImpuesto[], motivo })}
       />
-      <Texto tone="primary">PRECIO DE VENTA SUGERIDO</Texto>
-      <Texto small tone="muted">Nota de entrega: costo + 30 %. Factura: costo + 30 % y luego + 16 % de IVA. Solo sugiere un precio de venta; no cambia los impuestos ni los costos del documento.</Texto>
-      <View style={styles.fila}>
-        {TIPOS_DOCUMENTO.map(({ valor, testID, label }) => (
-          <Boton key={testID} testID={testID} label={label} selected={tipoDocumento === valor} onPress={() => onEditar({ tipo: 'tipo_documento', valor })} />
-        ))}
-      </View>
-      <Texto testID="revision-tipo-estado" small tone={tipoDocumento === null ? 'warning' : 'muted'}>
-        {tipoDocumento === null ? 'Tipo de documento sin definir: no hay precio sugerido.' : `Tipo de documento: ${tipoDocumento === 'factura' ? 'factura' : 'nota de entrega'}.`}
-      </Texto>
-      <Texto tone="primary">CONFIRMACIONES</Texto>
-      {DECISIONES.map(({ campo, label }) => (
-        <Triestado key={campo} base={`revision-decision-${campo}`} label={label} valor={decisiones[campo]} onChange={valor => onEditar({ tipo: 'decision_cabecera', campo, valor })} />
-      ))}
+    </View>
+  );
+}
+
+/** Reading stage content: the summary plus the two required questions. */
+export default function FacturaRevisionCabecera(props: {
+  efectiva: FacturaEfectiva;
+  decisiones: Readonly<Record<DecisionCabecera, boolean | null>>;
+  tipoDocumento: TipoDocumento | null;
+  calculo: CalculoRevision;
+  onEditar: OnEditar;
+}): React.JSX.Element {
+  const { efectiva, decisiones, tipoDocumento, calculo, onEditar } = props;
+  return (
+    <View style={styles.seccion}>
+      <ResumenCabecera efectiva={efectiva} calculo={calculo} onEditar={onEditar} />
+      <PreguntasDocumento tipoDocumento={tipoDocumento} precioIncluyeIva={decisiones.precioIncluyeIva} onEditar={onEditar} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   seccion: { gap: 10 },
+  tarjeta: { borderWidth: 0.5, borderRadius: 12, padding: 12, gap: 10 },
+  filaDatoCaja: { gap: 6 },
+  despliegue: { minHeight: 44, minWidth: 44, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, alignSelf: 'flex-start' },
   campo: { borderWidth: 0.5, borderRadius: 10, padding: 10, gap: 6 },
   filaCaja: { borderWidth: 0.5, borderRadius: 8, padding: 8, gap: 6 },
   fila: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },

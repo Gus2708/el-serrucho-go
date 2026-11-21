@@ -1,0 +1,153 @@
+import type { CalculoRevision, LineaRevision } from './facturaRevision';
+
+/** The three bodies of the guided review; the outer shell owns the stepper and may control which one is shown. */
+export type EtapaRevision = 'leer' | 'productos' | 'compra';
+
+/** What the person must do next on one line. Presentation only: the domain calculation decides the real blockers. */
+export type EstadoLinea =
+  | 'elegir_producto'
+  | 'falta_iva'
+  | 'faltan_unidades'
+  | 'falta_codigo'
+  | 'verificando_codigo'
+  | 'codigo_sin_verificar'
+  | 'codigo_en_uso'
+  | 'revisar'
+  | 'listo';
+
+export const ETIQUETA_ESTADO_LINEA: Readonly<Record<EstadoLinea, string>> = {
+  elegir_producto: 'Elegir producto',
+  falta_iva: 'Falta IVA',
+  faltan_unidades: 'Faltan unidades',
+  falta_codigo: 'Nuevo: falta código',
+  verificando_codigo: 'Verificando código',
+  codigo_sin_verificar: 'Código sin verificar',
+  codigo_en_uso: 'Código ya usado',
+  revisar: 'Revisar datos',
+  listo: 'Listo',
+};
+
+/** Result of looking a captured code up in the catalog; `skus` lists the products that already use it. */
+export interface VerificacionCodigo {
+  readonly tipo: 'cargando' | 'incompleta' | 'sin_coincidencias' | 'colision';
+  readonly skus?: readonly string[];
+}
+
+function estadoDeCodigoNuevo(verificacion: VerificacionCodigo | undefined): EstadoLinea | null {
+  switch (verificacion?.tipo) {
+    case 'sin_coincidencias':
+      return null;
+    case 'incompleta':
+      return 'codigo_sin_verificar';
+    case 'colision':
+      return 'codigo_en_uso';
+    default:
+      return 'verificando_codigo';
+  }
+}
+
+/**
+ * Reads the line's own blockers from the existing calculation. Document-level blockers (completeness, receipt, VAT
+ * inclusion) never mark a line. A new product needs a captured physical code, and that code is ready only after a
+ * complete lookup found no other product using it (`verificacion`, for this exact code; absent means not answered yet).
+ * Neither is a calculation blocker, but the purchase draft cannot use a missing code, so the line stays pending here.
+ */
+export function estadoLinea(linea: LineaRevision, calculo: CalculoRevision, verificacion?: VerificacionCodigo): EstadoLinea {
+  const propios = new Set(calculo.bloqueos.filter(bloqueo => bloqueo.lineaId === linea.lineaId).map(bloqueo => bloqueo.codigo));
+  if (linea.asociacion.tipo === 'pendiente') return 'elegir_producto';
+  if (propios.has('iva_tasa_desconocida')) return 'falta_iva';
+  if (propios.has('conversion_no_confirmada')) return 'faltan_unidades';
+  if (linea.asociacion.tipo === 'producto_nuevo') {
+    if (!linea.codigoBarras.codigoEscaneado) return 'falta_codigo';
+    const pendiente = estadoDeCodigoNuevo(verificacion);
+    if (pendiente) return pendiente;
+  }
+  return propios.size > 0 ? 'revisar' : 'listo';
+}
+
+export function resumenLineas(estados: readonly EstadoLinea[]): { total: number; listas: number; porRevisar: number } {
+  const listas = estados.filter(estado => estado === 'listo').length;
+  return { total: estados.length, listas, porRevisar: estados.length - listas };
+}
+
+/** The next line, other than `desdeLineaId`, that is not ready (wrapping around), or null when there is none. */
+export function siguientePorRevisar(estados: ReadonlyArray<{ lineaId: string; estado: EstadoLinea }>, desdeLineaId: string | null): string | null {
+  const inicio = desdeLineaId === null ? 0 : estados.findIndex(item => item.lineaId === desdeLineaId) + 1;
+  for (let paso = 0; paso < estados.length; paso++) {
+    const candidata = estados[(inicio + paso) % estados.length];
+    if (candidata.estado !== 'listo' && candidata.lineaId !== desdeLineaId) return candidata.lineaId;
+  }
+  return null;
+}
+
+export type AccionPrincipalId = 'leer' | 'revisar_leido' | 'continuar_productos' | 'continuar_compra' | 'ir_leer' | 'guardar' | 'aprobar' | 'preparar';
+
+export interface AccionPrincipal {
+  readonly id: AccionPrincipalId;
+  readonly etiqueta: string;
+  readonly deshabilitada: boolean;
+  /** Why the action is disabled; null when enabled or when the label itself says it (progress). */
+  readonly razon: string | null;
+}
+
+/** Flags the view already reads from the review hook; nothing here is recomputed. */
+export interface SituacionRevision {
+  readonly etapa: EtapaRevision;
+  readonly carga: 'cargando' | 'listo' | 'no_disponible' | 'error' | 'sin_sesion';
+  readonly hayContenido: boolean;
+  readonly hayExtraccionUsable: boolean;
+  readonly intentoFallido: boolean;
+  readonly ocupado: 'guardando' | 'aprobando' | 'extrayendo' | null;
+  readonly puedeExtraer: boolean;
+  readonly razonNoExtraer: string | null;
+  readonly conflicto: boolean;
+  readonly sucio: boolean;
+  readonly editorDirty: boolean;
+  readonly puedeGuardar: boolean;
+  readonly puedeAprobar: boolean;
+  readonly puedeMaterializar: boolean;
+  readonly materializando: boolean;
+  readonly hayBorradorPrecio: boolean;
+  readonly sinBloqueos: boolean;
+  /** The latest saved revision carries an approval (it may no longer be valid for the current invoice version). */
+  readonly aprobada: boolean;
+}
+
+function accion(id: AccionPrincipalId, etiqueta: string, deshabilitada = false, razon: string | null = null): AccionPrincipal {
+  return { id, etiqueta, deshabilitada, razon };
+}
+
+function accionCompra(s: SituacionRevision): AccionPrincipal {
+  if (s.materializando) return accion('preparar', 'Preparando borrador…', true);
+  if (s.ocupado === 'guardando') return accion('guardar', 'Guardando…', true);
+  if (s.ocupado === 'aprobando') return accion('aprobar', 'Aprobando…', true);
+  if (s.sucio) {
+    if (s.conflicto) return accion('guardar', 'Guardar revisión', true, 'Hay una versión más reciente en el servidor: recárgala para continuar.');
+    if (s.hayBorradorPrecio) return accion('guardar', 'Guardar revisión', true, 'Corrige o borra el precio de venta no válido para guardar.');
+    return accion('guardar', 'Guardar revisión', !s.puedeGuardar, s.puedeGuardar ? null : 'Ahora no se puede guardar: espera a que termine la operación en curso o revisa la sesión.');
+  }
+  if (!s.aprobada) {
+    if (s.hayBorradorPrecio) return accion('aprobar', 'Aprobar revisión', true, 'Corrige o borra el precio de venta no válido para aprobar.');
+    if (s.puedeAprobar) return accion('aprobar', 'Aprobar revisión');
+    if (s.conflicto) return accion('aprobar', 'Aprobar revisión', true, 'Hay una versión más reciente en el servidor: recárgala para continuar.');
+    if (!s.sinBloqueos) return accion('aprobar', 'Aprobar revisión', true, 'Resuelve los bloqueos para aprobar.');
+    if (s.editorDirty) return accion('aprobar', 'Aprobar revisión', true, 'Guarda los cambios de la factura antes de aprobar.');
+    return accion('aprobar', 'Aprobar revisión', true, 'Ahora no se puede aprobar: guarda la revisión o revisa la sesión.');
+  }
+  if (s.puedeMaterializar) return accion('preparar', 'Preparar borrador de compra');
+  if (s.editorDirty) return accion('preparar', 'Preparar borrador de compra', true, 'Guarda los cambios de la factura antes de preparar la compra.');
+  return accion('preparar', 'Preparar borrador de compra', true, 'La aprobación no está vigente para esta versión de la factura.');
+}
+
+/** The single next step of the current stage. Null when the screen shows its own recovery control instead. */
+export function accionPrincipal(s: SituacionRevision): AccionPrincipal | null {
+  if (s.carga !== 'listo') return null;
+  if (s.etapa === 'leer') {
+    if (s.ocupado === 'extrayendo') return accion('leer', 'Leyendo la factura…', true);
+    if (s.hayContenido) return accion('continuar_productos', 'Continuar a productos');
+    if (s.hayExtraccionUsable) return accion('revisar_leido', 'Revisar lo leído');
+    return accion('leer', s.intentoFallido ? 'Intentar de nuevo' : 'Leer factura', !s.puedeExtraer, s.puedeExtraer ? null : s.razonNoExtraer);
+  }
+  if (!s.hayContenido) return accion('ir_leer', 'Ir a Leer');
+  return s.etapa === 'productos' ? accion('continuar_compra', 'Continuar a compra') : accionCompra(s);
+}

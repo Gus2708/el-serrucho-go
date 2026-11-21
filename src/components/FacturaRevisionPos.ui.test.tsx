@@ -2,7 +2,7 @@ import * as React from 'react';
 jest.mock('./BarcodeScannerModal', () => ({ BarcodeScannerModal: () => null }));
 import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import FacturaRevisionView, { type FacturaRevisionViewProps } from './FacturaRevisionView';
+import FacturaRevisionView, { type EtapaRevision, type FacturaRevisionViewProps } from './FacturaRevisionView';
 import type { ExtraccionRow, FacturaRevisionRepository, GuardarRevisionInput } from '../lib/facturaRevisionRepository';
 import type { FacturaExtraccionPayload } from '../lib/facturaExtractionContract';
 import { useFacturaRevision, type FacturaRevisionControl, type UseFacturaRevisionParams } from '../hooks/useFacturaRevision';
@@ -75,29 +75,112 @@ function viewProps(repo: Mocks, leerExistencias: LeerExistencias | undefined, ov
   };
 }
 
-const byId = (id: string) => screen.getByTestId(id);
-const maybeId = (id: string) => screen.queryByTestId(id);
-function textOf(id: string): string {
+// ── Navigating the guided review ────────────────────────────────────────────
+// The review shows one stage at a time, one open line and collapsed disclosures. These helpers only open the stage, line
+// or disclosure that holds a control (through the real buttons); every assertion still goes through the control itself.
+const ETAPAS: readonly EtapaRevision[] = ['leer', 'productos', 'compra'];
+const CAMPOS_CABECERA_EXTRA = ['numeroControl', 'subtotal', 'total'];
+const CAMPOS_LINEA_CORREGIBLES = /^(codigoProveedor|descripcion|cantidad|unidad|precioUnitario|total)-/;
+const EN_FILA_O_DETALLE_ABIERTO = /^(|decision|abrir|estado|codigo)$/;
+const EN_MAS_OPCIONES = /^(importe-final|base|costo-unitario|pagina|ocr|descuentos-.*|quitar|barras-(codigo|usar|estado))$/;
+
+interface Ruta {
+  etapa: EtapaRevision | null;
+  /** Line whose detail must be open. */
+  linea?: string;
+  /** Disclosures to open, in order. */
+  despliegues: string[];
+}
+
+function rutaDe(id: string): Ruta {
+  const enLinea = /^revision-(linea|iva|factor)-(m?\d+)(?:-(.*))?$/.exec(id);
+  if (enLinea) {
+    const [, tipo, n, resto = ''] = enLinea;
+    const base = `revision-linea-${n}`;
+    if (tipo === 'linea' && EN_FILA_O_DETALLE_ABIERTO.test(resto)) return { etapa: 'productos', despliegues: [] };
+    const despliegues: string[] = [];
+    if (tipo === 'linea') {
+      if (CAMPOS_LINEA_CORREGIBLES.test(resto)) despliegues.push(`${base}-corregir`);
+      else if (resto.startsWith('tasaIva-')) despliegues.push(`revision-iva-${n}-otro`);
+      else if (resto.startsWith('factor-')) despliegues.push(`revision-factor-${n}-otro`);
+      else if (resto.startsWith('manual-')) despliegues.push(`${base}-manual-abrir`);
+      else if (resto.startsWith('nuevo-')) despliegues.push(`${base}-nuevo-abrir`);
+      else if (EN_MAS_OPCIONES.test(resto)) despliegues.push(`${base}-mas`);
+    }
+    return { etapa: 'productos', linea: n, despliegues };
+  }
+  const enCabecera = /^revision-cab-(\w+?)-(.*)$/.exec(id);
+  if (enCabecera) {
+    const campo = enCabecera[1];
+    return { etapa: 'leer', despliegues: [...(CAMPOS_CABECERA_EXTRA.includes(campo) ? ['revision-cab-mas'] : []), `revision-cab-${campo}-corregir`] };
+  }
+  if (/^revision-agregar-/.test(id)) return { etapa: 'productos', despliegues: ['revision-agregar-abrir'] };
+  if (/^revision-(extraer|iniciar-.*|aplicar-.*|reemplazo-motivo|cabecera-.*)$/.test(id)) return { etapa: 'leer', despliegues: ['revision-detalles-tecnicos'] };
+  if (/^revision-(tipo-.*|decision-precioIncluyeIva-.*)$/.test(id)) return { etapa: 'leer', despliegues: [] };
+  if (/^revision-(diferencias|pos|impacto-.*)$/.test(id)) return { etapa: 'compra', despliegues: ['revision-detalles-tecnicos'] };
+  if (/^revision-(totales|por-tasa|bloqueos|guardar|aprobar|materializar|motivo-guardado|pvp-pendiente|decision-.*)$/.test(id)) return { etapa: 'compra', despliegues: [] };
+  return { etapa: null, despliegues: [] };
+}
+
+function textoDe(nodo: { children?: unknown }): string {
   const parts: string[] = [];
   const walk = (value: unknown) => {
     if (typeof value === 'string') parts.push(value);
     else if (Array.isArray(value)) value.forEach(walk);
     else if (value && typeof value === 'object') walk((value as { children?: unknown }).children);
   };
-  walk(byId(id).children);
+  walk(nodo.children);
   return parts.join('');
 }
 
+function abrirDespliegue(id: string): void {
+  const nodo = screen.queryByTestId(id);
+  if (nodo && nodo.props.accessibilityState?.expanded === false) fireEvent.press(nodo);
+}
+
+function irAEtapa(destino: EtapaRevision): void {
+  for (let paso = 0; paso < ETAPAS.length; paso++) {
+    const actual = ETAPAS.find(etapa => screen.queryByTestId(`revision-etapa-${etapa}`));
+    if (!actual || actual === destino) return;
+    const adelante = ETAPAS.indexOf(destino) > ETAPAS.indexOf(actual);
+    const boton = screen.queryByTestId(adelante ? 'revision-accion-principal' : 'revision-volver');
+    // Forward, the primary action only navigates when it says so: elsewhere it would read, save or approve.
+    if (!boton || (adelante && !/^Continuar/.test(textoDe(boton)))) return;
+    fireEvent.press(boton);
+  }
+}
+
+function visitar(id: string): void {
+  const ruta = rutaDe(id);
+  if (ruta.etapa) irAEtapa(ruta.etapa);
+  if (ruta.linea !== undefined && id !== `revision-linea-${ruta.linea}-abrir`) abrirDespliegue(`revision-linea-${ruta.linea}-abrir`);
+  for (const despliegue of ruta.despliegues) if (despliegue !== id) abrirDespliegue(despliegue);
+}
+
+const byId = (id: string) => {
+  visitar(id);
+  return screen.getByTestId(id);
+};
+const maybeId = (id: string) => {
+  visitar(id);
+  return screen.queryByTestId(id);
+};
+const textOf = (id: string): string => textoDe(byId(id));
+const isDisabled = (id: string): boolean => Boolean(byId(id).props.accessibilityState?.disabled);
+
 async function pressId(id: string): Promise<void> {
+  // Navigate first, outside the act below: its state updates only flush once that act ends.
+  visitar(id);
   await act(async () => {
-    fireEvent.press(byId(id));
+    fireEvent.press(screen.getByTestId(id));
   });
   await settle();
 }
 
 async function typeId(id: string, text: string): Promise<void> {
+  visitar(id);
   await act(async () => {
-    fireEvent.changeText(byId(id), text);
+    fireEvent.changeText(screen.getByTestId(id), text);
   });
 }
 
@@ -125,7 +208,8 @@ async function openReview(repo: Mocks, leerExistencias: LeerExistencias | undefi
   return view;
 }
 
-function visibleStrings(): string[] {
+/** Strings on screen right now: text children, typed input values, accessibility labels and placeholders. */
+function cadenasDePantalla(): string[] {
   const out: string[] = [];
   const walk = (node: any): void => {
     if (node === null || node === undefined) return;
@@ -138,6 +222,36 @@ function visibleStrings(): string[] {
   };
   walk(screen.toJSON());
   return out;
+}
+
+/** Opens every collapsed disclosure of the current view, repeating because one can reveal another. */
+function abrirDespliegues(): void {
+  for (let vuelta = 0; vuelta < 6; vuelta++) {
+    const cerrados = screen.queryAllByRole('button').filter(nodo => nodo.props.accessibilityState?.expanded === false && !/^revision-linea-.*-abrir$/.test(nodo.props.testID ?? ''));
+    if (cerrados.length === 0) return;
+    cerrados.forEach(nodo => fireEvent.press(nodo));
+  }
+}
+
+/**
+ * Everything a person can see or hear anywhere in the review: every stage, every line opened one by one, every
+ * disclosure expanded. Collapsed content must not make an absence check pass by hiding what it checks.
+ */
+function visibleStrings(): string[] {
+  const todas: string[] = [];
+  for (const etapa of ETAPAS) {
+    irAEtapa(etapa);
+    if (!screen.queryByTestId(`revision-etapa-${etapa}`)) continue;
+    abrirDespliegues();
+    todas.push(...cadenasDePantalla());
+    if (etapa !== 'productos') continue;
+    for (const cabeza of screen.queryAllByTestId(/^revision-linea-.*-abrir$/).map(nodo => nodo.props.testID as string)) {
+      if (screen.getByTestId(cabeza).props.accessibilityState?.expanded === false) fireEvent.press(screen.getByTestId(cabeza));
+      abrirDespliegues();
+      todas.push(...cadenasDePantalla());
+    }
+  }
+  return todas;
 }
 
 describe('Impacto en Hybrid (read-only view)', () => {

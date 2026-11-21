@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { act, fireEvent, screen } from '@testing-library/react-native';
-import FacturaRevisionView, { type FacturaRevisionViewProps } from './FacturaRevisionView';
+import FacturaRevisionView, { type EtapaRevision, type FacturaRevisionViewProps } from './FacturaRevisionView';
 import {
   createFacturaRevisionRepository,
   type ExtraccionRow,
@@ -160,30 +160,122 @@ async function openView(repo: Mocks, over: Partial<FacturaRevisionViewProps> = {
   return view;
 }
 
-const byId = (id: string) => screen.getByTestId(id);
-const maybeId = (id: string) => screen.queryByTestId(id);
-const textOf = (id: string): string => {
+// ── Navigating the guided review ────────────────────────────────────────────
+// The review shows one stage at a time, one open line and collapsed disclosures. These helpers only open the stage, line
+// or disclosure that holds a control (through the real buttons); every assertion still goes through the control itself.
+const ETAPAS: readonly EtapaRevision[] = ['leer', 'productos', 'compra'];
+const CAMPOS_CABECERA_EXTRA = ['numeroControl', 'subtotal', 'total'];
+const CAMPOS_LINEA_CORREGIBLES = /^(codigoProveedor|descripcion|cantidad|unidad|precioUnitario|total)-/;
+const EN_FILA_O_DETALLE_ABIERTO = /^(|decision|abrir|estado|codigo)$/;
+const EN_MAS_OPCIONES = /^(importe-final|base|costo-unitario|pagina|ocr|descuentos-.*|quitar|barras-(codigo|usar|estado))$/;
+
+interface Ruta {
+  etapa: EtapaRevision | null;
+  /** Line whose detail must be open. */
+  linea?: string;
+  /** Disclosures to open, in order. */
+  despliegues: string[];
+}
+
+function rutaDe(id: string): Ruta {
+  const enLinea = /^revision-(linea|iva|factor)-(m?\d+)(?:-(.*))?$/.exec(id);
+  if (enLinea) {
+    const [, tipo, n, resto = ''] = enLinea;
+    const base = `revision-linea-${n}`;
+    if (tipo === 'linea' && EN_FILA_O_DETALLE_ABIERTO.test(resto)) return { etapa: 'productos', despliegues: [] };
+    const despliegues: string[] = [];
+    if (tipo === 'linea') {
+      if (CAMPOS_LINEA_CORREGIBLES.test(resto)) despliegues.push(`${base}-corregir`);
+      else if (resto.startsWith('tasaIva-')) despliegues.push(`revision-iva-${n}-otro`);
+      else if (resto.startsWith('factor-')) despliegues.push(`revision-factor-${n}-otro`);
+      else if (resto.startsWith('manual-')) despliegues.push(`${base}-manual-abrir`);
+      else if (resto.startsWith('nuevo-')) despliegues.push(`${base}-nuevo-abrir`);
+      else if (EN_MAS_OPCIONES.test(resto)) despliegues.push(`${base}-mas`);
+    }
+    return { etapa: 'productos', linea: n, despliegues };
+  }
+  const enCabecera = /^revision-cab-(\w+?)-(.*)$/.exec(id);
+  if (enCabecera) {
+    const campo = enCabecera[1];
+    return { etapa: 'leer', despliegues: [...(CAMPOS_CABECERA_EXTRA.includes(campo) ? ['revision-cab-mas'] : []), `revision-cab-${campo}-corregir`] };
+  }
+  if (/^revision-agregar-/.test(id)) return { etapa: 'productos', despliegues: ['revision-agregar-abrir'] };
+  if (/^revision-(extraer|iniciar-.*|aplicar-.*|reemplazo-motivo|cabecera-.*)$/.test(id)) return { etapa: 'leer', despliegues: ['revision-detalles-tecnicos'] };
+  if (/^revision-(tipo-.*|decision-precioIncluyeIva-.*)$/.test(id)) return { etapa: 'leer', despliegues: [] };
+  if (/^revision-(diferencias|pos|impacto-.*)$/.test(id)) return { etapa: 'compra', despliegues: ['revision-detalles-tecnicos'] };
+  if (/^revision-(totales|por-tasa|bloqueos|guardar|aprobar|materializar|motivo-guardado|pvp-pendiente|decision-.*)$/.test(id)) return { etapa: 'compra', despliegues: [] };
+  return { etapa: null, despliegues: [] };
+}
+
+function textoDe(nodo: { children?: unknown }): string {
   const parts: string[] = [];
   const walk = (value: unknown) => {
     if (typeof value === 'string') parts.push(value);
     else if (Array.isArray(value)) value.forEach(walk);
     else if (value && typeof value === 'object') walk((value as { children?: unknown }).children);
   };
-  walk(byId(id).children);
+  walk(nodo.children);
   return parts.join('');
+}
+
+function abrirDespliegue(id: string): void {
+  const nodo = screen.queryByTestId(id);
+  if (nodo && nodo.props.accessibilityState?.expanded === false) fireEvent.press(nodo);
+}
+
+function irAEtapa(destino: EtapaRevision): void {
+  for (let paso = 0; paso < ETAPAS.length; paso++) {
+    const actual = ETAPAS.find(etapa => screen.queryByTestId(`revision-etapa-${etapa}`));
+    if (!actual || actual === destino) return;
+    const adelante = ETAPAS.indexOf(destino) > ETAPAS.indexOf(actual);
+    const boton = screen.queryByTestId(adelante ? 'revision-accion-principal' : 'revision-volver');
+    // Forward, the primary action only navigates when it says so: elsewhere it would read, save or approve.
+    if (!boton || (adelante && !/^Continuar/.test(textoDe(boton)))) return;
+    fireEvent.press(boton);
+  }
+}
+
+function visitar(id: string): void {
+  const ruta = rutaDe(id);
+  if (ruta.etapa) irAEtapa(ruta.etapa);
+  if (ruta.linea !== undefined && id !== `revision-linea-${ruta.linea}-abrir`) abrirDespliegue(`revision-linea-${ruta.linea}-abrir`);
+  for (const despliegue of ruta.despliegues) if (despliegue !== id) abrirDespliegue(despliegue);
+}
+
+const byId = (id: string) => {
+  visitar(id);
+  return screen.getByTestId(id);
 };
+const maybeId = (id: string) => {
+  visitar(id);
+  return screen.queryByTestId(id);
+};
+const textOf = (id: string): string => textoDe(byId(id));
 const isDisabled = (id: string): boolean => Boolean(byId(id).props.accessibilityState?.disabled);
+/** The footer holds one action: a control that is not the current action does not exist, which is as unavailable as disabled. */
+const noSePuede = (id: string): boolean => {
+  const nodo = maybeId(id);
+  return nodo === null || Boolean(nodo.props.accessibilityState?.disabled);
+};
 
 async function pressId(id: string): Promise<void> {
+  // Navigate first, outside the act below: its state updates only flush once that act ends.
+  visitar(id);
   await act(async () => {
-    fireEvent.press(byId(id));
+    fireEvent.press(screen.getByTestId(id));
   });
   await settle();
 }
 
+/** Presses a control only if it exists: a footer action that is not the current one is simply not there. */
+async function intentar(id: string): Promise<void> {
+  if (maybeId(id)) await pressId(id);
+}
+
 async function typeId(id: string, text: string): Promise<void> {
+  visitar(id);
   await act(async () => {
-    fireEvent.changeText(byId(id), text);
+    fireEvent.changeText(screen.getByTestId(id), text);
   });
 }
 
@@ -275,7 +367,7 @@ describe('manual VAT authority', () => {
     expect(repo.guardarRevision.mock.calls[0][0].contenido.lineas[0].correcciones.tasaIva).toEqual({ valor: '0', motivo: 'Sin IVA confirmado por el usuario' });
     await pressId('revision-linea-1-tasaIva-revertir');
     expect(maybeId('revision-linea-1-tasaIva-corregido')).toBeNull();
-    expect(isDisabled('revision-aprobar')).toBe(true);
+    expect(noSePuede('revision-aprobar')).toBe(true);
   });
 });
 
@@ -450,8 +542,8 @@ describe('B3 currency presentation', () => {
     return { ...base, lineas: [lineaConDescuento, linea(2), linea(3)] } as unknown as FacturaExtraccionPayload;
   }
 
-  /** Everything a user can see or hear: text children, typed input values, accessibility labels and placeholders. */
-  function visibleStrings(): string[] {
+  /** Strings on screen right now: text children, typed input values, accessibility labels and placeholders. */
+  function cadenasDePantalla(): string[] {
     const out: string[] = [];
     const walk = (node: any): void => {
       if (node === null || node === undefined) return;
@@ -464,6 +556,36 @@ describe('B3 currency presentation', () => {
     };
     walk(screen.toJSON());
     return out;
+  }
+
+  /** Opens every collapsed disclosure of the current view, repeating because one can reveal another. */
+  function abrirDespliegues(): void {
+    for (let vuelta = 0; vuelta < 6; vuelta++) {
+      const cerrados = screen.queryAllByRole('button').filter(nodo => nodo.props.accessibilityState?.expanded === false && !/^revision-linea-.*-abrir$/.test(nodo.props.testID ?? ''));
+      if (cerrados.length === 0) return;
+      cerrados.forEach(nodo => fireEvent.press(nodo));
+    }
+  }
+
+  /**
+   * Everything a person can see or hear anywhere in the review: every stage, every line opened one by one, every
+   * disclosure expanded. Collapsed content must not make an absence check pass by hiding what it checks.
+   */
+  function visibleStrings(): string[] {
+    const todas: string[] = [];
+    for (const etapa of ETAPAS) {
+      irAEtapa(etapa);
+      if (!screen.queryByTestId(`revision-etapa-${etapa}`)) continue;
+      abrirDespliegues();
+      todas.push(...cadenasDePantalla());
+      if (etapa !== 'productos') continue;
+      for (const cabeza of screen.queryAllByTestId(/^revision-linea-.*-abrir$/).map(nodo => nodo.props.testID as string)) {
+        if (screen.getByTestId(cabeza).props.accessibilityState?.expanded === false) fireEvent.press(screen.getByTestId(cabeza));
+        abrirDespliegues();
+        todas.push(...cadenasDePantalla());
+      }
+    }
+    return todas;
   }
 
   async function openNoUsd(moneda: string | null, repo: Mocks = fakeRepo()) {
@@ -481,10 +603,16 @@ describe('B3 currency presentation', () => {
     expect(joined).not.toContain('$');
     expect(joined).not.toMatch(/\(USD\)/);
     expect(textOf('revision-bloqueos')).toMatch(moneda === null ? /desconocida/ : /no es USD/);
-    expect(isDisabled('revision-aprobar')).toBe(true);
+    expect(noSePuede('revision-aprobar')).toBe(true);
     expect(textOf('revision-diferencias')).toMatch(/Importe oculto/);
     expect(textOf('revision-linea-1-precioUnitario-oculto')).toMatch(/Importe oculto/);
     expect(textOf('revision-cab-subtotal-oculto')).toMatch(/Importe oculto/);
+  });
+
+  it('control: the same traversal does reach every amount of a USD document', async () => {
+    await openNoUsd('USD');
+    const joined = visibleStrings().join('\n');
+    for (const amount of ['18.95', '0.80', '8.00', '4.75']) expect(joined).toContain(amount);
   });
 
   it.each(['VES', null])('offers no monetary amount input, but keeps every other field reviewable, while the currency is %s', async moneda => {
@@ -589,6 +717,7 @@ describe('B3 currency presentation', () => {
     await pressId('revision-cab-moneda-aplicar');
     expect(textOf('revision-linea-1-importe-final')).toContain('$8.00');
     expect(textOf('revision-totales')).toContain('$21.982');
+    visitar('revision-linea-1-precioUnitario-valor');
     expect(screen.queryAllByLabelText(/USD/).length).toBeGreaterThan(0);
     expect(textOf('revision-cab-subtotal-original')).toBe('Original: 18.95');
     expect(textOf('revision-linea-1-precioUnitario-original')).toBe('Original: 0.80');
@@ -611,6 +740,7 @@ describe('B3 currency presentation', () => {
     expect(maybeId('revision-linea-1-precioUnitario-oculto')).toBeNull();
     expect(textOf('revision-diferencias')).toContain('Renglón 1 total: impreso 8.00 · calculado 8.00 · diferencia 0.00');
     expect(textOf('revision-diferencias')).not.toContain('sin convertir');
+    visitar('revision-linea-1-precioUnitario-valor');
     expect(screen.queryAllByLabelText(/Costo unitario \(USD\)/).length).toBeGreaterThan(0);
   });
 
@@ -641,6 +771,7 @@ describe('B4 assisted add-line action', () => {
   it('offers an accessible add-line action that needs an explicit motive', async () => {
     const repo = fakeRepo();
     await startRevision(repo);
+    irAEtapa('productos');
     expect(screen.queryByRole('button', { name: /agregar.*rengl[oó]n|a[nñ]adir.*rengl[oó]n|agregar.*l[ií]nea/i })).not.toBeNull();
     await fill('');
     expect(isDisabled('revision-agregar-manual')).toBe(true);

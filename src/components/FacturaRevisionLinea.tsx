@@ -1,23 +1,29 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import { scaleFont } from '../theme/responsive';
 import { useTheme } from '../theme/ThemeContext';
 import type { ExtraidoDescuento } from '../lib/facturaExtractionContract';
 import type { LineMatch } from '../lib/facturaMatching';
 import { precioVentaValido, resolverPrecioVenta } from '../lib/facturaRevision';
 import type { CalculoLinea, Edicion, EstadoCodigoBarras, LineaCampoEscalar, LineaEfectiva, TipoDocumento } from '../lib/facturaRevision';
-import { Boton, CampoCorregible, Entrada, FilasLista, Texto, avisoImporteOculto, etiquetaMonto, formatoUsdExacto } from './FacturaRevisionCabecera';
+import { ETIQUETA_ESTADO_LINEA, type EstadoLinea } from '../lib/facturaRevisionPasos';
+import { Boton, BotonDespliegue, CampoCorregible, Entrada, FilasLista, Texto, avisoImporteOculto, etiquetaMonto, formatoUsdExacto } from './FacturaRevisionCabecera';
 import FacturaCodigoBarrasNuevo, { type CapturaCodigoNuevoProps } from './FacturaCodigoBarrasNuevo';
 
+/** Printed values the person may correct; the VAT rate has its own quick control. */
 const CAMPOS: ReadonlyArray<{ campo: LineaCampoEscalar; label: string; decimal?: boolean; monetario?: boolean }> = [
   { campo: 'codigoProveedor', label: 'Código impreso del proveedor' },
   { campo: 'descripcion', label: 'Descripción' },
   { campo: 'cantidad', label: 'Cantidad del documento', decimal: true },
   { campo: 'unidad', label: 'Unidad del documento' },
   { campo: 'precioUnitario', label: 'Costo unitario (USD)', decimal: true, monetario: true },
-  { campo: 'tasaIva', label: 'IVA (%)', decimal: true },
   { campo: 'total', label: 'Total impreso del renglón (USD)', decimal: true, monetario: true },
 ];
+
+const CAMPO_IVA = { campo: 'tasaIva' as const, label: 'IVA (%)' };
+const TASAS_IVA = ['0', '16'] as const;
 
 const ESTADO_BARRAS: Record<EstadoCodigoBarras, string> = {
   sin_codigo: 'Sin código impreso que usar.',
@@ -50,6 +56,20 @@ export interface FacturaRevisionLineaProps {
   onEditar: (edicion: Edicion) => { ok: boolean };
   onElegirCandidato: (codigoInterno: string) => void;
   capturaCodigo?: Omit<CapturaCodigoNuevoProps, 'id'> & { contexto: string };
+  /** What the person must do next on this line, from the review calculation. */
+  estado: EstadoLinea;
+  /** Reasons of the line's own blockers, already worded. */
+  bloqueos: readonly string[];
+  /** Open (accordion) or selected (side-by-side panes). */
+  abierta: boolean;
+  /**
+   * `completo`: row plus its detail when open (one column). `fila`: the row only, for the list pane. `detalle`: the
+   * detail only, for the detail pane. The detail is mounted once, in one of the two, so it never has two scanners.
+   */
+  modo?: 'completo' | 'fila' | 'detalle';
+  onAlternar: () => void;
+  /** Closes this line and opens the next one that is not ready. */
+  onSiguiente: () => void;
 }
 
 function decisionTexto(efectiva: LineaEfectiva): string {
@@ -59,24 +79,69 @@ function decisionTexto(efectiva: LineaEfectiva): string {
   return `Asociado a ${codigoInterno} (evidencia: ${evidencia === 'sugerencia' ? 'sugerencia' : 'manual'})${motivo ? `. Motivo: ${motivo}` : ''}`;
 }
 
+function colorEstado(estado: EstadoLinea, colors: { success: string; danger: string; warning: string }): string {
+  switch (estado) {
+    case 'listo':
+      return colors.success;
+    case 'revisar':
+    case 'codigo_en_uso':
+      return colors.danger;
+    default:
+      return colors.warning;
+  }
+}
+
+function EstadoChip({ testID, estado }: { testID: string; estado: EstadoLinea }): React.JSX.Element {
+  const { colors } = useTheme();
+  const color = colorEstado(estado, colors);
+  return (
+    <View style={[styles.chip, { borderColor: color }]}>
+      <Feather name={estado === 'listo' ? 'check-circle' : 'alert-circle'} size={14} color={color} />
+      <Text testID={testID} style={[styles.chipTexto, { color }]}>{ETIQUETA_ESTADO_LINEA[estado]}</Text>
+    </View>
+  );
+}
+
+function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }): React.JSX.Element {
+  const { colors } = useTheme();
+  return (
+    <View style={[styles.seccion, { borderTopColor: colors.border }]}>
+      <Texto tone="primary">{titulo}</Texto>
+      {children}
+    </View>
+  );
+}
+
 export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): React.JSX.Element {
   const { colors } = useTheme();
   const { llave, numero, pagina, efectiva, calculo, match, catalogoParcial, moneda, esUsd, estadoBarras, tipoDocumento, precioVenta, borradorPrecio, onBorradorPrecio, onEditar, onElegirCandidato } = props;
+  const { estado, bloqueos, abierta, onAlternar, onSiguiente } = props;
+  const modo = props.modo ?? 'completo';
   const id = `revision-linea-${llave}`;
   const lineaId = efectiva.lineaId;
   const [factor, setFactor] = useState('');
   const [manualCodigo, setManualCodigo] = useState('');
   const [manualMotivo, setManualMotivo] = useState('');
   const [nuevoMotivo, setNuevoMotivo] = useState('');
+  const [panelProducto, setPanelProducto] = useState<'manual' | 'nuevo' | null>(null);
+  const [otroIva, setOtroIva] = useState(false);
+  const [otroFactor, setOtroFactor] = useState(false);
+  const [corregir, setCorregir] = useState(false);
+  const [mas, setMas] = useState(false);
   const codigo = efectiva.campos.codigoProveedor.valor;
   const confianza = efectiva.lecturaOcr?.confianza ?? null;
   const esManual = efectiva.numeroLinea === null;
+  const esNuevo = efectiva.asociacion.tipo === 'producto_nuevo';
+  const iva = efectiva.campos.tasaIva;
   // Unconverted amounts stay internal: no figure is shown until a conversion to USD is approved.
   const oculto = esUsd ? null : avisoImporteOculto(moneda);
   const monto = (valor: string | null): string => oculto ?? formatoUsdExacto(valor);
   const costoNetoUnitario = calculo?.costoNetoUnitarioStock ?? null;
   const sugerido = resolverPrecioVenta({ tipoDocumento, costoNetoUnitario, precioVenta: null });
   const aplicado = resolverPrecioVenta({ tipoDocumento, costoNetoUnitario, precioVenta });
+  const descripcion = efectiva.campos.descripcion.valor;
+  const cantidad = efectiva.campos.cantidad.valor;
+  const titulo = `${esManual ? 'Manual' : '#'}${numero} ${descripcion ?? 'Sin descripción'}`;
 
   // Valid text (or a blank, which restores the default) is stored at once, so Guardar never depends on a blur.
   // Text that cannot be stored stays here as a draft the view uses to block saving: it is never replaced by the suggestion.
@@ -99,84 +164,24 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
     if (tipoDocumento === null) return { texto: 'Elige el tipo de documento (factura o nota de entrega) para ver un precio sugerido.', tono: 'warning' };
     return { texto: 'Sin costo neto calculado para este renglón: no hay precio sugerido.', tono: 'warning' };
   }
-  const estado = estadoPrecio();
+  const estadoDelPrecio = estadoPrecio();
 
-  return (
-    <View testID={id} style={[styles.tarjeta, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <Texto tone="primary">{esManual ? `Renglón manual ${numero}` : `Renglón ${numero}`}</Texto>
-      <Texto testID={`${id}-pagina`} small tone="muted">{pagina === null ? 'Página: sin dato' : `Página ${pagina}`}</Texto>
-      <Texto small tone="muted">Código impreso (literal):</Texto>
-      <Texto testID={`${id}-codigo`}>{codigo ?? ''}</Texto>
-      <Texto testID={`${id}-ocr`} small tone="muted">
-        {confianza === null ? 'Lectura OCR: sin dato de confianza' : `Lectura OCR: ${Math.round(confianza * 100)} %`}
-      </Texto>
-      {efectiva.lecturaOcr?.campoDudoso.length ? <Texto small tone="warning">{`Campos dudosos: ${efectiva.lecturaOcr.campoDudoso.join(', ')}`}</Texto> : null}
+  // The chips send exactly the edits of the manual path (same fields, same motive text), so a saved review never shows
+  // which control was used.
+  function indicarIva(tasa: string): void {
+    onEditar({ tipo: 'linea_escalar', lineaId, campo: 'tasaIva', valor: tasa, motivo: `IVA indicado manualmente: ${tasa} %` });
+  }
 
-      <Texto small tone="muted">Introduce el IVA (%) manualmente en cada renglón: 0 si no aplica. El IVA detectado es solo referencia y no se aplica automáticamente.</Texto>
-      {CAMPOS.map(({ campo, label, decimal, monetario }) => (
-        <CampoCorregible
-          key={campo}
-          base={`${id}-${campo}`}
-          label={etiquetaMonto(label, esUsd)}
-          efectivo={efectiva.campos[campo]}
-          keyboardType={decimal ? 'decimal-pad' : 'default'}
-          oculto={monetario ? oculto : null}
-          onAplicar={(valor, motivo) => onEditar({ tipo: 'linea_escalar', lineaId, campo, valor, motivo })}
-          onRevertir={() => onEditar({ tipo: 'revertir_linea', lineaId, campo })}
-        />
-      ))}
+  function alternarPanel(panel: 'manual' | 'nuevo'): void {
+    setPanelProducto(actual => (actual === panel ? null : panel));
+  }
 
-      <FilasLista
-        base={`${id}-descuentos`}
-        tipo="descuentos"
-        titulo="Descuentos del renglón (en orden)"
-        oculto={oculto}
-        efectivo={efectiva.descuentos}
-        onAplicar={(valor, motivo) => onEditar({ tipo: 'linea_descuentos', lineaId, valor: valor as ExtraidoDescuento[], motivo })}
-      />
+  const mostrarCodigoImpreso = !esNuevo || efectiva.usarCodigoFactura;
 
-      <View style={[styles.caja, { borderColor: colors.border }]}>
-        <Texto small tone="muted">Unidades de inventario por unidad del documento (factor)</Texto>
-        <Texto small tone={efectiva.factorConversion === null ? 'warning' : 'text'}>{efectiva.factorConversion === null ? 'Sin confirmar' : `Confirmado: ${efectiva.factorConversion}`}</Texto>
-        <Entrada testID={`${id}-factor-valor`} label="Factor de conversión" value={factor} keyboardType="decimal-pad" onChangeText={setFactor} />
-        <Boton testID={`${id}-factor-aplicar`} label="Confirmar factor" disabled={factor.trim() === ''} onPress={() => { onEditar({ tipo: 'factor_conversion', lineaId, valor: factor.trim() }); setFactor(''); }} />
-      </View>
-
-      <View style={[styles.caja, { borderColor: colors.border }]}>
-        <Texto small tone="muted">{esUsd ? 'Importes calculados (USD, exactos)' : 'Importes calculados (sin convertir)'}</Texto>
-        <Texto testID={`${id}-importe-final`}>{`Importe tras descuentos: ${monto(calculo?.importeFinal ?? null)}`}</Texto>
-        <Texto testID={`${id}-base`} small>{esUsd ? `Base sin IVA: ${monto(calculo?.base ?? null)} · IVA: ${monto(calculo?.iva ?? null)}` : `Base sin IVA e IVA: ${oculto}`}</Texto>
-        <Texto testID={`${id}-costo-unitario`}>{`Costo neto por unidad de inventario: ${monto(calculo?.costoNetoUnitarioStock ?? null)}`}</Texto>
-        <Texto small tone="muted">{`Cantidad en inventario: ${calculo?.cantidadStock ?? 'desconocida'} · Cantidad del documento: ${calculo?.cantidadDocumento ?? 'sin dato'}`}</Texto>
-      </View>
-
-      <View style={[styles.caja, { borderColor: colors.border }]}>
-        <Texto small tone="muted">{etiquetaMonto('Precio de venta del renglón (USD)', esUsd)}</Texto>
-        {oculto ? (
-          <Texto testID={`${id}-pvp-oculto`} small tone="warning">{oculto}</Texto>
-        ) : (
-          <>
-            <Entrada
-              testID={`${id}-pvp-valor`}
-              label="Precio de venta (USD)"
-              hint="Déjalo vacío para usar el precio sugerido."
-              placeholder={sugerido ? formatoUsdExacto(sugerido.valor) : 'Sin precio sugerido'}
-              legible
-              value={borradorPrecio ?? precioVenta ?? ''}
-              keyboardType="decimal-pad"
-              onChangeText={cambiarPrecio}
-            />
-            <Texto testID={`${id}-pvp-estado`} small tone={estado.tono}>{estado.texto}</Texto>
-          </>
-        )}
-      </View>
-
-      <View style={[styles.caja, { borderColor: colors.border }]}>
-        <Texto small tone="muted">Producto del catálogo (decisión humana, distinta de la lectura OCR)</Texto>
-        <Texto testID={`${id}-decision`} tone={efectiva.asociacion.tipo === 'pendiente' ? 'warning' : 'text'}>{decisionTexto(efectiva)}</Texto>
-        {efectiva.asociacion.tipo === 'producto_nuevo' && props.capturaCodigo ? (
-          <FacturaCodigoBarrasNuevo key={props.capturaCodigo.contexto} {...props.capturaCodigo} id={id} />
-        ) : null}
+  function renderProducto(): React.JSX.Element {
+    return (
+      <Seccion titulo="¿Qué producto es?">
+        <Texto small tone="muted">Decisión humana, distinta de la lectura de la factura.</Texto>
         {match?.feedback ? (
           <Texto testID={`${id}-feedback`} small tone="warning">
             {match.feedback.decision === 'producto_nuevo'
@@ -198,55 +203,253 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
           <Texto testID={`${id}-sin-candidatos`} small tone="warning">{catalogoParcial ? 'Sin candidatos en una lectura parcial: no prueba que el producto no exista. Sigue sin decidir.' : 'Sin candidatos en la lectura acotada del catálogo. Sigue sin decidir.'}</Texto>
         ) : null}
         {match && match.conflicts.length > 0 ? <Texto small tone="danger">Hay señales en conflicto entre código y descripción: revisa con cuidado.</Texto> : null}
-        <Entrada testID={`${id}-manual-codigo`} label="Código interno (SKU) manual" value={manualCodigo} onChangeText={setManualCodigo} />
-        <Entrada testID={`${id}-manual-motivo`} label="Motivo de la asociación manual" value={manualMotivo} onChangeText={setManualMotivo} />
-        <Boton
-          testID={`${id}-manual-aplicar`}
-          label="Asociar manualmente"
-          disabled={manualCodigo.trim() === '' || manualMotivo.trim() === ''}
-          onPress={() => {
-            onEditar({ tipo: 'asociacion', lineaId, asociacion: { tipo: 'confirmado', codigoInterno: manualCodigo.trim(), evidencia: 'manual', motivo: manualMotivo.trim() } });
-            setManualCodigo('');
-            setManualMotivo('');
-          }}
-        />
-        <Entrada testID={`${id}-nuevo-motivo`} label="Motivo: es un producto nuevo" value={nuevoMotivo} onChangeText={setNuevoMotivo} />
-        <Boton
-          testID={`${id}-nuevo-aplicar`}
-          label="Marcar como producto nuevo (no se crea)"
-          disabled={nuevoMotivo.trim() === ''}
-          onPress={() => {
-            onEditar({ tipo: 'asociacion', lineaId, asociacion: { tipo: 'producto_nuevo', codigoInterno: null, evidencia: 'manual', motivo: nuevoMotivo.trim() } });
-            setNuevoMotivo('');
-          }}
-        />
+        <View style={styles.fila}>
+          <BotonDespliegue testID={`${id}-manual-abrir`} label="Buscar por SKU" abierto={panelProducto === 'manual'} onPress={() => alternarPanel('manual')} />
+          <BotonDespliegue testID={`${id}-nuevo-abrir`} label="Es un producto nuevo" abierto={panelProducto === 'nuevo'} onPress={() => alternarPanel('nuevo')} />
+        </View>
+        {panelProducto === 'manual' ? (
+          <View style={styles.panel}>
+            <Entrada testID={`${id}-manual-codigo`} label="Código interno (SKU) manual" value={manualCodigo} onChangeText={setManualCodigo} />
+            <Entrada testID={`${id}-manual-motivo`} label="Motivo de la asociación manual" value={manualMotivo} onChangeText={setManualMotivo} />
+            <Boton
+              testID={`${id}-manual-aplicar`}
+              label="Asociar manualmente"
+              disabled={manualCodigo.trim() === '' || manualMotivo.trim() === ''}
+              onPress={() => {
+                onEditar({ tipo: 'asociacion', lineaId, asociacion: { tipo: 'confirmado', codigoInterno: manualCodigo.trim(), evidencia: 'manual', motivo: manualMotivo.trim() } });
+                setManualCodigo('');
+                setManualMotivo('');
+              }}
+            />
+          </View>
+        ) : null}
+        {panelProducto === 'nuevo' ? (
+          <View style={styles.panel}>
+            <Entrada testID={`${id}-nuevo-motivo`} label="Motivo: es un producto nuevo" value={nuevoMotivo} onChangeText={setNuevoMotivo} />
+            <Boton
+              testID={`${id}-nuevo-aplicar`}
+              label="Marcar como producto nuevo (no se crea)"
+              disabled={nuevoMotivo.trim() === ''}
+              onPress={() => {
+                onEditar({ tipo: 'asociacion', lineaId, asociacion: { tipo: 'producto_nuevo', codigoInterno: null, evidencia: 'manual', motivo: nuevoMotivo.trim() } });
+                setNuevoMotivo('');
+              }}
+            />
+          </View>
+        ) : null}
         {efectiva.asociacion.tipo !== 'pendiente' ? (
-          <Boton testID={`${id}-pendiente`} label="Cambiar producto (volver a sin decidir)" danger onPress={() => onEditar({ tipo: 'asociacion', lineaId, asociacion: { tipo: 'pendiente', codigoInterno: null, evidencia: null, motivo: null } })} />
+          <>
+            <Boton testID={`${id}-pendiente`} label="Cambiar producto" danger onPress={() => onEditar({ tipo: 'asociacion', lineaId, asociacion: { tipo: 'pendiente', codigoInterno: null, evidencia: null, motivo: null } })} />
+            <Texto small tone="muted">Deja el renglón sin decidir para elegir otro producto.</Texto>
+          </>
         ) : null}
-      </View>
+      </Seccion>
+    );
+  }
 
-      <View style={[styles.caja, { borderColor: colors.border }]}>
-        <Texto small tone="muted">Código de barras propuesto: el código impreso, tal cual</Texto>
-        <Texto testID={`${id}-barras-codigo`}>{codigo ?? ''}</Texto>
-        <Boton
-          testID={`${id}-barras-usar`}
-          label={efectiva.usarCodigoFactura ? 'Usar el código impreso: sí' : 'Usar el código impreso: no'}
-          selected={efectiva.usarCodigoFactura}
-          onPress={() => onEditar({ tipo: 'codigo_barras', lineaId, usarCodigoFactura: !efectiva.usarCodigoFactura })}
+  function renderIva(): React.JSX.Element {
+    return (
+      <Seccion titulo="IVA de este renglón (obligatorio)">
+        <Texto testID={`revision-iva-${llave}-estado`} tone={iva.corregido && iva.valor !== null ? 'text' : 'warning'}>
+          {iva.corregido && iva.valor !== null ? `Indicado: ${iva.valor} %` : 'Sin definir'}
+        </Texto>
+        {iva.original !== null ? <Texto small tone="muted">{`El documento indica IVA ${iva.original}. Es solo referencia: confírmalo tú.`}</Texto> : null}
+        <View style={styles.fila}>
+          {TASAS_IVA.map(tasa => (
+            <Boton key={tasa} testID={`revision-iva-${llave}-${tasa}`} label={`${tasa} %`} selected={iva.corregido && iva.valor === tasa} onPress={() => indicarIva(tasa)} />
+          ))}
+          <BotonDespliegue testID={`revision-iva-${llave}-otro`} label="Otro…" abierto={otroIva} onPress={() => setOtroIva(actual => !actual)} />
+        </View>
+        {otroIva ? (
+          <CampoCorregible
+            base={`${id}-${CAMPO_IVA.campo}`}
+            label={CAMPO_IVA.label}
+            efectivo={iva}
+            keyboardType="decimal-pad"
+            onAplicar={(valor, motivo) => onEditar({ tipo: 'linea_escalar', lineaId, campo: CAMPO_IVA.campo, valor, motivo })}
+            onRevertir={() => onEditar({ tipo: 'revertir_linea', lineaId, campo: CAMPO_IVA.campo })}
+          />
+        ) : null}
+      </Seccion>
+    );
+  }
+
+  function renderUnidades(): React.JSX.Element {
+    return (
+      <Seccion titulo="Unidades de inventario por unidad del documento">
+        <Texto testID={`revision-factor-${llave}-estado`} tone={efectiva.factorConversion === null ? 'warning' : 'text'}>
+          {efectiva.factorConversion === null ? 'Sin confirmar' : `Confirmado: ${efectiva.factorConversion}`}
+        </Texto>
+        <View style={styles.fila}>
+          <Boton
+            testID={`revision-factor-${llave}-uno`}
+            label="1 por 1"
+            selected={efectiva.factorConversion === '1'}
+            onPress={() => onEditar({ tipo: 'factor_conversion', lineaId, valor: '1' })}
+          />
+          <BotonDespliegue testID={`revision-factor-${llave}-otro`} label="Otro factor…" abierto={otroFactor} onPress={() => setOtroFactor(actual => !actual)} />
+        </View>
+        {otroFactor ? (
+          <View style={styles.panel}>
+            <Entrada testID={`${id}-factor-valor`} label="Factor de conversión" value={factor} keyboardType="decimal-pad" onChangeText={setFactor} />
+            <Boton testID={`${id}-factor-aplicar`} label="Confirmar factor" disabled={factor.trim() === ''} onPress={() => { onEditar({ tipo: 'factor_conversion', lineaId, valor: factor.trim() }); setFactor(''); }} />
+          </View>
+        ) : null}
+      </Seccion>
+    );
+  }
+
+  function renderPrecioVenta(): React.JSX.Element {
+    return (
+      <Seccion titulo="Precio de venta">
+        <Texto small tone="muted">{etiquetaMonto('Precio de venta del renglón (USD)', esUsd)}</Texto>
+        {oculto ? (
+          <Texto testID={`${id}-pvp-oculto`} small tone="warning">{oculto}</Texto>
+        ) : (
+          <>
+            <Entrada
+              testID={`${id}-pvp-valor`}
+              label="Precio de venta (USD)"
+              hint="Déjalo vacío para usar el precio sugerido."
+              placeholder={sugerido ? formatoUsdExacto(sugerido.valor) : 'Sin precio sugerido'}
+              legible
+              value={borradorPrecio ?? precioVenta ?? ''}
+              keyboardType="decimal-pad"
+              onChangeText={cambiarPrecio}
+            />
+            <Texto testID={`${id}-pvp-estado`} small tone={estadoDelPrecio.tono}>{estadoDelPrecio.texto}</Texto>
+          </>
+        )}
+      </Seccion>
+    );
+  }
+
+  function renderMasOpciones(): React.JSX.Element {
+    return (
+      <View style={styles.panel}>
+        <Texto testID={`${id}-pagina`} small tone="muted">{pagina === null ? 'Página: sin dato' : `Página ${pagina}`}</Texto>
+        <Texto testID={`${id}-ocr`} small tone="muted">
+          {confianza === null ? 'Lectura OCR: sin dato de confianza' : `Lectura OCR: ${Math.round(confianza * 100)} %`}
+        </Texto>
+        {efectiva.lecturaOcr?.campoDudoso.length ? <Texto small tone="warning">{`Campos dudosos: ${efectiva.lecturaOcr.campoDudoso.join(', ')}`}</Texto> : null}
+
+        <View style={[styles.caja, { borderColor: colors.border }]}>
+          <Texto small tone="muted">{esUsd ? 'Importes calculados (USD, exactos)' : 'Importes calculados (sin convertir)'}</Texto>
+          <Texto testID={`${id}-importe-final`}>{`Importe tras descuentos: ${monto(calculo?.importeFinal ?? null)}`}</Texto>
+          <Texto testID={`${id}-base`} small>{esUsd ? `Base sin IVA: ${monto(calculo?.base ?? null)} · IVA: ${monto(calculo?.iva ?? null)}` : `Base sin IVA e IVA: ${oculto}`}</Texto>
+          <Texto testID={`${id}-costo-unitario`}>{`Costo neto por unidad de inventario: ${monto(calculo?.costoNetoUnitarioStock ?? null)}`}</Texto>
+          <Texto small tone="muted">{`Cantidad en inventario: ${calculo?.cantidadStock ?? 'desconocida'} · Cantidad del documento: ${calculo?.cantidadDocumento ?? 'sin dato'}`}</Texto>
+        </View>
+
+        <FilasLista
+          base={`${id}-descuentos`}
+          tipo="descuentos"
+          titulo="Descuentos del renglón (en orden)"
+          oculto={oculto}
+          efectivo={efectiva.descuentos}
+          onAplicar={(valor, motivo) => onEditar({ tipo: 'linea_descuentos', lineaId, valor: valor as ExtraidoDescuento[], motivo })}
         />
-        {efectiva.usarCodigoFactura ? (
-          <Texto testID={`${id}-barras-estado`} small tone={estadoBarras === 'unico_verificado' || estadoBarras === 'ya_asignado_a_este_producto' ? 'success' : 'warning'}>
-            {efectiva.asociacion.tipo === 'pendiente' ? 'Decide primero la asociación del renglón.' : ESTADO_BARRAS[estadoBarras ?? 'no_verificable']}
-          </Texto>
-        ) : null}
-      </View>
 
-      {esManual ? <Boton testID={`${id}-quitar`} label="Quitar renglón manual" danger onPress={() => onEditar({ tipo: 'quitar_linea_manual', lineaId })} /> : null}
+        {mostrarCodigoImpreso ? (
+          <View style={[styles.caja, { borderColor: colors.border }]}>
+            <Texto small tone="muted">Código de barras propuesto: el código impreso, tal cual</Texto>
+            <Texto testID={`${id}-barras-codigo`}>{codigo ?? ''}</Texto>
+            {esNuevo ? <Texto small tone="warning">En un producto nuevo el código impreso va en Referencia, no como código de barras. Desactívalo.</Texto> : null}
+            <Boton
+              testID={`${id}-barras-usar`}
+              label={efectiva.usarCodigoFactura ? 'Usar el código impreso: sí' : 'Usar el código impreso: no'}
+              selected={efectiva.usarCodigoFactura}
+              onPress={() => onEditar({ tipo: 'codigo_barras', lineaId, usarCodigoFactura: !efectiva.usarCodigoFactura })}
+            />
+            {efectiva.usarCodigoFactura ? (
+              <Texto testID={`${id}-barras-estado`} small tone={estadoBarras === 'unico_verificado' || estadoBarras === 'ya_asignado_a_este_producto' ? 'success' : 'warning'}>
+                {efectiva.asociacion.tipo === 'pendiente' ? 'Decide primero la asociación del renglón.' : ESTADO_BARRAS[estadoBarras ?? 'no_verificable']}
+              </Texto>
+            ) : null}
+          </View>
+        ) : null}
+
+        {esManual ? <Boton testID={`${id}-quitar`} label="Quitar renglón manual" danger onPress={() => onEditar({ tipo: 'quitar_linea_manual', lineaId })} /> : null}
+      </View>
+    );
+  }
+
+  function renderDetalle(): React.JSX.Element {
+    return (
+      <View testID={`${id}-detalle`} style={modo === 'detalle' ? [styles.tarjeta, { backgroundColor: colors.surface, borderColor: colors.primary }] : styles.detalle}>
+        {modo === 'detalle' ? <Texto tone="primary">{titulo}</Texto> : null}
+        {estado === 'revisar' && bloqueos.length > 0 ? bloqueos.map((texto, i) => <Texto key={i} small tone="danger">{`• ${texto}`}</Texto>) : null}
+        {renderProducto()}
+        {estado === 'falta_codigo' ? <Texto small tone="warning">Escanea o escribe el código de barras del producto nuevo: sin él no se puede preparar el borrador de compra.</Texto> : null}
+        {esNuevo && props.capturaCodigo ? <FacturaCodigoBarrasNuevo key={props.capturaCodigo.contexto} {...props.capturaCodigo} id={id} /> : null}
+        {renderIva()}
+        {renderUnidades()}
+        {renderPrecioVenta()}
+        <BotonDespliegue testID={`${id}-corregir`} label="Corregir lectura" abierto={corregir} onPress={() => setCorregir(actual => !actual)} />
+        {corregir
+          ? CAMPOS.map(({ campo, label, decimal, monetario }) => (
+              <CampoCorregible
+                key={campo}
+                base={`${id}-${campo}`}
+                label={etiquetaMonto(label, esUsd)}
+                efectivo={efectiva.campos[campo]}
+                keyboardType={decimal ? 'decimal-pad' : 'default'}
+                oculto={monetario ? oculto : null}
+                onAplicar={(valor, motivo) => onEditar({ tipo: 'linea_escalar', lineaId, campo, valor, motivo })}
+                onRevertir={() => onEditar({ tipo: 'revertir_linea', lineaId, campo })}
+              />
+            ))
+          : null}
+        <BotonDespliegue testID={`${id}-mas`} label="Más opciones" abierto={mas} onPress={() => setMas(actual => !actual)} />
+        {mas ? renderMasOpciones() : null}
+        <Boton testID={`${id}-siguiente`} label="Listo, siguiente renglón" onPress={onSiguiente} />
+      </View>
+    );
+  }
+
+  if (modo === 'detalle') return renderDetalle();
+
+  return (
+    <View testID={id} style={[styles.tarjeta, { backgroundColor: colors.surface, borderColor: abierta ? colors.primary : colors.border }]}>
+      <Pressable
+        testID={`${id}-abrir`}
+        accessibilityRole="button"
+        accessibilityLabel={`${titulo}. ${ETIQUETA_ESTADO_LINEA[estado]}`}
+        accessibilityState={modo === 'fila' ? { selected: abierta } : { expanded: abierta }}
+        onPress={onAlternar}
+        style={({ pressed }) => [styles.cabeza, { opacity: pressed ? 0.8 : 1 }]}
+      >
+        <View style={styles.cabezaTexto}>
+          <Texto tone="primary">{titulo}</Texto>
+          <Texto small tone="muted">{`Cantidad ${cantidad ?? 'sin dato'}${esUsd ? ` · Costo ${formatoUsdExacto(efectiva.campos.precioUnitario.valor)}` : ''}`}</Texto>
+          <View style={styles.filaCodigo}>
+            <Texto small tone="muted">Código impreso:</Texto>
+            <Texto testID={`${id}-codigo`}>{codigo ?? ''}</Texto>
+          </View>
+          <Texto testID={`${id}-decision`} small tone={efectiva.asociacion.tipo === 'pendiente' ? 'warning' : 'text'}>{decisionTexto(efectiva)}</Texto>
+        </View>
+        <View style={styles.cabezaEstado}>
+          <EstadoChip testID={`${id}-estado`} estado={estado} />
+          {modo === 'completo' ? <Feather name={abierta ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} /> : null}
+        </View>
+      </Pressable>
+
+      {modo === 'completo' && abierta ? renderDetalle() : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  tarjeta: { borderWidth: 0.5, borderRadius: 12, padding: 12, gap: 8 },
+  tarjeta: { borderWidth: 0.5, borderRadius: 12, padding: 12, gap: 10 },
+  cabeza: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, minHeight: 44 },
+  cabezaTexto: { flexGrow: 1, flexShrink: 1, flexBasis: 0, gap: 3 },
+  cabezaEstado: { alignItems: 'flex-end', gap: 6 },
+  filaCodigo: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+  chipTexto: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold' },
+  detalle: { gap: 12 },
+  seccion: { gap: 8, borderTopWidth: 0.5, paddingTop: 12 },
+  fila: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+  panel: { gap: 8 },
   caja: { borderWidth: 0.5, borderRadius: 10, padding: 10, gap: 6 },
 });
