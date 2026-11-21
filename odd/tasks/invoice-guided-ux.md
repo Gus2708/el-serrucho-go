@@ -213,10 +213,10 @@ npm run typecheck
 
 ## Tasks
 - P0 [S1-S3] inline; optional stage contract integrated into acef80d; no runtime-only-interface RED applicable; later behavior tests verify stage control.
-- U1 [S1-S4] delegated parallel writer; source implemented, 54 owned UI tests/typecheck passed; editor/list/stepper included in final shell commit below; real visual acceptance pending.
+- U1 [S1-S4] delegated parallel writer; source implemented, 54 owned UI tests/typecheck passed; editor/list/stepper included in 417e140; real visual acceptance pending.
 - U2 [S1-S4] delegated parallel writer; implemented acef80d with single-action correction and C1 B1/B2 fixes; 40 helper/210 writer UI/typecheck passed; independent targeted recheck passed. Risk: items 3/4.
 - U3 [S1-S4] delegated parallel writer; implemented fa6ed61, 21 camera UI/8 picker tests; source camera adapter integrated by parent, fake hardware only. Risk: items 3/4/6.
-- I1 [S1-S4] inline parent camera/editor/Compras/docs seam implemented; 85 combined UI tests passed; final shell commit below. Preview and device acceptance pending. Risk: items 3/4.
+- I1 [S1-S4] inline parent camera/editor/Compras/docs seam implemented; 85 combined UI tests passed; 417e140. Preview and device acceptance pending. Risk: items 3/4.
 - V1 [S1-S4] delegated independent verification complete at code/layout-tree scope; initial full 1317 unit/320 UI/418 SQL/types passed; corrected targeted 40 helper/298 UI including9 external probes/types passed. B1/B2 resolved. Actual pixels/keyboard/camera UNVERIFIED.
 
 ## Log
@@ -244,3 +244,5 @@ npm run typecheck
 
 - L18 Targeted same-verifier recheck task_29eeedf8cefe/ctx_e81836abd82e resolved B1/B2 on corrected23hash-frozen source;40helper/298focusedUI(includes9externalprobes)/types allEXIT0. Actual useDeviceSize with360390/768820/1280 confirmed layout/scanner uniqueness; stale source/code/session answers never revive readiness. Parent read RECHECK-REPORT.md and already reran40helper0. Advisories: samecode-clear-recapture cache reuse; a read can be sent under mismatched session but answer dropped. No new sweep/corrections for advisories. Scratch retained atTemp/guided-ux-verify-1795268965 with4junctions, no unsafe cleanup attempted.
 - L19 Coherent commits locally: fa6ed61 camera+adapter+tests (681 authored lines); acef80d guided-review+responsive/collision fixes+tests (3194 authored lines, indivisible view/line regression behavior). Kept readable full tests instead of artificial size-only splits; exception-ok strategy recorded. Parent shell/camera-wiring/list/entry/docs task commit follows. Review cloneOFF peruser unchanged, disabled/unmanaged; native assessHIGH nameditem4 and independent functional proof, NO native approval. Source code allmatches frozen corrected candidate; only passive docs updated after check. No remote push/deploy/newmodel/inventory/businessPCcall. Release/version/APK pending actual UX acceptance and separate remote authorization.
+
+- L20 Final shell integration commit417e140a3dd2f56a19cfa2b7f3bcc812ff67565d observed successful; only preexisting untracked.codex/ andAGENTS.md remain. No remote push yet. Docs-only closure records exact code commits fa6ed61/acef80d/417e140. Next requires authorization to push this updated branch toGitHub with currentCLIsession for automaticPreview; not mastermerge/release/businessPCoperation. Actual visual proof remains pending, source verification is not whole-surface visual approval.
