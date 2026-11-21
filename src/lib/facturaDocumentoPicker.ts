@@ -18,13 +18,18 @@ async function readWebBlob(asset: DocumentPicker.DocumentPickerAsset): Promise<B
   return response.blob();
 }
 
+/** Reads a local file (native only) as bytes. Callers enforce MAX_DOCUMENT_BYTES on the result. */
+export async function readPhotoBytes(uri: string): Promise<Uint8Array> {
+  const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+  return new Uint8Array(decode(base64));
+}
+
 async function readAssetBytes(asset: DocumentPicker.DocumentPickerAsset): Promise<Uint8Array> {
   if (Platform.OS === 'web') {
     const blob = await readWebBlob(asset);
     return new Uint8Array(await blob.arrayBuffer());
   }
-  const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
-  return new Uint8Array(decode(base64));
+  return readPhotoBytes(asset.uri);
 }
 
 /** Opens the system picker for one PDF or image. Returns null when the user cancels. */
