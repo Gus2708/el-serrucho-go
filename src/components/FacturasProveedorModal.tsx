@@ -52,8 +52,34 @@ function draftTitle(record: FacturaLocalRecord): string {
 }
 
 function draftSubtitle(record: FacturaLocalRecord): string {
-  const proveedor = record.draft.proveedorNombre.trim();
-  return proveedor ? `${proveedor} · Sin enviar al servidor` : 'Sin enviar al servidor';
+  return record.draft.proveedorNombre.trim() || 'Sin proveedor';
+}
+
+interface EstadoChipProps {
+  icono: React.ComponentProps<typeof Feather>['name'];
+  texto: string;
+  color: string;
+}
+
+/** Row status with icon and text, so it never relies on color alone. */
+function EstadoChip({ icono, texto, color }: EstadoChipProps): React.JSX.Element {
+  return (
+    <View style={[styles.chip, { borderColor: color }]}>
+      <Feather name={icono} size={11} color={color} />
+      <Text style={[styles.chipText, { color }]}>{texto}</Text>
+    </View>
+  );
+}
+
+function SkeletonRows(): React.JSX.Element {
+  const { colors } = useTheme();
+  return (
+    <View style={styles.listContent} testID="facturas-cargando" accessibilityLabel="Cargando facturas" accessibilityLiveRegion="polite">
+      {[0, 1, 2].map(index => (
+        <View key={index} style={[styles.rowCard, styles.skeletonRow, { backgroundColor: colors.surface, borderColor: colors.border }]} />
+      ))}
+    </View>
+  );
 }
 
 function buildRows(drafts: FacturaLocalRecord[], saved: FacturaResumen[]): ListRow[] {
@@ -171,6 +197,7 @@ export default function FacturasProveedorModal({
           <View style={styles.rowText}>
             <Text style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>{draftTitle(row.record)}</Text>
             <Text style={[styles.rowSub, { color: colors.textMuted }]} numberOfLines={1}>{draftSubtitle(row.record)}</Text>
+            <EstadoChip icono="edit-3" texto="Borrador en este dispositivo" color={colors.primary} />
           </View>
           <Feather name="chevron-right" size={18} color={colors.textDim} />
         </PressableScale>
@@ -182,6 +209,7 @@ export default function FacturasProveedorModal({
         <View style={styles.rowText}>
           <Text style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>{summaryTitle(row.item)}</Text>
           <Text style={[styles.rowSub, { color: colors.textMuted }]} numberOfLines={1}>{summarySubtitle(row.item)}</Text>
+          <EstadoChip icono="check-circle" texto="Guardada" color={colors.success} />
         </View>
         <Feather name="chevron-right" size={18} color={colors.textDim} />
       </PressableScale>
@@ -202,19 +230,22 @@ export default function FacturasProveedorModal({
         </View>
 
         <View style={styles.body}>
-          <PressableScale onPress={openNew} dimmed={ownerId === null} disabled={ownerId === null} style={[styles.newBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }]}>
-            <Feather name="plus" size={16} color={colors.primary} />
-            <Text style={[styles.newBtnText, { color: colors.primary }]}>Nueva factura</Text>
+          <PressableScale onPress={openNew} dimmed={ownerId === null} disabled={ownerId === null} accessibilityRole="button" style={[styles.newBtn, { borderColor: colors.primary, backgroundColor: colors.primary }]}>
+            <Feather name="plus" size={16} color={colors.onPrimary} />
+            <Text style={[styles.newBtnText, { color: colors.onPrimary }]}>Nueva factura</Text>
           </PressableScale>
           <Text style={[styles.hint, { color: colors.textDim }]}>
-            Guarda el documento y sus renglones para retomarlos después. No registra ninguna compra ni cambia el inventario.
+            Sube la foto de la factura y el sistema lee los productos cuando tú lo pides. También puedes cargarla a mano.
           </Text>
 
-          {list.isLoading ? <ActivityIndicator color={colors.primary} style={styles.center} /> : null}
+          {list.isLoading ? <SkeletonRows /> : null}
           {list.error ? (
-            <PressableScale onPress={() => list.refetch()} style={[styles.newBtn, { borderColor: colors.danger }]}>
-              <Text style={[styles.newBtnText, { color: colors.danger }]}>No se pudo cargar. Reintentar</Text>
-            </PressableScale>
+            <View style={[styles.errorBox, { borderColor: colors.danger }]} accessibilityLiveRegion="polite">
+              <Text style={[styles.hint, { color: colors.danger }]}>No se pudo cargar la lista</Text>
+              <PressableScale onPress={() => list.refetch()} accessibilityRole="button" style={[styles.newBtn, { borderColor: colors.danger }]}>
+                <Text style={[styles.newBtnText, { color: colors.danger }]}>Reintentar</Text>
+              </PressableScale>
+            </View>
           ) : null}
           {unreadable > 0 || borradores.error ? (
             <Text style={[styles.hint, { color: colors.warning }]}>
@@ -260,7 +291,11 @@ const styles = StyleSheet.create({
   section: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1, marginTop: 4 },
   emptyTitle: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_500Medium', textAlign: 'center', marginTop: 24 },
   rowCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 0.5, borderRadius: 12, padding: 12 },
-  rowText: { flex: 1, gap: 2 },
+  rowText: { flex: 1, gap: 4, alignItems: 'flex-start' },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 0.5, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
+  chipText: { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_500Medium' },
+  skeletonRow: { minHeight: 72 },
+  errorBox: { borderWidth: 0.5, borderRadius: 12, padding: 12, gap: 8 },
   rowTitle: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
   rowSub: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular' },
 });

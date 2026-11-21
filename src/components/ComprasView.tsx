@@ -467,7 +467,7 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
             <View style={styles.proveedorBtnText}>
               <Text style={[styles.proveedorLabel, { color: colors.textMuted }]}>FACTURAS DE PROVEEDOR</Text>
               <Text style={[styles.proveedorValue, { color: colors.text }]} numberOfLines={1}>
-                Adjuntar y guardar
+                Foto o carga manual
               </Text>
             </View>
             <FacturaBorradoresBadge />

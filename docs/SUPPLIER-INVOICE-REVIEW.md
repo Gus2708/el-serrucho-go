@@ -5,6 +5,40 @@ Do not merge or deploy it as production-validated work.
 
 ## Included behavior
 
+### Guided invoice entry and review
+
+The redesigned entry separates four stages: Factura, Leer, Productos and Compra.
+The Factura stage supports an optional photo/PDF and preserves manual entry.
+On native devices, Tomar foto opens a guarded camera capture; on web or when
+camera access is unavailable, it falls back to the existing document picker.
+Captured bytes use the same private attachment controller as picked files.
+Capture does not save the invoice, invoke extraction, or emit a purchase.
+Reading remains an explicit user action in Leer. Review stays mounted when
+returning to Factura so that unsaved review edits are not discarded.
+
+Leer presents the reading summary and document-level decisions. Productos
+shows review progress and expandable rows with explicit Confirmar, Cambiar and
+Es un producto nuevo actions. Required VAT and unit-factor choices stay manual;
+quantity, cost and selling-price corrections reuse the existing review edits.
+Compra presents the remaining confirmations and the single current footer
+action: save, approve, or prepare the editable draft. Technical details remain
+available through disclosures rather than dominating the task.
+
+Independent isolated checks passed for the original redesign candidate: 1,317
+unit tests, 320 UI tests, 418 SQL tests and TypeScript. The two reported UX
+blockers were corrected and independently rechecked with 40 helper tests,
+298 focused UI tests (including nine external recheck probes), and TypeScript.
+Colliding or unverified captured codes no longer count as ready. Real size-hook
+probes confirmed one-column layout at 360/390 and side-by-side product panels
+at 768/820/1280, with at most one mounted detail/scanner.
+
+These checks prove code and layout-tree behavior, not rendered pixels. Camera
+tests mock hardware; real camera, keyboard, safe-area and visual acceptance
+remain pending. Clearing and recapturing the same barcode in the same review
+currently reuses its prior lookup result; materialization still performs its
+existing authoritative checks. The imported purchase emission block remains
+in force. No release or production deployment is implied by this source work.
+
 - Manual supplier invoices with USD amounts and an optional document.
 - Versioned saves, idempotent retries and account-isolated local recovery.
 - Protection against overwriting a newer invoice revision.

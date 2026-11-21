@@ -40,6 +40,7 @@ describe('ComprasView invoice entry gate', () => {
   afterEach(() => { mockRole = 'admin'; mockDemo = false; mockFacturaVinculada = false; });
   it('admin: entry present, modal closed, opens on press with supplier prefill', async () => {
     const r = await mount();
+    expect(r.getByText('Foto o carga manual')).toBeTruthy();
     expect(r.getByLabelText('Facturas de proveedor')).toBeTruthy();
     expect(r.getByTestId('mock-facturas-modal').props.children).toBe('false|P1');
     await act(async () => { fireEvent.press(r.getByLabelText('Facturas de proveedor')); });

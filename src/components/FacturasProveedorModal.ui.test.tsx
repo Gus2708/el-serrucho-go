@@ -1,5 +1,6 @@
 import * as React from 'react';
 jest.mock('./BarcodeScannerModal', () => ({ BarcodeScannerModal: () => null }));
+jest.mock('./FacturaCamaraFoto', () => ({ __esModule: true, default: () => null }));
 import { act, fireEvent, screen } from '@testing-library/react-native';
 import FacturasProveedorModal from './FacturasProveedorModal';
 import { facturaEditorService, publishFacturaSession } from '../hooks/useFacturasProveedor';
@@ -73,6 +74,38 @@ afterEach(() => {
   alert.mockRestore();
 });
 
+describe('lista de facturas: entrada guiada', () => {
+  it('explica que la lectura la pide el usuario y no promete lo contrario', async () => {
+    renderModal();
+    await screen.findByText('Aún no hay facturas guardadas');
+
+    expect(screen.getByText('Nueva factura')).toBeTruthy();
+    expect(screen.getByText(/el sistema lee los productos cuando tú lo pides/)).toBeTruthy();
+    expect(screen.queryByText(/No registra ninguna compra/)).toBeNull();
+  });
+
+  it('cada fila dice su estado con texto: borrador en este dispositivo o guardada', async () => {
+    await leaveDraft(OWNER_A, DRAFT_1, 'A-1');
+    backend.tables.list = [serverInvoice(SERVER_1, 'S-9')];
+
+    renderModal();
+    await screen.findByText('Factura S-9');
+
+    expect(screen.getByTestId(`factura-borrador-${DRAFT_1}`)).toHaveTextContent(/Borrador en este dispositivo/);
+    expect(screen.getByTestId(`factura-servidor-${SERVER_1}`)).toHaveTextContent(/Guardada/);
+    expect(screen.queryByText(/Sin enviar al servidor/)).toBeNull();
+  });
+
+  it('mientras carga muestra filas de espera en lugar de una lista vacía', async () => {
+    renderModal();
+
+    expect(screen.getByTestId('facturas-cargando')).toBeTruthy();
+    expect(screen.queryByText('Aún no hay facturas guardadas')).toBeNull();
+    await screen.findByText('Aún no hay facturas guardadas');
+    expect(screen.queryByTestId('facturas-cargando')).toBeNull();
+  });
+});
+
 describe('lista de facturas: borradores locales primero', () => {
   it('muestra los borradores de este dispositivo antes que las facturas del servidor y no abre ninguno solo', async () => {
     await leaveDraft(OWNER_A, DRAFT_1, 'A-1');
@@ -99,7 +132,8 @@ describe('lista de facturas: borradores locales primero', () => {
     renderModal();
 
     expect(await screen.findByText('Factura A-2')).toBeTruthy();
-    expect(screen.getByText('No se pudo cargar. Reintentar')).toBeTruthy();
+    expect(screen.getByText('No se pudo cargar la lista')).toBeTruthy();
+    expect(screen.getByText('Reintentar')).toBeTruthy();
   });
 
   it('no dice que no hay facturas cuando hay borradores, y lo dice cuando no hay nada', async () => {

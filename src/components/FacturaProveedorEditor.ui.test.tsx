@@ -2,6 +2,7 @@ import * as React from 'react';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import FacturaProveedorEditor from './FacturaProveedorEditor';
+import type { FacturaCamaraFotoProps } from './FacturaCamaraFoto';
 import { facturaEditorService, listFacturaBorradores, publishFacturaSession } from '../hooks/useFacturasProveedor';
 import { createDraft } from '../lib/facturaProveedor';
 import { buildDocumentPath } from '../lib/facturaDocumento';
@@ -25,17 +26,31 @@ import {
 } from '../test-utils/facturaUiHarness';
 
 jest.mock('../lib/supabase', () => ({ supabase: require('../test-utils/facturaUiHarness').backend.client }));
+jest.mock('./FacturaCamaraFoto', () => ({
+  __esModule: true,
+  default: (props: FacturaCamaraFotoProps) => {
+    (globalThis as unknown as { __fotoProps: FacturaCamaraFotoProps }).__fotoProps = props;
+    return null;
+  },
+}));
 // The review panel has its own suite; here only the editor's wiring around it is exercised.
 jest.mock('./FacturaRevisionView', () => {
-  const { Pressable, Text } = require('react-native');
+  const { useState } = require('react');
+  const { Pressable, Text, View } = require('react-native');
   return {
     __esModule: true,
     default: (props: { onDirtyChange?: (dirty: boolean) => void }) => {
+      const [marcada, setMarcada] = useState(false);
       (globalThis as unknown as { __revisionProps: unknown }).__revisionProps = props;
       return (
-        <Pressable testID="revision-stub" onPress={() => props.onDirtyChange?.(true)}>
-          <Text>revision-stub</Text>
-        </Pressable>
+        <View>
+          <Pressable testID="revision-stub" onPress={() => props.onDirtyChange?.(true)}>
+            <Text>{marcada ? 'revision-marcada' : 'revision-stub'}</Text>
+          </Pressable>
+          <Pressable testID="revision-stub-marcar" onPress={() => setMarcada(true)}>
+            <Text>marcar</Text>
+          </Pressable>
+        </View>
       );
     },
   };
@@ -64,6 +79,7 @@ let alert: jest.SpyInstance;
 
 beforeEach(() => {
   resetBackend();
+  (DocumentPicker.getDocumentAsync as jest.Mock).mockReset();
   alert = spyOnAlert();
   publishFacturaSession({ user: { id: OWNER_A } });
 });
@@ -96,6 +112,57 @@ function value(label: string, index = 0): string {
   return screen.getAllByLabelText(label)[index].props.value as string;
 }
 
+function fotoProps(): FacturaCamaraFotoProps {
+  return (globalThis as unknown as { __fotoProps: FacturaCamaraFotoProps }).__fotoProps;
+}
+
+const fotoResultado = { ok: true as const, bytes: new Uint8Array([37, 80, 68, 70, 45, 49]), nombre: 'captura.pdf' };
+
+describe('photo camera entry integration', () => {
+  it('opens explicitly and attaches captured bytes without reading or saving the invoice', async () => {
+    await openEditor();
+    expect(fotoProps()?.visible).not.toBe(true);
+    await press(screen.getByTestId('factura-tomar-foto'));
+    expect(fotoProps().visible).toBe(true);
+    expect(backend.bucket.upload).not.toHaveBeenCalled();
+    await act(async () => fotoProps().onCapturada(fotoResultado));
+    await settle();
+    expect(backend.bucket.upload).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('captura.pdf')).toBeTruthy();
+    expect(fotoProps().visible).toBe(false);
+    expect(backend.rpc).not.toHaveBeenCalled();
+  });
+
+  it('ignores a captured callback after cancellation', async () => {
+    await openEditor();
+    await press(screen.getByTestId('factura-tomar-foto'));
+    const previous = fotoProps();
+    await act(async () => previous.onClose());
+    await act(async () => previous.onCapturada(fotoResultado));
+    expect(backend.bucket.upload).not.toHaveBeenCalled();
+  });
+
+  it('ignores a captured callback after the owner session changes', async () => {
+    await openEditor();
+    await press(screen.getByTestId('factura-tomar-foto'));
+    const previous = fotoProps();
+    await act(async () => publishFacturaSession({ user: { id: OWNER_B } }));
+    expect(previous.estaVigente()).toBe(false);
+    await act(async () => previous.onCapturada(fotoResultado));
+    expect(backend.bucket.upload).not.toHaveBeenCalled();
+  });
+
+  it('uses the existing document picker when the camera is unavailable', async () => {
+    await openEditor();
+    (DocumentPicker.getDocumentAsync as jest.Mock).mockResolvedValueOnce({ canceled: true });
+    await press(screen.getByTestId('factura-tomar-foto'));
+    await act(async () => fotoProps().onNoDisponible?.());
+    expect(DocumentPicker.getDocumentAsync).toHaveBeenCalledTimes(1);
+    expect(fotoProps().visible).toBe(false);
+    expect(backend.bucket.upload).not.toHaveBeenCalled();
+  });
+});
+
 async function press(target: ReturnType<typeof screen.getByText>): Promise<void> {
   await act(async () => {
     fireEvent.press(target);
@@ -107,6 +174,13 @@ const pressText = async (text: string): Promise<void> => press(screen.getByText(
 async function pressLabel(label: string): Promise<void> {
   await act(async () => {
     fireEvent.press(screen.getByLabelText(label));
+  });
+}
+
+/** "Más datos" holds the control number and notes; it is collapsed while both are empty. */
+async function openMasDatos(): Promise<void> {
+  await act(async () => {
+    fireEvent.press(screen.getByTestId('factura-mas-datos'));
   });
 }
 
@@ -123,6 +197,7 @@ describe('guardado con respuesta pendiente', () => {
 
     await pressText('Guardar factura');
     await waitFor(() => expect(backend.rpc).toHaveBeenCalledTimes(1));
+    await openMasDatos();
     type('Notas', 'escrito durante el envío');
     await act(async () => {
       reply.resolve(committed(facturaId, 1));
@@ -290,7 +365,7 @@ describe('almacenamiento y respuestas perdidas', () => {
     expect(screen.getByText(UPLOAD_INTERRUPTED)).toBeTruthy();
     expect(value('Número de factura')).toBe('A-7');
     expect(screen.queryByText('Reemplazar')).toBeNull();
-    expect(screen.getByText('Adjuntar PDF o imagen')).toBeTruthy();
+    expect(screen.getByText('Subir foto o PDF')).toBeTruthy();
   });
 });
 
@@ -436,7 +511,7 @@ describe('adjunto opcional y entrada manual', () => {
     });
     scriptRpc(committed(facturaId, 1));
 
-    await pressText('Adjuntar PDF o imagen');
+    await pressText('Subir foto o PDF');
     await settle();
 
     expect(backend.bucket.upload).toHaveBeenCalledTimes(1);
@@ -445,7 +520,7 @@ describe('adjunto opcional y entrada manual', () => {
     expect(uploadedPath.endsWith('.pdf')).toBe(true);
     expect(screen.getByText('factura-norte.pdf')).toBeTruthy();
 
-    await pressText('Guardar factura');
+    await pressText('Guardar y continuar');
     await settle();
 
     expect((rpcArgs().p_cabecera.documento as { path: string; mime: string }).path).toBe(uploadedPath);
@@ -461,11 +536,11 @@ describe('adjunto opcional y entrada manual', () => {
     backend.bucket.upload.mockResolvedValueOnce({ data: null as never, error: { message: 'offline' } });
     scriptRpc(committed(facturaId, 1));
 
-    await pressText('Adjuntar PDF o imagen');
+    await pressText('Subir foto o PDF');
     await settle();
 
     expect(screen.getByText('No se pudo subir el archivo. Inténtalo otra vez.')).toBeTruthy();
-    expect(screen.getByText('Adjuntar PDF o imagen')).toBeTruthy();
+    expect(screen.getByText('Subir foto o PDF')).toBeTruthy();
 
     type('Número de factura', 'A-15');
     await pressText('Guardar factura');
@@ -514,41 +589,41 @@ describe('identificadores para pruebas de extremo a extremo', () => {
   });
 });
 
+const SHA = 'c'.repeat(64);
+const record = (facturaId: string, withDocument = true) => ({
+  id: facturaId,
+  version: 2,
+  proveedor_codigo: null,
+  proveedor_nombre: 'Proveedor Uno',
+  numero_documento: 'A-1',
+  numero_control: null,
+  fecha_documento: null,
+  moneda: 'USD',
+  notas: null,
+  documento_path: withDocument ? `${OWNER_A}/${facturaId}/d.pdf` : null,
+  documento_nombre: withDocument ? 'factura.pdf' : null,
+  documento_mime: withDocument ? ('application/pdf' as const) : null,
+  documento_bytes: withDocument ? 2048 : null,
+  documento_sha256: withDocument ? SHA : null,
+  lineas: [],
+});
+const revisionProps = (): Record<string, unknown> => (globalThis as unknown as { __revisionProps: Record<string, unknown> }).__revisionProps;
+
+async function openSaved(withDocument = true) {
+  const facturaId = nextFactura();
+  const onClose = jest.fn();
+  const view = renderWithProviders(
+    <FacturaProveedorEditor facturaId={facturaId} record={record(facturaId, withDocument)} ownerId={OWNER_A} onClose={onClose} onReload={jest.fn()} />,
+  );
+  await screen.findByLabelText('Número de factura');
+  return { facturaId, onClose, ...view };
+}
+
 describe('revisión asistida (puente con el editor)', () => {
-  const SHA = 'c'.repeat(64);
-  const record = (facturaId: string, withDocument = true) => ({
-    id: facturaId,
-    version: 2,
-    proveedor_codigo: null,
-    proveedor_nombre: 'Proveedor Uno',
-    numero_documento: 'A-1',
-    numero_control: null,
-    fecha_documento: null,
-    moneda: 'USD',
-    notas: null,
-    documento_path: withDocument ? `${OWNER_A}/${facturaId}/d.pdf` : null,
-    documento_nombre: withDocument ? 'factura.pdf' : null,
-    documento_mime: withDocument ? ('application/pdf' as const) : null,
-    documento_bytes: withDocument ? 2048 : null,
-    documento_sha256: withDocument ? SHA : null,
-    lineas: [],
-  });
-  const revisionProps = (): Record<string, unknown> => (globalThis as unknown as { __revisionProps: Record<string, unknown> }).__revisionProps;
-
-  async function openSaved(withDocument = true) {
-    const facturaId = nextFactura();
-    const onClose = jest.fn();
-    const view = renderWithProviders(
-      <FacturaProveedorEditor facturaId={facturaId} record={record(facturaId, withDocument)} ownerId={OWNER_A} onClose={onClose} onReload={jest.fn()} />,
-    );
-    await screen.findByLabelText('Número de factura');
-    return { facturaId, onClose, ...view };
-  }
-
   it('does not offer the review for an unsaved invoice, and manual entry stays complete', async () => {
     await openEditor();
     expect(screen.queryByTestId('factura-abrir-revision')).toBeNull();
-    expect(screen.getByText(/Guarda la factura para habilitar la revisión asistida/)).toBeTruthy();
+    expect(screen.getByText(/Guarda la factura para leerla y revisar sus productos/)).toBeTruthy();
     type('Número de factura', 'A-1');
     expect(value('Número de factura')).toBe('A-1');
     expect(screen.queryByTestId('revision-stub')).toBeNull();
@@ -563,6 +638,11 @@ describe('revisión asistida (puente con el editor)', () => {
     expect(screen.getByTestId('revision-stub')).toBeTruthy();
     expect(revisionProps()).toMatchObject({ facturaId, ownerId: OWNER_A, facturaVersion: 2, editorDirty: false, documento: expect.objectContaining({ sha256: SHA }) });
 
+    // The form is hidden while the review is the active step; editing it means going back to step 1.
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-paso-factura'));
+    });
+    await openMasDatos();
     type('Notas', 'cambio manual sin guardar');
     expect(revisionProps()).toMatchObject({ editorDirty: true });
   });
@@ -602,5 +682,236 @@ describe('revisión asistida (puente con el editor)', () => {
     await settle();
     expect(alert).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+function pasoState(paso: string): { selected?: boolean; disabled?: boolean } {
+  return screen.getByTestId(`factura-paso-${paso}`).props.accessibilityState;
+}
+
+async function openReview(withDocument = true): ReturnType<typeof openSaved> {
+  const opened = await openSaved(withDocument);
+  await act(async () => {
+    fireEvent.press(screen.getByTestId('factura-abrir-revision'));
+  });
+  return opened;
+}
+
+function pickNextDocument(): void {
+  (DocumentPicker.getDocumentAsync as jest.Mock).mockResolvedValueOnce({
+    canceled: false,
+    assets: [{ name: 'factura-norte.pdf', size: 6, uri: 'file:///cache/factura-norte.pdf' }],
+  });
+}
+
+describe('pasos guiados', () => {
+  it('muestra el paso Factura seleccionado, bloquea los demás hasta guardar y no enseña versiones', async () => {
+    await openEditor();
+
+    expect(pasoState('factura')).toMatchObject({ selected: true });
+    ['leer', 'productos', 'compra'].forEach(paso => expect(pasoState(paso)).toMatchObject({ disabled: true, selected: false }));
+    expect(screen.queryByText('nueva')).toBeNull();
+  });
+
+  it('una factura guardada habilita los pasos, titula con número y proveedor y no enseña la versión', async () => {
+    await openSaved();
+
+    ['leer', 'productos', 'compra'].forEach(paso => expect(pasoState(paso)).toMatchObject({ disabled: false }));
+    expect(screen.getByText('Factura A-1 · Proveedor Uno')).toBeTruthy();
+    expect(screen.queryByText('v2')).toBeNull();
+  });
+
+  it('con documento, Guardar y continuar guarda y pasa a Leer con la revisión montada', async () => {
+    const { facturaId } = await openEditor();
+    pickNextDocument();
+    scriptRpc(committed(facturaId, 1));
+    await pressText('Subir foto o PDF');
+    await settle();
+
+    await pressText('Guardar y continuar');
+    await settle();
+
+    expect(backend.rpc).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('revision-stub')).toBeTruthy();
+    expect(revisionProps()).toMatchObject({ facturaVersion: 1, etapa: 'leer' });
+    expect(pasoState('leer')).toMatchObject({ selected: true });
+    expect(screen.queryByLabelText('Número de factura')).toBeNull();
+  });
+
+  it('si el guardado falla, Guardar y continuar se queda en el paso Factura sin montar la revisión', async () => {
+    await openEditor();
+    pickNextDocument();
+    scriptRpc(new Error('Network request failed'));
+    await pressText('Subir foto o PDF');
+    await settle();
+
+    await pressText('Guardar y continuar');
+    await settle();
+
+    expect(screen.queryByTestId('revision-stub', { includeHiddenElements: true })).toBeNull();
+    expect(pasoState('factura')).toMatchObject({ selected: true });
+  });
+
+  it('abre la revisión desde un paso posterior con esa etapa elegida', async () => {
+    await openSaved();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-paso-productos'));
+    });
+
+    expect(screen.getByTestId('revision-stub')).toBeTruthy();
+    expect(revisionProps()).toMatchObject({ etapa: 'productos' });
+    expect(pasoState('productos')).toMatchObject({ selected: true });
+  });
+
+  it('volver al paso Factura oculta la revisión sin desmontarla y conserva su estado', async () => {
+    await openReview();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('revision-stub-marcar'));
+    });
+    expect(screen.getByText('revision-marcada')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-paso-factura'));
+    });
+    expect(screen.queryByTestId('revision-stub')).toBeNull();
+    expect(screen.getByTestId('revision-stub', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByLabelText('Número de factura')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-paso-leer'));
+    });
+    expect(screen.getByText('revision-marcada')).toBeTruthy();
+  });
+
+  it('la revisión elige la etapa desde dentro y la etapa sobrevive a pasar por Factura', async () => {
+    await openReview();
+
+    await act(async () => {
+      (revisionProps().onEtapaChange as (etapa: string) => void)('productos');
+    });
+    expect(pasoState('productos')).toMatchObject({ selected: true });
+    expect(revisionProps()).toMatchObject({ etapa: 'productos' });
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-paso-factura'));
+    });
+    expect(revisionProps()).toMatchObject({ etapa: 'productos' });
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-paso-compra'));
+    });
+    expect(revisionProps()).toMatchObject({ etapa: 'compra' });
+    expect(pasoState('compra')).toMatchObject({ selected: true });
+  });
+
+  it('Seguir a mano vuelve al paso Factura con los renglones manuales abiertos', async () => {
+    await openReview();
+    expect(screen.queryByTestId('factura-add-linea')).toBeNull();
+
+    await act(async () => {
+      (revisionProps().onSeguirManual as () => void)();
+    });
+
+    expect(pasoState('factura')).toMatchObject({ selected: true });
+    expect(screen.getByTestId('factura-add-linea')).toBeTruthy();
+  });
+
+  it('los cambios sin guardar de la revisión siguen protegiendo el cierre desde el paso Factura', async () => {
+    const { onClose } = await openReview();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('revision-stub'));
+    });
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Cambios sin guardar');
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-paso-factura'));
+    });
+    await pressLabel('Cerrar factura');
+
+    expect(onClose).not.toHaveBeenCalled();
+    const [title, message] = alert.mock.calls[alert.mock.calls.length - 1] as [string, string];
+    expect(title).toBe('Cerrar con cambios sin guardar');
+    expect(message).toMatch(/revisión asistida/);
+  });
+
+  it('los cambios manuales marcan el estado y no se pierden al cambiar de paso', async () => {
+    await openReview();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-paso-factura'));
+    });
+    type('Número de factura', 'A-77');
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Cambios sin guardar');
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-paso-leer'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-paso-factura'));
+    });
+
+    expect(value('Número de factura')).toBe('A-77');
+    expect(revisionProps()).toMatchObject({ editorDirty: true });
+  });
+});
+
+describe('paso Factura: entrada guiada', () => {
+  it('con documento ofrece Continuar y no promete que solo se guarda', async () => {
+    await openSaved();
+
+    expect(screen.getByTestId('factura-abrir-revision')).toBeTruthy();
+    expect(screen.getByText('Continuar')).toBeTruthy();
+    expect(screen.queryByText(/solo se guarda/)).toBeNull();
+    expect(screen.queryByText(/No se lee ni se crea ninguna compra/)).toBeNull();
+    expect(screen.getByText(/Se lee solo cuando tú lo pides/)).toBeTruthy();
+  });
+
+  it('la entrada manual guardada dice dónde registrar la compra y sigue pudiéndose abrir la revisión', async () => {
+    const { facturaId } = await openEditor();
+    scriptRpc(committed(facturaId, 1));
+    type('Número de factura', 'A-20');
+    await pressText('Guardar factura');
+    await settle();
+
+    expect(screen.getByText('Factura guardada. Registra la compra desde Compras como siempre.')).toBeTruthy();
+    expect(screen.getByTestId('factura-abrir-revision')).toBeTruthy();
+  });
+
+  it('con documento y sin renglones, la carga manual está plegada hasta pedirla', async () => {
+    await openSaved();
+    expect(screen.queryByTestId('factura-add-linea')).toBeNull();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-manual-toggle'));
+    });
+
+    expect(screen.getByTestId('factura-add-linea')).toBeTruthy();
+    expect(screen.getByText('RENGLONES (0)')).toBeTruthy();
+  });
+
+  it('control y notas están plegados en Más datos salvo que ya tengan contenido', async () => {
+    await openEditor();
+    expect(screen.queryByLabelText('Notas')).toBeNull();
+    expect(screen.queryByLabelText('Número de control')).toBeNull();
+
+    await openMasDatos();
+
+    expect(screen.getByLabelText('Notas')).toBeTruthy();
+    expect(screen.getByLabelText('Número de control')).toBeTruthy();
+  });
+
+  it('un borrador con notas restaura Más datos abierto', async () => {
+    const facturaId = nextFactura();
+    const first = await openEditor(facturaId);
+    await openMasDatos();
+    type('Notas', 'nota guardada');
+    await settle();
+    await pressLabel('Cerrar factura');
+    await pressAlertButton(alert, 'Cerrar');
+    await settle();
+    first.unmount();
+
+    await openEditor(facturaId);
+
+    expect(value('Notas')).toBe('nota guardada');
   });
 });
