@@ -53,8 +53,9 @@ type LocalNotificationOptions = {
 /**
  * Dispara una notificación del sistema.
  * En Web/PWA, utiliza la API de Notificaciones HTML5.
+ * Solo muestra notificaciones con permiso previo; no solicita permiso desde eventos.
  */
-export function showLocalNotification(title: string, body: string, options: LocalNotificationOptions = {}) {
+export function showLocalNotification(title: string, body: string, options: LocalNotificationOptions = {}): void {
   if (Platform.OS === 'web') {
     if ('Notification' in window) {
       const notifOptions: NotificationOptions = {
@@ -68,12 +69,6 @@ export function showLocalNotification(title: string, body: string, options: Loca
         } catch (e) {
           console.warn('Error launching local Notification:', e);
         }
-      } else if (Notification.permission !== 'denied') {
-        Notification.requestPermission().then(permission => {
-          if (permission === 'granted') {
-            new Notification(title, notifOptions);
-          }
-        });
       }
     }
   }
