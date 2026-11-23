@@ -39,6 +39,39 @@ currently reuses its prior lookup result; materialization still performs its
 existing authoritative checks. The imported purchase emission block remains
 in force. No release or production deployment is implied by this source work.
 
+### Corrections following the live Chrome inspection
+
+- The source image opens in a full-screen viewer with fit, zoom and pan.
+  Every open or retry requests a fresh signed URL; stale document/session
+  responses are discarded. PDFs use the existing safe external opener.
+- The editor distinguishes manually entered and extracted header values.
+  Completing empty fields is an explicit confirmed local edit, never an
+  automatic overwrite or save. Saving changes the invoice version and can
+  require saving and approving the review again.
+- Purchase blockers are grouped with their own line navigation. Expanded
+  product list and detail panes scroll independently, and stage changes reset
+  the stage scroll position.
+- Manual VAT and unit-factor decisions can be applied explicitly to currently
+  unresolved lines. The edit batch is atomic, preserves prior explicit values
+  including zero, and never confirms product identities or reads VAT from OCR.
+- Candidates show descriptions before codes, with evidence-based labels.
+  A partial search is not proof of absence. The observed battery/charger case
+  did not establish a matcher defect, so production ranking was not changed.
+- Realtime events no longer request notification permission. The explicit
+  permission button remains available; previously granted notifications keep
+  their existing payload and interaction behavior.
+
+The isolated pre-correction candidate passed 1,344 unit tests, 421 UI tests,
+418 SQL tests and TypeScript. Independent real Editor/View/viewer probes then
+found stale header attribution after photo replacement or removal. The source
+header emitter now requires the review extraction SHA to match the current
+non-null document SHA. A targeted independent recheck passed nine provenance
+probes, 224 focused UI tests and TypeScript, including pending adoption dialogs.
+Matching-source adoption and typed manual fields remain unchanged.
+
+Actual visual and native acceptance of these corrections is still pending.
+No new provider call, inventory change or production release is implied.
+
 - Manual supplier invoices with USD amounts and an optional document.
 - Versioned saves, idempotent retries and account-isolated local recovery.
 - Protection against overwriting a newer invoice revision.
