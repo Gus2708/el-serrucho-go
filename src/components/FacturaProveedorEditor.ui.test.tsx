@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { Linking } from 'react-native';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import FacturaProveedorEditor from './FacturaProveedorEditor';
@@ -590,7 +591,7 @@ describe('identificadores para pruebas de extremo a extremo', () => {
 });
 
 const SHA = 'c'.repeat(64);
-const record = (facturaId: string, withDocument = true) => ({
+const record = (facturaId: string, withDocument = true, overrides: Record<string, unknown> = {}) => ({
   id: facturaId,
   version: 2,
   proveedor_codigo: null,
@@ -606,14 +607,15 @@ const record = (facturaId: string, withDocument = true) => ({
   documento_bytes: withDocument ? 2048 : null,
   documento_sha256: withDocument ? SHA : null,
   lineas: [],
+  ...overrides,
 });
 const revisionProps = (): Record<string, unknown> => (globalThis as unknown as { __revisionProps: Record<string, unknown> }).__revisionProps;
 
-async function openSaved(withDocument = true) {
+async function openSaved(withDocument = true, overrides: Record<string, unknown> = {}) {
   const facturaId = nextFactura();
   const onClose = jest.fn();
   const view = renderWithProviders(
-    <FacturaProveedorEditor facturaId={facturaId} record={record(facturaId, withDocument)} ownerId={OWNER_A} onClose={onClose} onReload={jest.fn()} />,
+    <FacturaProveedorEditor facturaId={facturaId} record={record(facturaId, withDocument, overrides)} ownerId={OWNER_A} onClose={onClose} onReload={jest.fn()} />,
   );
   await screen.findByLabelText('Número de factura');
   return { facturaId, onClose, ...view };
@@ -821,7 +823,8 @@ describe('pasos guiados', () => {
     await act(async () => {
       fireEvent.press(screen.getByTestId('revision-stub'));
     });
-    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Cambios sin guardar');
+    expect(screen.getByTestId('factura-revision-pill')).toHaveTextContent('Revisión sin guardar');
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Guardada');
 
     await act(async () => {
       fireEvent.press(screen.getByTestId('factura-paso-factura'));
@@ -840,7 +843,7 @@ describe('pasos guiados', () => {
       fireEvent.press(screen.getByTestId('factura-paso-factura'));
     });
     type('Número de factura', 'A-77');
-    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Cambios sin guardar');
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Factura sin guardar');
 
     await act(async () => {
       fireEvent.press(screen.getByTestId('factura-paso-leer'));
@@ -913,5 +916,392 @@ describe('paso Factura: entrada guiada', () => {
     await openEditor(facturaId);
 
     expect(value('Notas')).toBe('nota guardada');
+  });
+});
+
+const CABECERA = { proveedorNombre: 'PROVEEDOR UNO C.A', numeroDocumento: '48615', fechaEmision: '2026-11-20' };
+type Cabecera = { proveedorNombre: string | null; numeroDocumento: string | null; fechaEmision: string | null };
+
+async function openSavedImagen(overrides: Record<string, unknown> = {}) {
+  const facturaId = nextFactura();
+  const view = renderWithProviders(
+    <FacturaProveedorEditor
+      facturaId={facturaId}
+      record={record(facturaId, true, {
+        documento_path: `${OWNER_A}/${facturaId}/d.jpg`,
+        documento_nombre: 'factura.jpg',
+        documento_mime: 'image/jpeg',
+        ...overrides,
+      })}
+      ownerId={OWNER_A}
+      onClose={jest.fn()}
+      onReload={jest.fn()}
+    />,
+  );
+  await screen.findByLabelText('Número de factura');
+  return { facturaId, ...view };
+}
+
+async function emitirCabecera(cabecera: Cabecera | null): Promise<void> {
+  await act(async () => {
+    (revisionProps().onCabeceraLeida as (value: Cabecera | null) => void)(cabecera);
+  });
+}
+
+async function irAFactura(): Promise<void> {
+  await act(async () => {
+    fireEvent.press(screen.getByTestId('factura-paso-factura'));
+  });
+}
+
+async function openCabecera(overrides: Record<string, unknown> = {}, cabecera: Cabecera | null = CABECERA): ReturnType<typeof openSaved> {
+  const opened = await openSaved(true, overrides);
+  await act(async () => {
+    fireEvent.press(screen.getByTestId('factura-abrir-revision'));
+  });
+  await emitirCabecera(cabecera);
+  await irAFactura();
+  return opened;
+}
+
+describe('visor del documento (puente con el editor)', () => {
+  let openURL: jest.SpyInstance;
+  beforeEach(() => {
+    openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+  });
+  afterEach(() => {
+    openURL.mockRestore();
+  });
+
+  it('Ver opens the full-screen viewer with a freshly signed image, not a fixed inline preview', async () => {
+    const { facturaId } = await openSavedImagen();
+    await press(screen.getByTestId('factura-ver-documento'));
+    await settle();
+
+    expect(backend.bucket.createSignedUrl).toHaveBeenCalledTimes(1);
+    expect(backend.bucket.createSignedUrl.mock.calls[0][0]).toBe(`${OWNER_A}/${facturaId}/d.jpg`);
+    expect(screen.getByTestId('factura-visor')).toBeTruthy();
+    expect(screen.getByTestId('factura-visor-imagen').props.source).toMatchObject({ uri: 'https://private.test/doc' });
+  });
+
+  it('keeps a tappable thumbnail with an enlargement hint that opens the viewer and signs again', async () => {
+    await openSavedImagen();
+    await press(screen.getByTestId('factura-ver-documento'));
+    await settle();
+    await press(screen.getByTestId('factura-visor-cerrar'));
+
+    expect(screen.queryByTestId('factura-visor')).toBeNull();
+    expect(screen.getByText('Toca para ampliar')).toBeTruthy();
+    await press(screen.getByTestId('factura-documento-miniatura'));
+    await settle();
+
+    expect(screen.getByTestId('factura-visor')).toBeTruthy();
+    expect(backend.bucket.createSignedUrl).toHaveBeenCalledTimes(2);
+  });
+
+  it('opens the same viewer when the review asks for it, without extracting anything', async () => {
+    await openSavedImagen();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-abrir-revision'));
+    });
+    expect(screen.queryByTestId('factura-visor')).toBeNull();
+    expect(backend.bucket.createSignedUrl).not.toHaveBeenCalled();
+
+    await act(async () => {
+      (revisionProps().onVerDocumento as () => void)();
+    });
+    await settle();
+
+    expect(screen.getByTestId('factura-visor')).toBeTruthy();
+    expect(backend.bucket.createSignedUrl).toHaveBeenCalledTimes(1);
+    expect(backend.rpc).not.toHaveBeenCalled();
+  });
+
+  it('ignores a review request to view a document the invoice does not have', async () => {
+    await openReview(false);
+    await act(async () => {
+      (revisionProps().onVerDocumento as () => void)();
+    });
+    await settle();
+    expect(screen.queryByTestId('factura-visor')).toBeNull();
+    expect(backend.bucket.createSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('never opens the viewer by itself when the review reports a read header', async () => {
+    await openSavedImagen();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-abrir-revision'));
+    });
+    await emitirCabecera(CABECERA);
+    expect(screen.queryByTestId('factura-visor')).toBeNull();
+    expect(backend.bucket.createSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('sends a PDF to the system opener through the safe URL check', async () => {
+    await openSaved();
+    await press(screen.getByTestId('factura-ver-documento'));
+    await settle();
+
+    expect(openURL).toHaveBeenCalledTimes(1);
+    expect(openURL).toHaveBeenCalledWith('https://private.test/doc');
+    expect(screen.getByText('El PDF se abre en otra pestaña o app.')).toBeTruthy();
+  });
+
+  it('refuses an unsafe signed URL', async () => {
+    backend.bucket.createSignedUrl.mockResolvedValueOnce({ data: { signedUrl: 'javascript:alert(1)' }, error: null });
+    await openSaved();
+    await press(screen.getByTestId('factura-ver-documento'));
+    await settle();
+
+    expect(openURL).not.toHaveBeenCalled();
+    expect(screen.getByText('No se pudo abrir la factura.')).toBeTruthy();
+  });
+
+  it('discards a signed URL that arrives after the session changed', async () => {
+    const reply = deferred<{ data: { signedUrl: string }; error: null }>();
+    backend.bucket.createSignedUrl.mockReturnValueOnce(reply.promise);
+    await openSavedImagen();
+    await press(screen.getByTestId('factura-ver-documento'));
+    await act(async () => publishFacturaSession({ user: { id: OWNER_B } }));
+    await act(async () => {
+      reply.resolve({ data: { signedUrl: 'https://private.test/otra-sesion' }, error: null });
+    });
+    await settle();
+
+    expect(screen.queryByTestId('factura-visor-imagen')).toBeNull();
+    expect(screen.queryByTestId('factura-documento-miniatura')).toBeNull();
+  });
+
+  it('discards a signed URL that arrives after the viewer was closed', async () => {
+    const reply = deferred<{ data: { signedUrl: string }; error: null }>();
+    backend.bucket.createSignedUrl.mockReturnValueOnce(reply.promise);
+    await openSavedImagen();
+    await press(screen.getByTestId('factura-ver-documento'));
+    await press(screen.getByTestId('factura-visor-cerrar'));
+    await act(async () => {
+      reply.resolve({ data: { signedUrl: 'https://private.test/tarde' }, error: null });
+    });
+    await settle();
+
+    expect(screen.queryByTestId('factura-visor')).toBeNull();
+    expect(screen.queryByTestId('factura-documento-miniatura')).toBeNull();
+  });
+
+  it('does not sign or open anything when the owner session is no longer current', async () => {
+    await openSavedImagen();
+    await act(async () => publishFacturaSession({ user: { id: OWNER_B } }));
+    await press(screen.getByTestId('factura-ver-documento'));
+    await settle();
+
+    expect(backend.bucket.createSignedUrl).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('factura-visor')).toBeNull();
+  });
+
+  it('closes the viewer and drops the thumbnail when the document is removed', async () => {
+    await openSavedImagen();
+    await press(screen.getByTestId('factura-ver-documento'));
+    await settle();
+    await press(screen.getByTestId('factura-quitar-documento'));
+    await settle();
+
+    expect(screen.queryByTestId('factura-visor')).toBeNull();
+    expect(screen.queryByTestId('factura-documento-miniatura')).toBeNull();
+  });
+
+  it('discards the URL signed for a document that was replaced while signing', async () => {
+    const reply = deferred<{ data: { signedUrl: string }; error: null }>();
+    backend.bucket.createSignedUrl.mockReturnValueOnce(reply.promise);
+    await openSavedImagen();
+    await press(screen.getByTestId('factura-ver-documento'));
+    pickNextDocument();
+    await press(screen.getByTestId('factura-replace'));
+    await settle();
+    await act(async () => {
+      reply.resolve({ data: { signedUrl: 'https://private.test/documento-viejo' }, error: null });
+    });
+    await settle();
+
+    expect(screen.queryByTestId('factura-visor')).toBeNull();
+    expect(screen.queryByTestId('factura-documento-miniatura')).toBeNull();
+    expect(openURL).not.toHaveBeenCalled();
+  });
+});
+
+describe('cabecera leída (atribución y adopción explícita)', () => {
+  it('receiving the read header never dirties the draft, saves, or prompts', async () => {
+    await openSaved();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-abrir-revision'));
+    });
+    await emitirCabecera(CABECERA);
+
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Guardada');
+    expect(screen.queryByTestId('factura-revision-pill')).toBeNull();
+    expect(screen.queryByText(/sin guardar/)).toBeNull();
+    expect(revisionProps()).toMatchObject({ editorDirty: false });
+    expect(backend.rpc).not.toHaveBeenCalled();
+    expect(alert).not.toHaveBeenCalled();
+  });
+
+  it('labels each read value next to the typed one only when they differ', async () => {
+    await openCabecera({ fecha_documento: null }, { ...CABECERA, proveedorNombre: 'Proveedor Uno' });
+
+    expect(screen.queryByTestId('factura-leido-proveedorNombre')).toBeNull();
+    expect(screen.getByTestId('factura-leido-numeroDocumento')).toHaveTextContent('Leído de la foto: 48615 · Escrito: A-1');
+    expect(screen.getByTestId('factura-leido-fechaDocumento')).toHaveTextContent('Leído de la foto: 2026-11-20');
+    expect(screen.getByTestId('factura-leido-fechaDocumento')).not.toHaveTextContent('Escrito');
+  });
+
+  it('labels a supplier name that differs from the typed one', async () => {
+    await openCabecera();
+    expect(screen.getByTestId('factura-leido-proveedorNombre')).toHaveTextContent('Leído de la foto: PROVEEDOR UNO C.A · Escrito: Proveedor Uno');
+  });
+
+  it('shows no read value and no adoption once the review reports null', async () => {
+    await openCabecera({ fecha_documento: null });
+    expect(screen.getByTestId('factura-completar-leido')).toBeTruthy();
+    await emitirCabecera(null);
+
+    expect(screen.queryByTestId('factura-leido-fechaDocumento')).toBeNull();
+    expect(screen.queryByTestId('factura-completar-leido')).toBeNull();
+  });
+
+  it('adopts the read values only into empty fields, after an explicit confirmation that warns about the new version', async () => {
+    await openCabecera({ fecha_documento: null });
+    await press(screen.getByText('Completar campos vacíos con lo leído'));
+
+    const [, message] = alert.mock.calls[alert.mock.calls.length - 1] as [string, string];
+    expect(message).toMatch(/solo los campos vacíos/);
+    expect(message).toMatch(/cambia de versión/);
+    expect(message).toMatch(/volver a guardar y aprobar/);
+    expect(value('Fecha')).toBe('');
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Guardada');
+
+    await pressAlertButton(alert, 'Completar');
+
+    expect(value('Fecha')).toBe('2026-11-20');
+    expect(value('Número de factura')).toBe('A-1');
+    expect(value('Proveedor')).toBe('Proveedor Uno');
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Factura sin guardar');
+    expect(backend.rpc).not.toHaveBeenCalled();
+  });
+
+  it('leaves the draft untouched when the confirmation is declined', async () => {
+    await openCabecera({ fecha_documento: null });
+    await press(screen.getByTestId('factura-completar-leido'));
+    await pressAlertButton(alert, 'Ahora no');
+
+    expect(value('Fecha')).toBe('');
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Guardada');
+    expect(screen.queryByText(/sin guardar/)).toBeNull();
+  });
+
+  it('never overwrites what was typed while the confirmation was open', async () => {
+    await openCabecera({ fecha_documento: null, numero_documento: null });
+    await press(screen.getByTestId('factura-completar-leido'));
+    type('Fecha', '2030-01-01');
+    await pressAlertButton(alert, 'Completar');
+
+    expect(value('Fecha')).toBe('2030-01-01');
+    expect(value('Número de factura')).toBe('48615');
+  });
+
+  it('treats whitespace-only fields as empty and keeps typed supplier text', async () => {
+    await openCabecera({ fecha_documento: null, numero_documento: '  ' });
+    await press(screen.getByTestId('factura-completar-leido'));
+    await pressAlertButton(alert, 'Completar');
+
+    expect(value('Número de factura')).toBe('48615');
+    expect(value('Proveedor')).toBe('Proveedor Uno');
+  });
+
+  it('does not offer adoption when no typed field is empty or nothing was read for it', async () => {
+    await openCabecera({ fecha_documento: '2026-11-01' });
+    expect(screen.queryByTestId('factura-completar-leido')).toBeNull();
+
+    await emitirCabecera({ proveedorNombre: null, numeroDocumento: null, fechaEmision: null });
+    expect(screen.queryByTestId('factura-completar-leido')).toBeNull();
+  });
+
+  it('does not offer adoption when the only empty field has no read value', async () => {
+    await openCabecera({ fecha_documento: null }, { ...CABECERA, fechaEmision: null });
+    expect(screen.queryByTestId('factura-completar-leido')).toBeNull();
+  });
+
+  it('hides the read header of a document that was replaced', async () => {
+    await openCabecera({ fecha_documento: null });
+    expect(screen.getByTestId('factura-leido-fechaDocumento')).toBeTruthy();
+
+    pickNextDocument();
+    await press(screen.getByTestId('factura-replace'));
+    await settle();
+
+    expect(screen.queryByTestId('factura-leido-fechaDocumento')).toBeNull();
+    expect(screen.queryByTestId('factura-completar-leido')).toBeNull();
+  });
+
+  it('ignores a read header delivered after the owner session changed', async () => {
+    await openSaved();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-abrir-revision'));
+    });
+    await act(async () => publishFacturaSession({ user: { id: OWNER_B } }));
+    await emitirCabecera(CABECERA);
+    await irAFactura();
+
+    expect(screen.queryByTestId('factura-leido-numeroDocumento')).toBeNull();
+  });
+});
+
+describe('título y estado por origen', () => {
+  it('titles with the read number marked as read only while the typed number is empty', async () => {
+    await openCabecera({ numero_documento: null });
+    expect(screen.getByText('Factura 48615 (leída) · Proveedor Uno')).toBeTruthy();
+
+    type('Número de factura', 'A-9');
+    expect(screen.getByText('Factura A-9 · Proveedor Uno')).toBeTruthy();
+  });
+
+  it('keeps the plain title when nothing was read', async () => {
+    await openSaved(true, { numero_documento: null });
+    expect(screen.getByText('Factura de proveedor · Proveedor Uno')).toBeTruthy();
+  });
+
+  it('separates the invoice and review unsaved states and shows both when both apply', async () => {
+    await openReview();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('revision-stub'));
+    });
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Guardada');
+    expect(screen.getByTestId('factura-revision-pill')).toHaveTextContent('Revisión sin guardar');
+
+    await irAFactura();
+    type('Número de factura', 'A-5');
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Factura sin guardar');
+    expect(screen.getByTestId('factura-revision-pill')).toHaveTextContent('Revisión sin guardar');
+  });
+
+  it('shows only the invoice state when only the form changed', async () => {
+    await openSaved();
+    type('Número de factura', 'A-6');
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Factura sin guardar');
+    expect(screen.queryByTestId('factura-revision-pill')).toBeNull();
+  });
+
+  it('reopening a saved invoice with no edits shows Guardada and no unsaved state, also after opening the review', async () => {
+    await openSaved();
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Guardada');
+    expect(screen.queryByText(/sin guardar/)).toBeNull();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('factura-abrir-revision'));
+    });
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Guardada');
+    expect(screen.queryByText(/sin guardar/)).toBeNull();
+  });
+
+  it('shows Borrador for an invoice that was never saved', async () => {
+    await openEditor();
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Borrador');
   });
 });

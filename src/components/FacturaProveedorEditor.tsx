@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   TextInput,
   ActivityIndicator,
   KeyboardAvoidingView,
-  Linking,
   Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -19,7 +18,8 @@ import { useTheme } from '../theme/ThemeContext';
 import { pressScale } from '../theme/motion';
 import { notify, confirm } from '../lib/notify';
 import { PressableScale } from './PressableScale';
-import FacturaRevisionView, { type EtapaRevision } from './FacturaRevisionView';
+import FacturaRevisionView, { type CabeceraLeida, type EtapaRevision } from './FacturaRevisionView';
+import FacturaDocumentoVisor from './FacturaDocumentoVisor';
 import FacturaCamaraFoto from './FacturaCamaraFoto';
 import { FacturaEstadoPill, FacturaPasos, type PasoFactura } from './FacturaPasos';
 import {
@@ -63,10 +63,12 @@ interface FieldProps {
   placeholder?: string;
   keyboardType?: 'default' | 'decimal-pad';
   multiline?: boolean;
+  /** What the photo read for this field when it differs from what is typed; display only. */
+  leido?: string | null;
   onChangeText: (text: string) => void;
 }
 
-function Field({ label, value, testID, error, placeholder, keyboardType = 'default', multiline = false, onChangeText }: FieldProps): React.JSX.Element {
+function Field({ label, value, testID, error, placeholder, keyboardType = 'default', multiline = false, leido = null, onChangeText }: FieldProps): React.JSX.Element {
   const { colors } = useTheme();
   return (
     <View style={styles.field}>
@@ -88,6 +90,7 @@ function Field({ label, value, testID, error, placeholder, keyboardType = 'defau
         autoCorrect={false}
       />
       {error ? <Text style={[styles.error, { color: colors.danger }]}>{error}</Text> : null}
+      {leido ? <Text testID={testID.replace('-field-', '-leido-')} style={[styles.leido, { color: colors.primary }]}>{leido}</Text> : null}
     </View>
   );
 }
@@ -113,6 +116,43 @@ interface PrimaryAction {
   onPress: () => unknown;
   testID: string;
   habilitada: boolean;
+}
+
+interface CabeceraOrigen {
+  facturaId: string;
+  sha256: string | null;
+  cabecera: CabeceraLeida;
+}
+
+type CampoCabecera = 'proveedorNombre' | 'numeroDocumento' | 'fechaDocumento';
+
+/** Draft header fields and the extracted header field that fills each one. */
+const CAMPOS_CABECERA: ReadonlyArray<{ campo: CampoCabecera; leido: keyof CabeceraLeida }> = [
+  { campo: 'proveedorNombre', leido: 'proveedorNombre' },
+  { campo: 'numeroDocumento', leido: 'numeroDocumento' },
+  { campo: 'fechaDocumento', leido: 'fechaEmision' },
+];
+
+const ADOPTION_WARNING =
+  'Se completan solo los campos vacíos con lo leído de la foto; lo que ya escribiste no cambia. Al guardar, la factura cambia de versión y la revisión se debe volver a guardar y aprobar.';
+
+function valorLeido(cabecera: CabeceraLeida | null, campo: keyof CabeceraLeida): string {
+  return cabecera?.[campo]?.trim() ?? '';
+}
+
+function sameOrigen(a: CabeceraOrigen, b: CabeceraOrigen): boolean {
+  return (
+    a.facturaId === b.facturaId &&
+    a.sha256 === b.sha256 &&
+    CAMPOS_CABECERA.every(({ leido }) => a.cabecera[leido] === b.cabecera[leido])
+  );
+}
+
+/** Note shown under a field when the photo read something different from what is typed. */
+function notaLeida(leido: string, escrito: string): string | null {
+  const typed = escrito.trim();
+  if (leido === '' || leido === typed) return null;
+  return typed === '' ? `Leído de la foto: ${leido}` : `Leído de la foto: ${leido} · Escrito: ${typed}`;
 }
 
 const WARNING_KINDS: readonly FeedbackKind[] = ['conflict', 'key_reused', 'retry_pending', 'upload_interrupted'];
@@ -224,8 +264,46 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
   const [camaraToken, setCamaraToken] = useState<number | null>(null);
   const camaraGeneracion = useRef(0);
   const camaraActual = useRef<number | null>(null);
+  const [visorToken, setVisorToken] = useState<number | null>(null);
+  const visorGeneracion = useRef(0);
+  const visorActual = useRef<number | null>(null);
+  const [cabeceraLeida, setCabeceraLeida] = useState<CabeceraOrigen | null>(null);
+  const origen = useRef({ facturaId: draft.facturaId, sha256: draft.documento?.sha256 ?? null });
+  origen.current = { facturaId: draft.facturaId, sha256: draft.documento?.sha256 ?? null };
 
-  useEffect(() => () => { camaraActual.current = null; }, []);
+  useEffect(() => () => {
+    camaraActual.current = null;
+    visorActual.current = null;
+  }, []);
+
+  function visorVigente(): boolean {
+    return visorToken !== null && visorActual.current === visorToken && getFacturaSessionUid() === ownerId;
+  }
+
+  function abrirVisor(): void {
+    if (!draft.documento || getFacturaSessionUid() !== ownerId) return;
+    visorGeneracion.current += 1;
+    visorActual.current = visorGeneracion.current;
+    setVisorToken(visorGeneracion.current);
+  }
+
+  function cerrarVisor(): void {
+    visorActual.current = null;
+    setVisorToken(null);
+  }
+
+  /** The review reports what it read; this only stores it for display, bound to this invoice and document. */
+  function recibirCabecera(cabecera: CabeceraLeida | null): void {
+    if (getFacturaSessionUid() !== ownerId) return;
+    setCabeceraLeida(previa => {
+      if (cabecera === null) return null;
+      const next = { ...origen.current, cabecera };
+      return previa !== null && sameOrigen(previa, next) ? previa : next;
+    });
+  }
+  const recibirCabeceraActual = useRef(recibirCabecera);
+  recibirCabeceraActual.current = recibirCabecera;
+  const onCabeceraLeida = useCallback((cabecera: CabeceraLeida | null): void => recibirCabeceraActual.current(cabecera), []);
 
   function fotoVigente(): boolean {
     return camaraToken !== null && camaraActual.current === camaraToken && getFacturaSessionUid() === ownerId;
@@ -272,6 +350,7 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
       return;
     }
     setPreviewUrl(null);
+    cerrarVisor();
     setNotice(outcome.status === 'attached' ? null : { tone: 'error', text: outcome.message });
   }
 
@@ -309,25 +388,9 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
 
   function handleRemoveDocument(): void {
     setPreviewUrl(null);
+    cerrarVisor();
     edit(current => ({ ...current, documento: null }));
     void controller.sweep();
-  }
-
-  async function handleViewDocument(): Promise<void> {
-    if (!draft.documento) return;
-    setBusyDocument(true);
-    try {
-      const url = await facturaRepository.urlDocumento(draft.documento.path);
-      if (draft.documento.mime === 'application/pdf') {
-        await Linking.openURL(url);
-      } else {
-        setPreviewUrl(url);
-      }
-    } catch (error) {
-      notify('No se pudo abrir el documento', errorMessage(error));
-    } finally {
-      setBusyDocument(false);
-    }
   }
 
   /** Resolves true only when the server confirmed the invoice. */
@@ -453,15 +516,53 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
 
   const guardada = draft.version >= 1;
   const conDocumento = draft.documento !== null;
-  const hayCambios = state.dirty || revisionDirty;
   const masDatosAbierto = masDatosPedido || draft.numeroControl !== '' || draft.notas !== '' || Boolean(errors.numeroControl || errors.notas);
   const manualAbierto = manualPedido || draft.lineas.length > 0 || !conDocumento;
-  const titulo = draft.numeroDocumento.trim() !== '' ? `Factura ${draft.numeroDocumento.trim()}` : 'Factura de proveedor';
+  const leida =
+    cabeceraLeida !== null && cabeceraLeida.facturaId === draft.facturaId && cabeceraLeida.sha256 === (draft.documento?.sha256 ?? null)
+      ? cabeceraLeida.cabecera
+      : null;
+  const leidaActual = useRef(leida);
+  leidaActual.current = leida;
+  const completables = CAMPOS_CABECERA.filter(({ campo, leido }) => valorLeido(leida, leido) !== '' && draft[campo].trim() === '');
+  const numero = draft.numeroDocumento.trim();
+  const numeroLeido = valorLeido(leida, 'numeroDocumento');
+  let titulo = 'Factura de proveedor';
+  if (numero !== '') titulo = `Factura ${numero}`;
+  else if (numeroLeido !== '') titulo = `Factura ${numeroLeido} (leída)`;
   const encabezado = [titulo, draft.proveedorNombre.trim()].filter(parte => parte !== '').join(' · ');
 
   let estado: React.ComponentProps<typeof FacturaEstadoPill> = { texto: 'Borrador', tono: 'neutro' };
-  if (hayCambios) estado = { texto: 'Cambios sin guardar', tono: 'aviso' };
+  if (state.dirty) estado = { texto: 'Factura sin guardar', tono: 'aviso' };
   else if (guardada) estado = { texto: 'Guardada', tono: 'ok' };
+
+  /** Explicit, confirmed: fills only fields that are still empty when the user confirms, never saves. */
+  function completarVacios(): void {
+    const vigente = leidaActual.current;
+    if (vigente === null || getFacturaSessionUid() !== ownerId) return;
+    edit(current => {
+      const next = { ...current };
+      let changed = false;
+      for (const { campo, leido } of CAMPOS_CABECERA) {
+        const read = valorLeido(vigente, leido);
+        if (read !== '' && current[campo].trim() === '') {
+          next[campo] = read;
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }
+
+  function pedirCompletarVacios(): void {
+    confirm({
+      title: 'Completar con lo leído',
+      message: ADOPTION_WARNING,
+      confirmText: 'Completar',
+      cancelText: 'Ahora no',
+      onConfirm: completarVacios,
+    });
+  }
 
   // One primary action for the form step: continue when it is already saved, otherwise save (and continue with a document).
   let primaria: PrimaryAction = { texto: canSave || state.saving ? 'Guardar factura' : 'Sin cambios', onPress: handleSave, testID: 'factura-save', habilitada: canSave };
@@ -488,6 +589,12 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
       <FacturaPasos seleccionado={paso} onSeleccionar={irAPaso} deshabilitados={guardada ? [] : REVIEW_STEPS} />
 
       <View style={styles.avisos}>
+        {revisionDirty ? (
+          <View style={[styles.pillRevision, { borderColor: colors.warning }]} testID="factura-revision-pill" accessibilityLiveRegion="polite">
+            <Feather name="alert-circle" size={12} color={colors.warning} />
+            <Text style={[styles.pillRevisionTexto, { color: colors.warning }]}>Revisión sin guardar</Text>
+          </View>
+        ) : null}
         {!guardada ? (
           <Text style={[styles.hint, { color: colors.textDim }]}>
             Guarda la factura para leerla y revisar sus productos. La captura manual no lo necesita.
@@ -534,7 +641,7 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
                   <Text style={[styles.docName, { color: colors.text }]} numberOfLines={1}>{draft.documento.nombre}</Text>
                 </View>
                 <View style={styles.row}>
-                  <PressableScale onPress={handleViewDocument} dimmed={busy} disabled={busy} style={[styles.secondaryBtn, { borderColor: colors.border }]} testID="factura-ver-documento">
+                  <PressableScale onPress={abrirVisor} dimmed={busy} disabled={busy} style={[styles.secondaryBtn, { borderColor: colors.border }]} accessibilityRole="button" testID="factura-ver-documento">
                     <Feather name="eye" size={14} color={colors.text} />
                     <Text style={[styles.secondaryText, { color: colors.text }]}>Ver</Text>
                   </PressableScale>
@@ -547,7 +654,12 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
                     <Text style={[styles.secondaryText, { color: colors.danger }]}>Quitar</Text>
                   </PressableScale>
                 </View>
-                {previewUrl ? <Image source={{ uri: previewUrl }} style={styles.preview} contentFit="contain" /> : null}
+                {previewUrl ? (
+                  <PressableScale onPress={abrirVisor} accessibilityRole="button" accessibilityLabel="Ampliar la factura" style={styles.miniatura} testID="factura-documento-miniatura">
+                    <Image source={{ uri: previewUrl }} style={styles.preview} contentFit="contain" onError={() => setPreviewUrl(null)} />
+                    <Text style={[styles.hint, { color: colors.textMuted }]}>Toca para ampliar</Text>
+                  </PressableScale>
+                ) : null}
               </>
             ) : (
               <PressableScale onPress={handleAttach} dimmed={busy} disabled={busy} style={[styles.attachBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }]} testID="factura-attach">
@@ -561,9 +673,15 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
           </View>
 
           <Text style={[styles.section, { color: colors.primary }]}>DATOS DE LA FACTURA</Text>
-          <Field label="Proveedor" testID="factura-field-proveedorNombre" value={draft.proveedorNombre} error={errors.proveedorNombre} onChangeText={t => setField('proveedorNombre', t)} />
-          <Field label="Número de factura" testID="factura-field-numeroDocumento" value={draft.numeroDocumento} error={errors.numeroDocumento} onChangeText={t => setField('numeroDocumento', t)} />
-          <Field label="Fecha" testID="factura-field-fechaDocumento" value={draft.fechaDocumento} error={errors.fechaDocumento} placeholder="AAAA-MM-DD" onChangeText={t => setField('fechaDocumento', t)} />
+          <Field label="Proveedor" testID="factura-field-proveedorNombre" value={draft.proveedorNombre} error={errors.proveedorNombre} leido={notaLeida(valorLeido(leida, 'proveedorNombre'), draft.proveedorNombre)} onChangeText={t => setField('proveedorNombre', t)} />
+          <Field label="Número de factura" testID="factura-field-numeroDocumento" value={draft.numeroDocumento} error={errors.numeroDocumento} leido={notaLeida(valorLeido(leida, 'numeroDocumento'), draft.numeroDocumento)} onChangeText={t => setField('numeroDocumento', t)} />
+          <Field label="Fecha" testID="factura-field-fechaDocumento" value={draft.fechaDocumento} error={errors.fechaDocumento} placeholder="AAAA-MM-DD" leido={notaLeida(valorLeido(leida, 'fechaEmision'), draft.fechaDocumento)} onChangeText={t => setField('fechaDocumento', t)} />
+          {completables.length > 0 ? (
+            <PressableScale onPress={pedirCompletarVacios} style={[styles.secondaryBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }]} accessibilityRole="button" testID="factura-completar-leido">
+              <Feather name="check" size={14} color={colors.primary} />
+              <Text style={[styles.secondaryText, { color: colors.primary }]}>Completar campos vacíos con lo leído</Text>
+            </PressableScale>
+          ) : null}
           {masDatosAbierto ? (
             <>
               <Field label="Número de control" testID="factura-field-numeroControl" value={draft.numeroControl} error={errors.numeroControl} onChangeText={t => setField('numeroControl', t)} />
@@ -667,6 +785,15 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
         onNoDisponible={usarArchivo}
       />
 
+      <FacturaDocumentoVisor
+        visible={visorToken !== null && draft.documento !== null}
+        documento={draft.documento ? { path: draft.documento.path, mime: draft.documento.mime, sha256: draft.documento.sha256, nombre: draft.documento.nombre } : null}
+        obtenerUrl={path => facturaRepository.urlDocumento(path)}
+        estaVigente={visorVigente}
+        onClose={cerrarVisor}
+        onUrlLista={setPreviewUrl}
+      />
+
       {revisionOpen && guardada ? (
         <View style={[styles.flex, paso === 'factura' && styles.oculto]}>
           <FacturaRevisionView
@@ -679,6 +806,8 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
             documento={draft.documento}
             editorDirty={state.dirty}
             onDirtyChange={setRevisionDirty}
+            onCabeceraLeida={onCabeceraLeida}
+            onVerDocumento={abrirVisor}
           />
         </View>
       ) : null}
@@ -712,7 +841,11 @@ const styles = StyleSheet.create({
   secondaryText: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium' },
   attachBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderRadius: 12, paddingVertical: 12 },
   attachText: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
-  preview: { width: '100%', height: 220, borderRadius: 8 },
+  preview: { width: '100%', height: 160, borderRadius: 8 },
+  miniatura: { gap: 4 },
+  leido: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_500Medium', lineHeight: scaleFont(16) },
+  pillRevision: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 0.5, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  pillRevisionTexto: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_500Medium' },
   lineaHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   lineaTitle: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
   footer: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16, borderTopWidth: 0.5 },
