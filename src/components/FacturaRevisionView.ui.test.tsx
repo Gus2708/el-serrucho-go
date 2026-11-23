@@ -1,7 +1,7 @@
 import * as React from 'react';
-import { StyleSheet } from 'react-native';
+import { ScrollView, StyleSheet, Text } from 'react-native';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react-native';
-import FacturaRevisionView, { type EtapaRevision, type FacturaRevisionViewProps } from './FacturaRevisionView';
+import FacturaRevisionView, { type CabeceraLeida, type EtapaRevision, type FacturaRevisionViewProps } from './FacturaRevisionView';
 import { supabase } from '../lib/supabase';
 import { reanudarBorradorCompra } from '../hooks/useBorradores';
 import {
@@ -2063,5 +2063,292 @@ describe('guided review: Productos on narrow and expanded screens', () => {
     await pulsarYa('revision-linea-1-abrir');
     await pulsarYa('revision-linea-1-siguiente');
     expect(within(detalle()).getByTestId('revision-linea-2-pvp-valor')).toBeTruthy();
+  });
+});
+
+// ── Post-E2E corrections (S5-S6): grouped blockers, stage scroll, batch decisions, read header ──
+
+describe('post-E2E: blockers stay with their own line', () => {
+  it('lists the document blockers first and every reason of a line inside that line group, with its own action', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aCompra();
+    const todo = textoDeId('revision-bloqueos');
+    expect(todo.indexOf('completitud')).toBeLessThan(todo.indexOf('Renglón 1'));
+    const documento = textoDeId('revision-bloqueos-documento');
+    expect(documento).toMatch(/completitud/);
+    expect(documento).toMatch(/recepción/);
+    expect(documento).toMatch(/incluyen IVA/);
+    expect(documento).not.toMatch(/Renglón/);
+    for (const n of [1, 2, 3]) {
+      const grupo = screen.getByTestId(`revision-bloqueos-linea-${n}`);
+      const texto = textoDe(grupo);
+      expect(texto).toContain(`Renglón ${n} · Pendiente: producto, IVA, unidades`);
+      expect(texto).toContain(`Renglón ${n}: Falta decidir la asociación con un producto.`);
+      expect(texto).toContain(`Renglón ${n}: Falta la tasa de IVA.`);
+      expect(texto).toContain(`Renglón ${n}: Falta confirmar el factor de conversión de unidades.`);
+      for (const otro of [1, 2, 3].filter(m => m !== n)) expect(texto).not.toContain(`Renglón ${otro}`);
+      expect(within(grupo).getByTestId(`revision-ir-linea-${n}`)).toBeTruthy();
+      expect(within(grupo).getAllByText(/^Ir al renglón/)).toHaveLength(1);
+    }
+    await pulsarYa('revision-ir-linea-2');
+    expect(etapaActual()).toBe('productos');
+    expect(desplegado('revision-linea-2-abrir')).toBe(true);
+  });
+
+  it('sends a document blocker answered in Leer back to Leer', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aCompra();
+    await pulsarYa('revision-ir-leer');
+    expect(etapaActual()).toBe('leer');
+  });
+});
+
+describe('post-E2E: scrolling', () => {
+  const scrollTo = jest.mocked(ScrollView.prototype.scrollTo);
+  const layout = (id: string, y: number) => fireEvent(screen.getByTestId(id), 'layout', { nativeEvent: { layout: { x: 0, y, width: 390, height: 400 } } });
+
+  it('starts every stage at the top instead of carrying the previous offset', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    scrollTo.mockClear();
+    await aProductos();
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 0, animated: false });
+    scrollTo.mockClear();
+    await pulsarYa('revision-accion-principal');
+    expect(etapaActual()).toBe('compra');
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 0, animated: false });
+    scrollTo.mockClear();
+    await pulsarYa('revision-volver');
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 0, animated: false });
+  });
+
+  it('on a phone, "Ir al renglón" scrolls to that line once it is laid out, only once', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aCompra();
+    scrollTo.mockClear();
+    await pulsarYa('revision-ir-linea-3');
+    expect(scrollTo).toHaveBeenCalledWith({ y: 0, animated: false });
+    await act(async () => {
+      layout('revision-etapa-productos', 100);
+      layout('revision-productos-filas', 200);
+      layout('revision-fila-3', 300);
+    });
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 600, animated: true });
+    scrollTo.mockClear();
+    await act(async () => {
+      layout('revision-fila-3', 320);
+    });
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it('on an expanded screen the list and the detail scroll on their own, outside the page scroll', async () => {
+    tamanoPantalla.mockReturnValue(TAMANO_AMPLIO);
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    expect(aqui('revision-cuerpo')).toBe(true);
+    await aProductos();
+    expect(aqui('revision-cuerpo')).toBe(false);
+    const lista = screen.getByTestId('revision-productos-lista');
+    const detalle = screen.getByTestId('revision-productos-detalle');
+    expect(lista.type).toBe('RCTScrollView');
+    expect(detalle.type).toBe('RCTScrollView');
+    expect(StyleSheet.flatten(lista.props.style)?.maxHeight).toBeUndefined();
+    expect(StyleSheet.flatten(screen.getByTestId('revision-productos-paneles').props.style).flex).toBe(1);
+    expect(within(lista).getByTestId('revision-linea-3')).toBeTruthy();
+    expect(within(lista).getByTestId('revision-filtro-todos')).toBeTruthy();
+    expect(screen.getByTestId('revision-pie')).toBeTruthy();
+    await pulsarYa('revision-accion-principal');
+    expect(etapaActual()).toBe('compra');
+    expect(aqui('revision-cuerpo')).toBe(true);
+  });
+});
+
+describe('post-E2E: explicit batch VAT and units for unresolved lines', () => {
+  const forma = (lineas: RevisionContenido['lineas']) => lineas.map(l => ({ correcciones: l.correcciones, factorConversion: l.factorConversion, asociacion: l.asociacion }));
+  const guardadas = (repo: Mocks) => (repo.guardarRevision.mock.calls[0][0] as GuardarRevisionInput).contenido.lineas;
+
+  async function guardarDesdeProductos(): Promise<void> {
+    await pulsarYa('revision-accion-principal');
+    await pulsarYa('revision-guardar');
+  }
+
+  it('applies the chosen VAT and factor to every unresolved line at once, with the payload of the per-line chips', async () => {
+    const repoLote = fakeRepo();
+    const vista = await revisarLeido(repoLote);
+    await aProductos();
+    expect(textoDeId('revision-lote')).toMatch(/Aplicar a renglones pendientes/);
+    expect(textoDeId('revision-lote')).toMatch(/No cambia los renglones que ya tienen IVA o unidades\./);
+    expect(aqui('revision-lote-iva-aplicar')).toBe(false);
+    expect(aqui('revision-lote-factor-aplicar')).toBe(false);
+    await pulsarYa('revision-lote-iva-16');
+    expect(textoDeId('revision-lote-iva-aplicar')).toBe('Aplicar 16 % a 3 renglones sin IVA');
+    await pulsarYa('revision-lote-iva-aplicar');
+    await pulsarYa('revision-lote-factor-uno');
+    expect(textoDeId('revision-lote-factor-aplicar')).toBe('Aplicar 1 por 1 a 3 renglones sin factor');
+    await pulsarYa('revision-lote-factor-aplicar');
+    expect(aqui('revision-lote')).toBe(false);
+    await guardarDesdeProductos();
+    const lote = guardadas(repoLote);
+    vista.unmount();
+
+    const repoManual = fakeRepo();
+    await revisarLeido(repoManual);
+    await aProductos();
+    for (const n of [1, 2, 3]) {
+      await pulsarYa(`revision-linea-${n}-abrir`);
+      await pulsarYa(`revision-iva-${n}-16`);
+      await pulsarYa(`revision-factor-${n}-uno`);
+    }
+    await guardarDesdeProductos();
+    expect(forma(lote)).toEqual(forma(guardadas(repoManual)));
+    expect(lote[0].correcciones.tasaIva).toEqual({ valor: '16', motivo: 'IVA indicado manualmente: 16 %' });
+  });
+
+  it('never touches an explicit zero or a line whose factor was already confirmed', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    await pulsarYa('revision-linea-1-abrir');
+    await pulsarYa('revision-iva-1-0');
+    await pulsarYa('revision-linea-2-abrir');
+    await pulsarYa('revision-factor-2-otro');
+    await escribirYa('revision-linea-2-factor-valor', '2');
+    await pulsarYa('revision-linea-2-factor-aplicar');
+    await pulsarYa('revision-lote-iva-16');
+    expect(textoDeId('revision-lote-iva-aplicar')).toBe('Aplicar 16 % a 2 renglones sin IVA');
+    await pulsarYa('revision-lote-iva-aplicar');
+    await pulsarYa('revision-lote-factor-uno');
+    expect(textoDeId('revision-lote-factor-aplicar')).toBe('Aplicar 1 por 1 a 2 renglones sin factor');
+    await pulsarYa('revision-lote-factor-aplicar');
+    await guardarDesdeProductos();
+    const lineas = guardadas(repo);
+    expect(lineas.map(l => l.correcciones.tasaIva?.valor)).toEqual(['0', '16', '16']);
+    expect(lineas[0].correcciones.tasaIva).toEqual({ valor: '0', motivo: 'IVA indicado manualmente: 0 %' });
+    expect(lineas.map(l => l.factorConversion)).toEqual(['1', '2', '1']);
+    for (const l of lineas) expect(l.asociacion.tipo).toBe('pendiente');
+  });
+
+  it('rejects an invalid custom rate without changing any line, then applies a valid one', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    await pulsarYa('revision-lote-iva-otro');
+    expect(screen.getByTestId('revision-lote-iva-aplicar').props.accessibilityState?.disabled).toBe(true);
+    await escribirYa('revision-lote-iva-valor', 'abc');
+    await pulsarYa('revision-lote-iva-aplicar');
+    expect(textoDeId('revision-aviso')).toMatch(/Ese valor no es válido: no se cambió ningún renglón\./);
+    expect(textoDeId('revision-lote-iva-aplicar')).toBe('Aplicar abc % a 3 renglones sin IVA');
+    await escribirYa('revision-lote-iva-valor', '8');
+    await pulsarYa('revision-lote-iva-aplicar');
+    await guardarDesdeProductos();
+    for (const l of guardadas(repo)) expect(l.correcciones.tasaIva).toEqual({ valor: '8', motivo: 'IVA indicado manualmente: 8 %' });
+  });
+
+  it('cannot apply once the session no longer matches the invoice', async () => {
+    const repo = fakeRepo();
+    let uid: string | null = OWNER_A;
+    const vista = await revisarLeido(repo, { getSessionUid: () => uid });
+    await aProductos();
+    await pulsarYa('revision-lote-iva-16');
+    uid = OWNER_B;
+    vista.rerenderUi(<FacturaRevisionView {...props(repo, { getSessionUid: () => uid })} />);
+    await settle();
+    const aplicar = screen.queryByTestId('revision-lote-iva-aplicar');
+    expect(aplicar === null || aplicar.props.accessibilityState?.disabled === true).toBe(true);
+  });
+});
+
+describe('post-E2E: read header and document access', () => {
+  it('reports the effective read header when ready and null otherwise, without looping a parent that stores it', async () => {
+    const repo = fakeRepo();
+    repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
+    const onCabeceraLeida = jest.fn<void, [CabeceraLeida | null]>();
+    let renders = 0;
+    function Anfitrion({ facturaId = FACTURA_1 }: { facturaId?: string }): React.JSX.Element {
+      const [cabecera, setCabecera] = React.useState<CabeceraLeida | null>(null);
+      renders += 1;
+      return (
+        <>
+          <Text testID="anfitrion-numero">{cabecera?.numeroDocumento ?? 'sin dato'}</Text>
+          <FacturaRevisionView {...props(repo, { facturaId, onCabeceraLeida: valor => { onCabeceraLeida(valor); setCabecera(valor); } })} />
+        </>
+      );
+    }
+    const vista = renderWithProviders(<Anfitrion />);
+    await settle();
+    expect(onCabeceraLeida).toHaveBeenLastCalledWith(null);
+    await pulsarYa(`revision-iniciar-${EXT}`);
+    expect(onCabeceraLeida).toHaveBeenLastCalledWith({ proveedorNombre: 'Proveedor Uno', numeroDocumento: 'DOC-1', fechaEmision: '2026-10-15' });
+    expect(textoDeId('anfitrion-numero')).toBe('DOC-1');
+    expect(screen.getByText('Leído de la foto')).toBeTruthy();
+    const llamadas = onCabeceraLeida.mock.calls.length;
+    const vueltas = renders;
+    vista.rerenderUi(<Anfitrion />);
+    await settle();
+    expect(onCabeceraLeida.mock.calls.length).toBe(llamadas);
+    expect(renders - vueltas).toBeLessThanOrEqual(2);
+
+    await typeId('revision-cab-numeroDocumento-valor', 'DOC-9');
+    await typeId('revision-cab-numeroDocumento-motivo', 'Leído mal');
+    await pressId('revision-cab-numeroDocumento-aplicar');
+    expect(onCabeceraLeida).toHaveBeenLastCalledWith({ proveedorNombre: 'Proveedor Uno', numeroDocumento: 'DOC-9', fechaEmision: '2026-10-15' });
+
+    repo.leerExtracciones.mockResolvedValue([]);
+    vista.rerenderUi(<Anfitrion facturaId="f0000000-0000-4000-8000-000000000002" />);
+    await settle();
+    expect(onCabeceraLeida).toHaveBeenLastCalledWith(null);
+    expect(textoDeId('anfitrion-numero')).toBe('sin dato');
+  });
+
+  it('asks the shell to show the document from Leer and Productos only when there is one', async () => {
+    const onVerDocumento = jest.fn();
+    const repo = fakeRepo();
+    await revisarLeido(repo, { onVerDocumento });
+    await pulsarYa('revision-ver-documento');
+    expect(onVerDocumento).toHaveBeenCalledTimes(1);
+    await aProductos();
+    await pulsarYa('revision-ver-documento');
+    expect(onVerDocumento).toHaveBeenCalledTimes(2);
+    expect(repo.extraer).not.toHaveBeenCalled();
+  });
+
+  it('offers no document action without a document or without a viewer', async () => {
+    const vista = await openView(fakeRepo(), { documento: null, onVerDocumento: jest.fn() });
+    expect(aqui('revision-ver-documento')).toBe(false);
+    vista.unmount();
+    await openView(fakeRepo());
+    expect(aqui('revision-ver-documento')).toBe(false);
+  });
+
+  it('reports the read header only while its extraction was read from the current document, through reloads (B1)', async () => {
+    const repo = fakeRepo({ leerRevisiones: jest.fn(async () => [savedRevision()]), leerExtracciones: jest.fn(async () => [extraccionRow()]) });
+    const onCabeceraLeida = jest.fn<void, [CabeceraLeida | null]>();
+    const vista = await openView(repo, { onCabeceraLeida });
+    expect(onCabeceraLeida).toHaveBeenLastCalledWith({ proveedorNombre: 'Proveedor Uno', numeroDocumento: 'DOC-1', fechaEmision: '2026-10-15' });
+
+    // Same saved review and extraction (read from SHA), but the invoice now holds another photo: never reported as read from it.
+    const lecturas = repo.leerRevisiones.mock.calls.length;
+    vista.rerenderUi(<FacturaRevisionView {...props(repo, { onCabeceraLeida, documento: { ...DOC, sha256: 'b'.repeat(64) } })} />);
+    await settle();
+    expect(repo.leerRevisiones.mock.calls.length).toBeGreaterThan(lecturas);
+    expect(onCabeceraLeida).toHaveBeenLastCalledWith(null);
+
+    vista.rerenderUi(<FacturaRevisionView {...props(repo, { onCabeceraLeida, documento: null })} />);
+    await settle();
+    expect(onCabeceraLeida).toHaveBeenLastCalledWith(null);
+
+    vista.rerenderUi(<FacturaRevisionView {...props(repo, { onCabeceraLeida })} />);
+    await settle();
+    expect(onCabeceraLeida).toHaveBeenLastCalledWith({ proveedorNombre: 'Proveedor Uno', numeroDocumento: 'DOC-1', fechaEmision: '2026-10-15' });
+  });
+
+  it('explains a partial catalog with the manual SKU way out and without promising coverage', async () => {
+    const repo = fakeRepo({ buscarCandidatos: jest.fn(async () => ({ productos: [], parcial: true })) });
+    await revisarLeido(repo);
+    await aProductos();
+    expect(textoDeId('revision-catalogo-parcial')).toBe('Catálogo parcial: no se pudo revisar todo el inventario. Si no ves el producto, búscalo por SKU; márcalo como nuevo solo si confirmas que no existe.');
   });
 });

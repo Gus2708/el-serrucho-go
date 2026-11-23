@@ -422,7 +422,7 @@ export function ResumenCabecera(props: { efectiva: FacturaEfectiva; calculo: Cal
   const fila = (dato: CampoCabecera) => <FilaDato key={dato.campo} dato={dato} efectivo={efectiva.campos[dato.campo]} esUsd={esUsd} oculto={oculto} onEditar={onEditar} />;
   return (
     <View testID="revision-resumen" style={[styles.tarjeta, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-      <Texto tone="primary">Lo que se leyó</Texto>
+      <Texto tone="primary">Leído de la foto</Texto>
       {CAMPOS_PRINCIPALES.map(fila)}
       {calculo.moneda !== null && calculo.moneda !== 'USD' ? (
         <Texto small tone="warning">{`Moneda ${calculo.moneda}: los importes se conservan sin convertir. No hay tasa de cambio aprobada, así que la conversión está bloqueada.`}</Texto>

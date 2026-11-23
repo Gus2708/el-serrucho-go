@@ -1,15 +1,20 @@
 import * as React from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeContext';
 import { useDeviceSize } from '../hooks/useDeviceSize';
 import { newUuid } from '../lib/facturaDocumentoPicker';
 import type { ExtraccionRow, FacturaRevisionRepository } from '../lib/facturaRevisionRepository';
-import type { Bloqueo, CodigoBloqueo, CorreccionesLinea, DecisionCabecera, RevisionContenido } from '../lib/facturaRevision';
+import type { Bloqueo, CodigoBloqueo, CorreccionesLinea, DecisionCabecera, FacturaEfectiva, RevisionContenido } from '../lib/facturaRevision';
 import {
   accionPrincipal,
+  agruparBloqueos,
+  edicionFactorUno,
+  edicionIvaManual,
   estadoLinea,
+  lineasConBloqueo,
+  pendientesDeLinea,
   resumenLineas,
   siguientePorRevisar,
   type AccionPrincipalId,
@@ -29,7 +34,17 @@ import FacturaRevisionPos from './FacturaRevisionPos';
 
 export type { EtapaRevision } from '../lib/facturaRevisionPasos';
 
+export interface CabeceraLeida {
+  proveedorNombre: string | null;
+  numeroDocumento: string | null;
+  fechaEmision: string | null;
+}
+
 export interface FacturaRevisionViewProps {
+  /** Current effective source values for display; receiving them must never mutate the invoice draft. */
+  onCabeceraLeida?: (cabecera: CabeceraLeida | null) => void;
+  /** Opens the shell's context-bound document viewer without starting extraction. */
+  onVerDocumento?: () => void;
   /**
    * Stage the shell shows. When absent the review keeps its own stage; either way every change is reported.
    * Layout contract: the review owns its scrolling body and its sticky footer (the root is `flex: 1`), so the host must
@@ -89,6 +104,23 @@ const RAZON_CARGA = {
 } as const;
 
 type FiltroLineas = 'todos' | 'pendientes' | 'listos';
+type LineasEfectivas = FacturaEfectiva['lineas'];
+
+/** Document blockers answered by the checklist at the top of Compra; the others are answered in Leer. */
+const RESUELTOS_EN_COMPRA: ReadonlySet<CodigoBloqueo> = new Set(['documento_completitud_no_confirmada', 'recepcion_no_confirmada']);
+
+const AVISO_CATALOGO_PARCIAL = 'Catálogo parcial: no se pudo revisar todo el inventario. Si no ves el producto, búscalo por SKU; márcalo como nuevo solo si confirmas que no existe.';
+
+function renglones(cantidad: number): string {
+  return cantidad === 1 ? '1 renglón' : `${cantidad} renglones`;
+}
+
+/** Offsets inside the stage scroll, measured by layout, to bring a line into view on a phone. */
+interface Posiciones {
+  etapa: number | null;
+  filas: number | null;
+  porLinea: Map<string, number>;
+}
 
 function razonBloqueo(bloqueo: Bloqueo): string {
   const detalle = bloqueo.detalle && (bloqueo.codigo === 'dato_faltante' || bloqueo.codigo === 'valor_invalido') ? ` (${bloqueo.detalle})` : '';
@@ -203,7 +235,7 @@ function useVerificacionCodigos(entrada: {
 export default function FacturaRevisionView(props: FacturaRevisionViewProps): React.JSX.Element {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { isDesktop, height: alto } = useDeviceSize();
+  const { isDesktop } = useDeviceSize();
   const { facturaId, ownerId, facturaVersion, documento, editorDirty, onDirtyChange, onEtapaChange, onSeguirManual } = props;
   const control = useFacturaRevision({
     repository: props.repository ?? facturaRevisionRepository,
@@ -225,7 +257,20 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
   const [filtro, setFiltro] = useState<FiltroLineas>('todos');
   const [agregarAbierto, setAgregarAbierto] = useState(false);
   const [detalles, setDetalles] = useState({ leer: false, compra: false });
+  const [loteIva, setLoteIva] = useState<{ tasa: '0' | '16' | 'otro'; contexto: string } | null>(null);
+  const [otraTasa, setOtraTasa] = useState('');
+  const [loteFactor, setLoteFactor] = useState<{ contexto: string } | null>(null);
   const etapa = props.etapa ?? etapaInterna;
+  const cuerpoRef = useRef<ScrollView>(null);
+  const posiciones = useRef<Posiciones>({ etapa: null, filas: null, porLinea: new Map() });
+  const lineaPorMostrar = useRef<string | null>(null);
+
+  // Each stage starts at its top: one shared scroll offset must not carry over. Runs before layout so the offsets
+  // measured for the new stage are never cleared afterwards.
+  useLayoutEffect(() => {
+    posiciones.current = { etapa: null, filas: null, porLinea: new Map() };
+    cuerpoRef.current?.scrollTo({ y: 0, animated: false });
+  }, [etapa]);
 
   // Another invoice is another review: nothing of the previous one (stage, open line, filter) carries over.
   useEffect(() => {
@@ -233,6 +278,10 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
     setLineaAbierta(null);
     setFiltro('todos');
     setAgregarAbierto(false);
+    setLoteIva(null);
+    setOtraTasa('');
+    setLoteFactor(null);
+    lineaPorMostrar.current = null;
   }, [facturaId]);
 
   const { efectiva, calculo, contenido } = control;
@@ -247,12 +296,13 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
   for (const bloqueo of calculo?.bloqueos ?? []) {
     if (bloqueo.lineaId) bloqueosPorLinea.set(bloqueo.lineaId, [...(bloqueosPorLinea.get(bloqueo.lineaId) ?? []), razonBloqueo(bloqueo)]);
   }
+  const sesionVigente = (): boolean => (props.getSessionUid ?? getFacturaSessionUid)() === ownerId;
   const verificaciones = useVerificacionCodigos({
     contenido,
     habilitado: control.carga === 'listo',
     contexto: control.contextoActual(),
     contextoVigente: control.contextoActual,
-    sesionVigente: () => (props.getSessionUid ?? getFacturaSessionUid)() === ownerId,
+    sesionVigente,
     leer: (props.repository ?? facturaRevisionRepository).leerColisionesBarras,
   });
   const estados = contenido && calculo
@@ -296,6 +346,30 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
     onDirtyChange?.(control.sucio || hayBorradorPrecio);
   }, [control.sucio, hayBorradorPrecio, onDirtyChange]);
 
+  // The shell shows what was read next to its own fields, as read from the CURRENT photo. So it is reported only while the
+  // review's own extraction row was read from exactly this document: a review left from a replaced or removed photo
+  // reports null, also while it reloads. Reported again only when the document or the values change (compared as text),
+  // so a parent that stores them and passes a new callback each render never loops.
+  const filaFuente = contenido?.extraccion_id ? control.extracciones.find(fila => fila.id === contenido.extraccion_id) : undefined;
+  const fuenteEsDocumento = documento !== null && filaFuente !== undefined && filaFuente.documentoSha256 === documento.sha256;
+  const cabeceraLeida: CabeceraLeida | null = control.carga === 'listo' && contenido && efectiva && fuenteEsDocumento && sesionVigente()
+    ? { proveedorNombre: efectiva.campos.proveedorNombre.valor, numeroDocumento: efectiva.campos.numeroDocumento.valor, fechaEmision: efectiva.campos.fechaEmision.valor }
+    : null;
+  const claveCabecera = JSON.stringify([documento?.sha256 ?? null, cabeceraLeida]);
+  const avisarCabecera = useRef(props.onCabeceraLeida);
+  avisarCabecera.current = props.onCabeceraLeida;
+  useEffect(() => {
+    const [, cabecera] = JSON.parse(claveCabecera) as [string | null, CabeceraLeida | null];
+    avisarCabecera.current?.(cabecera);
+  }, [claveCabecera]);
+
+  const ordenLineas = contenido?.lineas.map(linea => linea.lineaId) ?? [];
+  const sinIva = lineasConBloqueo(calculo?.bloqueos ?? [], 'iva_tasa_desconocida', ordenLineas);
+  const sinFactor = lineasConBloqueo(calculo?.bloqueos ?? [], 'conversion_no_confirmada', ordenLineas);
+  const puedeLote = control.carga === 'listo' && control.ocupado === null && !control.conflicto && sesionVigente();
+  const tasaLote = loteIva === null ? '' : loteIva.tasa === 'otro' ? otraTasa.trim() : loteIva.tasa;
+  const puedeVerDocumento = props.onVerDocumento !== undefined && documento !== null;
+
   const intentoFallido = contenido === null && control.extraccionesUsables.length === 0 && control.extracciones.some(fila => fila.estado === 'fallido' || fila.estado === 'cuarentena');
   const situacion: SituacionRevision = {
     etapa,
@@ -329,7 +403,41 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
   function abrirLinea(lineaId: string): void {
     setFiltro('todos');
     setLineaAbierta(lineaId);
+    lineaPorMostrar.current = lineaId;
     irA('productos');
+  }
+
+  /** Scrolls a phone to the line asked for by "Ir al renglón", once every offset it needs has been measured. */
+  function mostrarLineaPedida(): void {
+    const destino = lineaPorMostrar.current;
+    const { etapa: yEtapa, filas: yFilas, porLinea } = posiciones.current;
+    const yFila = destino === null ? undefined : porLinea.get(destino);
+    if (yEtapa === null || yFilas === null || yFila === undefined) return;
+    lineaPorMostrar.current = null;
+    cuerpoRef.current?.scrollTo({ y: yEtapa + yFilas + yFila, animated: true });
+  }
+
+  function medir(donde: 'etapa' | 'filas', evento: LayoutChangeEvent): void {
+    posiciones.current[donde] = evento.nativeEvent.layout.y;
+    mostrarLineaPedida();
+  }
+
+  function medirFila(lineaId: string, evento: LayoutChangeEvent): void {
+    posiciones.current.porLinea.set(lineaId, evento.nativeEvent.layout.y);
+    mostrarLineaPedida();
+  }
+
+  function aplicarLoteIva(): void {
+    if (loteIva === null || tasaLote === '' || !puedeLote) return;
+    if (control.editarVarios(sinIva.map(lineaId => edicionIvaManual(lineaId, tasaLote)), loteIva.contexto).ok) {
+      setLoteIva(null);
+      setOtraTasa('');
+    }
+  }
+
+  function aplicarLoteFactor(): void {
+    if (loteFactor === null || !puedeLote) return;
+    if (control.editarVarios(sinFactor.map(edicionFactorUno), loteFactor.contexto).ok) setLoteFactor(null);
   }
 
   async function materializarCompra(): Promise<void> {
@@ -496,6 +604,7 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
     const seguirManual = onSeguirManual !== undefined && contenido === null && (intentoFallido || control.carga === 'no_disponible' || control.carga === 'error');
     return (
       <View testID="revision-etapa-leer" style={styles.etapa}>
+        {renderVerDocumento()}
         {contenido && efectiva && calculo ? (
           <FacturaRevisionCabecera efectiva={efectiva} decisiones={decisiones} tipoDocumento={contenido.cabecera.tipoDocumento ?? null} calculo={calculo} onEditar={control.editar} />
         ) : (
@@ -573,23 +682,82 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
     );
   }
 
-  function renderListaYDetalle(): React.JSX.Element | null {
-    if (!efectiva) return null;
-    const visibles = efectiva.lineas.map((linea, index) => ({ linea, index })).filter(({ linea }) => lineaVisible(estadoPorLinea.get(linea.lineaId), filtro));
-    if (!isDesktop) return <View style={styles.bloque}>{visibles.map(({ linea, index }) => renderLinea(linea, index, 'completo'))}</View>;
-    const seleccionada = efectiva.lineas.findIndex(linea => linea.lineaId === lineaAbierta);
+  function renderVerDocumento(): React.JSX.Element | null {
+    return puedeVerDocumento ? <Boton testID="revision-ver-documento" label="Ver factura" onPress={() => props.onVerDocumento?.()} /> : null;
+  }
+
+  function renderLote(): React.JSX.Element | null {
+    if (sinIva.length === 0 && sinFactor.length === 0) return null;
+    const elegirIva = (tasa: '0' | '16' | 'otro'): void => setLoteIva({ tasa, contexto: control.contextoActual() });
+    const etiquetaIva = tasaLote === '' ? `Aplicar IVA a ${renglones(sinIva.length)} sin IVA` : `Aplicar ${tasaLote} % a ${renglones(sinIva.length)} sin IVA`;
     return (
-      <View testID="revision-productos-paneles" style={styles.paneles}>
-        <View testID="revision-productos-lista" style={styles.panelLista}>
-          <ScrollView nestedScrollEnabled style={{ maxHeight: Math.max(320, alto - 280) }} contentContainerStyle={styles.bloque}>
-            {visibles.map(({ linea, index }) => renderLinea(linea, index, 'fila'))}
-          </ScrollView>
-        </View>
-        <View testID="revision-productos-detalle" style={styles.panelDetalle}>
-          {seleccionada >= 0 ? renderLinea(efectiva.lineas[seleccionada], seleccionada, 'detalle') : <Texto tone="muted">Elige un renglón de la lista para ver su detalle.</Texto>}
-        </View>
+      <View testID="revision-lote" style={[styles.grupo, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+        <Texto tone="primary">Aplicar a renglones pendientes</Texto>
+        <Texto small tone="muted">No cambia los renglones que ya tienen IVA o unidades.</Texto>
+        {sinIva.length > 0 ? (
+          <View style={styles.bloque}>
+            <Texto small>{`IVA de ${renglones(sinIva.length)} sin IVA`}</Texto>
+            <View style={styles.filaFiltros}>
+              <Boton testID="revision-lote-iva-0" label="0 %" selected={loteIva?.tasa === '0'} disabled={!puedeLote} onPress={() => elegirIva('0')} />
+              <Boton testID="revision-lote-iva-16" label="16 %" selected={loteIva?.tasa === '16'} disabled={!puedeLote} onPress={() => elegirIva('16')} />
+              <Boton testID="revision-lote-iva-otro" label="Otro…" selected={loteIva?.tasa === 'otro'} disabled={!puedeLote} onPress={() => elegirIva('otro')} />
+            </View>
+            {loteIva?.tasa === 'otro' ? (
+              <Entrada testID="revision-lote-iva-valor" label="IVA % para estos renglones" value={otraTasa} keyboardType="decimal-pad" onChangeText={setOtraTasa} />
+            ) : null}
+            {loteIva ? <Boton testID="revision-lote-iva-aplicar" label={etiquetaIva} disabled={!puedeLote || tasaLote === ''} onPress={aplicarLoteIva} /> : null}
+          </View>
+        ) : null}
+        {sinFactor.length > 0 ? (
+          <View style={styles.bloque}>
+            <Texto small>{`Unidades de ${renglones(sinFactor.length)} sin factor`}</Texto>
+            <View style={styles.filaFiltros}>
+              <Boton testID="revision-lote-factor-uno" label="1 por 1" selected={loteFactor !== null} disabled={!puedeLote} onPress={() => setLoteFactor({ contexto: control.contextoActual() })} />
+            </View>
+            {loteFactor ? (
+              <Boton testID="revision-lote-factor-aplicar" label={`Aplicar 1 por 1 a ${renglones(sinFactor.length)} sin factor`} disabled={!puedeLote} onPress={aplicarLoteFactor} />
+            ) : null}
+          </View>
+        ) : null}
       </View>
     );
+  }
+
+  function renderTituloProductos(): React.JSX.Element {
+    return (
+      <View style={styles.bloque}>
+        <Texto tone="primary">Productos</Texto>
+        <Texto testID="revision-productos-resumen">{`${resumen.listas} de ${resumen.total} listos`}</Texto>
+        {renderVerDocumento()}
+      </View>
+    );
+  }
+
+  function renderControlesProductos(): React.JSX.Element {
+    return (
+      <View style={styles.etapa}>
+        {control.catalogoParcial ? <Texto testID="revision-catalogo-parcial" small tone="warning">{AVISO_CATALOGO_PARCIAL}</Texto> : null}
+        <View style={styles.filaFiltros}>
+          <Boton testID="revision-filtro-todos" label={`Todos (${resumen.total})`} selected={filtro === 'todos'} onPress={() => setFiltro('todos')} />
+          <Boton testID="revision-filtro-pendientes" label={`Por revisar (${resumen.porRevisar})`} selected={filtro === 'pendientes'} onPress={() => setFiltro('pendientes')} />
+          <Boton testID="revision-filtro-listos" label={`Listos (${resumen.listas})`} selected={filtro === 'listos'} onPress={() => setFiltro('listos')} />
+        </View>
+        {renderLote()}
+      </View>
+    );
+  }
+
+  function renderAgregar(): React.JSX.Element {
+    return (
+      <>
+        <BotonDespliegue testID="revision-agregar-abrir" label="Agregar un renglón que falta" abierto={agregarAbierto} onPress={() => setAgregarAbierto(actual => !actual)} />
+        {agregarAbierto ? renderFormularioOmitido() : null}
+      </>
+    );
+  }
+
+  function lineasVisibles(lineas: LineasEfectivas): Array<{ linea: LineasEfectivas[number]; index: number }> {
+    return lineas.map((linea, index) => ({ linea, index })).filter(({ linea }) => lineaVisible(estadoPorLinea.get(linea.lineaId), filtro));
   }
 
   function renderProductos(): React.JSX.Element {
@@ -601,18 +769,50 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
       );
     }
     return (
-      <View testID="revision-etapa-productos" style={styles.etapa}>
-        <Texto tone="primary">Productos</Texto>
-        <Texto testID="revision-productos-resumen">{`${resumen.listas} de ${resumen.total} listos`}</Texto>
-        {control.catalogoParcial ? <Texto small tone="warning">Catálogo parcial: la lectura se acotó o falló, así que la ausencia de un producto no prueba que no exista.</Texto> : null}
-        <View style={styles.filaFiltros}>
-          <Boton testID="revision-filtro-todos" label={`Todos (${resumen.total})`} selected={filtro === 'todos'} onPress={() => setFiltro('todos')} />
-          <Boton testID="revision-filtro-pendientes" label={`Por revisar (${resumen.porRevisar})`} selected={filtro === 'pendientes'} onPress={() => setFiltro('pendientes')} />
-          <Boton testID="revision-filtro-listos" label={`Listos (${resumen.listas})`} selected={filtro === 'listos'} onPress={() => setFiltro('listos')} />
+      <View testID="revision-etapa-productos" style={styles.etapa} onLayout={evento => medir('etapa', evento)}>
+        {renderTituloProductos()}
+        {renderControlesProductos()}
+        <View testID="revision-productos-filas" style={styles.bloque} onLayout={evento => medir('filas', evento)}>
+          {lineasVisibles(efectiva.lineas).map(({ linea, index }) => (
+            <View key={linea.lineaId} testID={`revision-fila-${llavePorLinea.get(linea.lineaId) ?? `m${index + 1}`}`} onLayout={evento => medirFila(linea.lineaId, evento)}>
+              {renderLinea(linea, index, 'completo')}
+            </View>
+          ))}
         </View>
-        {renderListaYDetalle()}
-        <BotonDespliegue testID="revision-agregar-abrir" label="Agregar un renglón que falta" abierto={agregarAbierto} onPress={() => setAgregarAbierto(actual => !actual)} />
-        {agregarAbierto ? renderFormularioOmitido() : null}
+        {renderAgregar()}
+      </View>
+    );
+  }
+
+  /**
+   * Expanded screens: the list and the selected detail each own a full-height scroll outside the stage scroll, so no row
+   * hides behind a height-limited list nested in another scrolling page.
+   */
+  function renderProductosDividido(lineas: LineasEfectivas): React.JSX.Element {
+    const seleccionada = lineas.findIndex(linea => linea.lineaId === lineaAbierta);
+    return (
+      <View testID="revision-etapa-productos" style={styles.dividido}>
+        <View style={styles.cabeceraDividida}>
+          {renderEncabezado()}
+          {renderTituloProductos()}
+        </View>
+        <View testID="revision-productos-paneles" style={styles.paneles}>
+          <ScrollView testID="revision-productos-lista" style={styles.panelLista} contentContainerStyle={styles.contenidoPanel} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+            {renderControlesProductos()}
+            {lineasVisibles(lineas).map(({ linea, index }) => renderLinea(linea, index, 'fila'))}
+            {renderAgregar()}
+          </ScrollView>
+          <ScrollView
+            key={lineaAbierta ?? 'ninguna'}
+            testID="revision-productos-detalle"
+            style={styles.panelDetalle}
+            contentContainerStyle={styles.contenidoPanel}
+            keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets
+          >
+            {seleccionada >= 0 ? renderLinea(lineas[seleccionada], seleccionada, 'detalle') : <Texto tone="muted">Elige un renglón de la lista para ver su detalle.</Texto>}
+          </ScrollView>
+        </View>
       </View>
     );
   }
@@ -654,7 +854,7 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
         </View>
       );
     }
-    const saltos = new Set<string>();
+    const grupos = agruparBloqueos(calculo.bloqueos, ordenLineas);
     return (
       <View testID="revision-etapa-compra" style={styles.etapa}>
         <Texto tone="primary">Compra</Texto>
@@ -680,14 +880,25 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
 
         <View testID="revision-bloqueos" style={styles.bloque}>
           <Texto tone="primary">Pendiente antes de aprobar</Texto>
-          {bloqueos.length === 0 ? <Texto tone="success">Sin bloqueos</Texto> : null}
-          {bloqueos.map((item, i) => {
-            const salto = item.lineaId !== null && !saltos.has(item.lineaId) ? item.lineaId : null;
-            if (salto) saltos.add(salto);
+          {calculo.bloqueos.length === 0 ? <Texto tone="success">Sin bloqueos</Texto> : null}
+          {grupos.documento.length > 0 ? (
+            <View testID="revision-bloqueos-documento" style={[styles.grupo, { borderColor: colors.border }]}>
+              <Texto tone="warning">Documento</Texto>
+              {grupos.documento.map((bloqueo, i) => <Texto key={i} small tone="muted">{`• ${razonBloqueo(bloqueo)}`}</Texto>)}
+              {grupos.documento.some(bloqueo => RESUELTOS_EN_COMPRA.has(bloqueo.codigo)) ? (
+                <Texto small tone="muted">Responde arriba si el documento está completo y si recibiste toda la mercancía.</Texto>
+              ) : null}
+              {grupos.documento.some(bloqueo => !RESUELTOS_EN_COMPRA.has(bloqueo.codigo)) ? <Boton testID="revision-ir-leer" label="Ir a Leer" onPress={() => irA('leer')} /> : null}
+            </View>
+          ) : null}
+          {grupos.lineas.map(grupo => {
+            const numero = numeroPorLinea.get(grupo.lineaId) ?? '';
+            const llave = llavePorLinea.get(grupo.lineaId) ?? '';
             return (
-              <View key={i} style={styles.bloque}>
-                <Texto tone="warning">{`• ${item.texto}`}</Texto>
-                {salto ? <Boton testID={`revision-ir-linea-${llavePorLinea.get(salto) ?? ''}`} label={`Ir al renglón ${numeroPorLinea.get(salto) ?? ''}`} onPress={() => abrirLinea(salto)} /> : null}
+              <View key={grupo.lineaId} testID={`revision-bloqueos-linea-${llave}`} style={[styles.grupo, { borderColor: colors.border }]}>
+                <Texto tone="warning">{`Renglón ${numero} · Pendiente: ${pendientesDeLinea(grupo.bloqueos).join(', ')}`}</Texto>
+                {grupo.bloqueos.map((bloqueo, i) => <Texto key={i} small tone="muted">{`• Renglón ${numero}: ${razonBloqueo(bloqueo)}`}</Texto>)}
+                <Boton testID={`revision-ir-linea-${llave}`} label={`Ir al renglón ${numero}`} onPress={() => abrirLinea(grupo.lineaId)} />
               </View>
             );
           })}
@@ -720,11 +931,9 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
     }
   }
 
-  const hayPie = accion !== null || etapa !== 'leer';
-
-  return (
-    <KeyboardAvoidingView testID="factura-revision" style={[styles.raiz, { backgroundColor: colors.bg }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView style={styles.cuerpo} contentContainerStyle={styles.contenido} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+  function renderEncabezado(): React.JSX.Element {
+    return (
+      <>
         <View style={styles.bloque}>
           <Texto testID="revision-estado" tone={tonoEstado(control.estadoVisible)}>{control.estadoVisible}</Texto>
           <Texto small tone="muted">Lo leído de la factura es una sugerencia: nada se compra ni cambia inventario desde aquí.</Texto>
@@ -747,9 +956,23 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
         {control.conflicto ? (
           <Boton testID="revision-recargar" label="Recargar versión del servidor (descarta mis cambios sin guardar)" danger onPress={() => { descartarBorradoresPrecio(); void control.recargar(); }} />
         ) : null}
+      </>
+    );
+  }
 
-        {renderCuerpo()}
-      </ScrollView>
+  const hayPie = accion !== null || etapa !== 'leer';
+  const lineasDivididas = isDesktop && etapa === 'productos' && contenido && calculo && efectiva ? efectiva.lineas : null;
+
+  return (
+    <KeyboardAvoidingView testID="factura-revision" style={[styles.raiz, { backgroundColor: colors.bg }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {lineasDivididas ? (
+        renderProductosDividido(lineasDivididas)
+      ) : (
+        <ScrollView ref={cuerpoRef} testID="revision-cuerpo" style={styles.cuerpo} contentContainerStyle={styles.contenido} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+          {renderEncabezado()}
+          {renderCuerpo()}
+        </ScrollView>
+      )}
 
       {hayPie ? (
         <View testID="revision-pie" style={[styles.pie, { borderTopColor: colors.border, backgroundColor: colors.bg, paddingBottom: Math.max(insets.bottom, 12) }]}>
@@ -777,9 +1000,13 @@ const styles = StyleSheet.create({
   etapa: { gap: 12 },
   bloque: { gap: 8 },
   filaFiltros: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  paneles: { flexDirection: 'row', alignItems: 'flex-start', gap: 16 },
+  grupo: { gap: 6, borderWidth: 0.5, borderRadius: 12, padding: 12 },
+  dividido: { flex: 1 },
+  cabeceraDividida: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, gap: 12 },
+  paneles: { flex: 1, flexDirection: 'row', gap: 16, paddingHorizontal: 16 },
   panelLista: { flexGrow: 4, flexShrink: 1, flexBasis: 0, minWidth: 280 },
   panelDetalle: { flexGrow: 6, flexShrink: 1, flexBasis: 0, minWidth: 320 },
+  contenidoPanel: { gap: 8, paddingBottom: 24 },
   aviso: { borderWidth: 0.5, borderRadius: 10, padding: 10 },
   pie: { borderTopWidth: 0.5, paddingHorizontal: 16, paddingTop: 10, gap: 8 },
   filaPie: { flexDirection: 'row', alignItems: 'center', gap: 8 },

@@ -1,4 +1,4 @@
-import type { CalculoRevision, LineaRevision } from './facturaRevision';
+import type { Bloqueo, CalculoRevision, CodigoBloqueo, Edicion, LineaRevision } from './facturaRevision';
 
 /** The three bodies of the guided review; the outer shell owns the stepper and may control which one is shown. */
 export type EtapaRevision = 'leer' | 'productos' | 'compra';
@@ -150,4 +150,58 @@ export function accionPrincipal(s: SituacionRevision): AccionPrincipal | null {
   }
   if (!s.hayContenido) return accion('ir_leer', 'Ir a Leer');
   return s.etapa === 'productos' ? accion('continuar_compra', 'Continuar a compra') : accionCompra(s);
+}
+
+export interface GrupoBloqueosLinea {
+  readonly lineaId: string;
+  readonly bloqueos: readonly Bloqueo[];
+}
+
+export interface BloqueosAgrupados {
+  readonly documento: readonly Bloqueo[];
+  readonly lineas: readonly GrupoBloqueosLinea[];
+}
+
+/**
+ * Splits the calculation's blockers into the document ones and one group per line, in the order the lines are shown,
+ * so every reason stays next to the action that opens its own line. A line missing from the order keeps its group, last.
+ */
+export function agruparBloqueos(bloqueos: readonly Bloqueo[], lineasEnOrden: readonly string[]): BloqueosAgrupados {
+  const porLinea = new Map<string, Bloqueo[]>();
+  const documento: Bloqueo[] = [];
+  for (const bloqueo of bloqueos) {
+    if (bloqueo.lineaId === null) documento.push(bloqueo);
+    else porLinea.set(bloqueo.lineaId, [...(porLinea.get(bloqueo.lineaId) ?? []), bloqueo]);
+  }
+  const orden = [...lineasEnOrden.filter(id => porLinea.has(id)), ...[...porLinea.keys()].filter(id => !lineasEnOrden.includes(id))];
+  return { documento, lineas: orden.map(lineaId => ({ lineaId, bloqueos: porLinea.get(lineaId) ?? [] })) };
+}
+
+const PENDIENTE_CORTO: Partial<Record<CodigoBloqueo, string>> = {
+  asociacion_pendiente: 'producto',
+  iva_tasa_desconocida: 'IVA',
+  conversion_no_confirmada: 'unidades',
+  codigo_barras_no_verificado: 'código de barras',
+  cantidad_cero: 'cantidad',
+};
+
+/** Short words for what a line still needs, once each; the full reasons stay listed under them. */
+export function pendientesDeLinea(bloqueos: readonly Bloqueo[]): string[] {
+  return [...new Set(bloqueos.map(bloqueo => PENDIENTE_CORTO[bloqueo.codigo] ?? 'datos'))];
+}
+
+/** Lines that carry this blocker right now, in display order: the only targets an explicit batch may touch. */
+export function lineasConBloqueo(bloqueos: readonly Bloqueo[], codigo: CodigoBloqueo, lineasEnOrden: readonly string[]): string[] {
+  const conBloqueo = new Set(bloqueos.filter(bloqueo => bloqueo.codigo === codigo && bloqueo.lineaId !== null).map(bloqueo => bloqueo.lineaId));
+  return lineasEnOrden.filter(id => conBloqueo.has(id));
+}
+
+/** The edit of the per-line VAT chips: same field and motive, so a saved review never shows which control was used. */
+export function edicionIvaManual(lineaId: string, tasa: string): Edicion {
+  return { tipo: 'linea_escalar', lineaId, campo: 'tasaIva', valor: tasa, motivo: `IVA indicado manualmente: ${tasa} %` };
+}
+
+/** The edit of the per-line "1 por 1" chip. */
+export function edicionFactorUno(lineaId: string): Edicion {
+  return { tipo: 'factor_conversion', lineaId, valor: '1' };
 }

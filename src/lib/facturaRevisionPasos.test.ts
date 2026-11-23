@@ -7,9 +7,15 @@ import {
   type RevisionContenido,
 } from './facturaRevision';
 import type { ExtraidaLinea, FacturaExtraccionPayload } from './facturaExtractionContract';
+import type { Bloqueo, CodigoBloqueo } from './facturaRevision';
 import {
   accionPrincipal,
+  agruparBloqueos,
+  edicionFactorUno,
+  edicionIvaManual,
   estadoLinea,
+  lineasConBloqueo,
+  pendientesDeLinea,
   ETIQUETA_ESTADO_LINEA,
   resumenLineas,
   siguientePorRevisar,
@@ -345,5 +351,88 @@ describe('accionPrincipal: one primary action per state, with the reason when it
       expect(accionPrincipal(compra({ ocupado: 'aprobando' }))).toEqual({ id: 'aprobar', etiqueta: 'Aprobando…', deshabilitada: true, razon: null });
       expect(accionPrincipal(compra({ aprobada: true, materializando: true }))).toEqual({ id: 'preparar', etiqueta: 'Preparando borrador…', deshabilitada: true, razon: null });
     });
+  });
+});
+
+// ── Post-E2E corrections: grouped blockers and explicit batch targets ───────
+
+const bloqueo = (codigo: CodigoBloqueo, lineaId: string | null = null, detalle: string | null = null): Bloqueo => ({
+  codigo,
+  ambito: lineaId === null ? 'documento' : 'linea',
+  lineaId,
+  detalle,
+});
+
+/** The exact screenshot-11 sequence: per line association, VAT, factor, emitted one line after the other. */
+function secuenciaCaptura(lineas: readonly string[]): Bloqueo[] {
+  return [
+    bloqueo('documento_completitud_no_confirmada'),
+    bloqueo('recepcion_no_confirmada'),
+    bloqueo('iva_inclusion_desconocida'),
+    ...lineas.flatMap(id => [bloqueo('asociacion_pendiente', id), bloqueo('iva_tasa_desconocida', id), bloqueo('conversion_no_confirmada', id)]),
+  ];
+}
+
+describe('agruparBloqueos', () => {
+  const orden = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8'];
+
+  it('keeps every reason of a line with that line, in line order, and the document blockers first (screenshot 11)', () => {
+    const grupos = agruparBloqueos(secuenciaCaptura(orden.slice(1)), orden);
+    expect(grupos.documento.map(b => b.codigo)).toEqual(['documento_completitud_no_confirmada', 'recepcion_no_confirmada', 'iva_inclusion_desconocida']);
+    expect(grupos.lineas.map(g => g.lineaId)).toEqual(['L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8']);
+    for (const grupo of grupos.lineas) {
+      expect(grupo.bloqueos.map(b => b.codigo)).toEqual(['asociacion_pendiente', 'iva_tasa_desconocida', 'conversion_no_confirmada']);
+      expect(grupo.bloqueos.every(b => b.lineaId === grupo.lineaId)).toBe(true);
+    }
+  });
+
+  it('follows the line order even when the blockers arrive interleaved, and keeps unknown lines last', () => {
+    const grupos = agruparBloqueos(
+      [bloqueo('iva_tasa_desconocida', 'L3'), bloqueo('moneda_desconocida'), bloqueo('asociacion_pendiente', 'L1'), bloqueo('conversion_no_confirmada', 'L3'), bloqueo('dato_faltante', 'X9', 'cantidad'), bloqueo('iva_tasa_desconocida', 'L1')],
+      ['L1', 'L2', 'L3']
+    );
+    expect(grupos.documento.map(b => b.codigo)).toEqual(['moneda_desconocida']);
+    expect(grupos.lineas.map(g => [g.lineaId, g.bloqueos.map(b => b.codigo)])).toEqual([
+      ['L1', ['asociacion_pendiente', 'iva_tasa_desconocida']],
+      ['L3', ['iva_tasa_desconocida', 'conversion_no_confirmada']],
+      ['X9', ['dato_faltante']],
+    ]);
+    expect(grupos.lineas[2].bloqueos[0].detalle).toBe('cantidad');
+  });
+
+  it('returns empty groups when nothing is blocked', () => {
+    expect(agruparBloqueos([], ['L1'])).toEqual({ documento: [], lineas: [] });
+  });
+});
+
+describe('pendientesDeLinea', () => {
+  it('names what a line still needs in short words, once each, in the blocker order', () => {
+    expect(pendientesDeLinea([bloqueo('asociacion_pendiente', 'L1'), bloqueo('iva_tasa_desconocida', 'L1'), bloqueo('conversion_no_confirmada', 'L1')])).toEqual(['producto', 'IVA', 'unidades']);
+    expect(pendientesDeLinea([bloqueo('dato_faltante', 'L1', 'cantidad'), bloqueo('valor_invalido', 'L1', 'precioUnitario')])).toEqual(['datos']);
+  });
+});
+
+describe('batch targets and edits', () => {
+  const orden = ['L1', 'L2', 'L3'];
+
+  it('targets only the lines that currently carry the matching blocker, in line order', () => {
+    const bloqueos = [bloqueo('iva_tasa_desconocida', 'L3'), bloqueo('conversion_no_confirmada', 'L2'), bloqueo('iva_tasa_desconocida', 'L1'), bloqueo('iva_inclusion_desconocida')];
+    expect(lineasConBloqueo(bloqueos, 'iva_tasa_desconocida', orden)).toEqual(['L1', 'L3']);
+    expect(lineasConBloqueo(bloqueos, 'conversion_no_confirmada', orden)).toEqual(['L2']);
+    expect(lineasConBloqueo([], 'iva_tasa_desconocida', orden)).toEqual([]);
+  });
+
+  it('builds exactly the edits of the per-line VAT and factor chips', () => {
+    expect(edicionIvaManual('L1', '16')).toEqual({ tipo: 'linea_escalar', lineaId: 'L1', campo: 'tasaIva', valor: '16', motivo: 'IVA indicado manualmente: 16 %' });
+    expect(edicionIvaManual('L2', '0')).toEqual({ tipo: 'linea_escalar', lineaId: 'L2', campo: 'tasaIva', valor: '0', motivo: 'IVA indicado manualmente: 0 %' });
+    expect(edicionFactorUno('L3')).toEqual({ tipo: 'factor_conversion', lineaId: 'L3', valor: '1' });
+  });
+
+  it('a batch over the unresolved lines leaves an explicit zero and an explicit factor untouched', () => {
+    const corregida = conEdiciones(c => edicionIvaManual(c.lineas[0].lineaId, '0'), c => ({ tipo: 'factor_conversion', lineaId: c.lineas[1].lineaId, valor: '2' }));
+    const calculo = calcularRevision({ extraccion: EXT, contenido: corregida, estadosCodigoBarras: {} });
+    const [primera, segunda] = corregida.lineas.map(l => l.lineaId);
+    expect(lineasConBloqueo(calculo.bloqueos, 'iva_tasa_desconocida', [primera, segunda])).toEqual([segunda]);
+    expect(lineasConBloqueo(calculo.bloqueos, 'conversion_no_confirmada', [primera, segunda])).toEqual([primera]);
   });
 });

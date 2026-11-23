@@ -460,6 +460,34 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
     return { ok: true };
   }, [patch]);
 
+  /**
+   * Several explicit edits as one decision: folded through the same `aplicarEdicion` and id source as `editar`, then one
+   * patch. All or nothing: an invalid edit applies none. Unlike repeated `editar` calls in one handler (each reads the
+   * same rendered state, so only the last survives), every edit is kept. Fails closed outside a ready, idle, current review;
+   * `contexto`, when given, must still be the capture context the choice was made under.
+   */
+  const editarVarios = useCallback((ediciones: readonly Edicion[], contexto?: string): { ok: boolean; aplicadas: number } => {
+    const actual = estadoRef.current;
+    const vigenteAhora = actual.carga === 'listo' && actual.ocupado === null && !actual.conflicto && vigente(tokenActual()) &&
+      (contexto === undefined || contexto === contextoCaptura());
+    if (!actual.contenido || !vigenteAhora || ediciones.length === 0) return { ok: false, aplicadas: 0 };
+    let contenido = actual.contenido;
+    let aplicadas = 0;
+    for (const edicion of ediciones) {
+      const resultado = aplicarEdicion(contenido, actual.extraccion, edicion, () => live.current.newId());
+      if (!resultado.ok) {
+        patch({ aviso: { tipo: 'error', texto: 'Ese valor no es válido: no se cambió ningún renglón.' } });
+        return { ok: false, aplicadas: 0 };
+      }
+      if (resultado.cambio) {
+        contenido = resultado.contenido;
+        aplicadas += 1;
+      }
+    }
+    if (aplicadas > 0) patch({ contenido, aviso: null });
+    return { ok: true, aplicadas };
+  }, [patch, vigente, tokenActual, contextoCaptura]);
+
   const elegirCandidato = useCallback((numeroLinea: number, lineaId: string, codigoInterno: string): void => {
     const actual = estadoRef.current;
     const match = actual.candidatosDe === actual.contenido?.extraccion_id ? actual.candidatos[numeroLinea] : undefined;
@@ -653,6 +681,7 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
     puedeGuardar,
     puedeAprobar,
     editar,
+    editarVarios,
     contextoActual: contextoCaptura,
     capturarCodigoNuevo,
     elegirCandidato,

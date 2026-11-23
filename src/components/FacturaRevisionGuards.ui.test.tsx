@@ -1149,3 +1149,108 @@ describe('T8.4b2 hybrid retrieval wiring', () => {
     expect(current.candidatos).toEqual({});
   });
 });
+
+// ── Post-E2E: atomic batch of explicit edits ────────────────────────────────
+
+describe('editarVarios: one atomic patch through the same edit path', () => {
+  const ivaDe = (lineaId: string, valor = '16') => ({ tipo: 'linea_escalar' as const, lineaId, campo: 'tasaIva' as const, valor, motivo: `IVA indicado manualmente: ${valor} %` });
+
+  it('keeps all three edits made in one handler (separate editar calls lose all but the last)', async () => {
+    const repo = fakeRepo();
+    await startHook(repo);
+    const ids = current.contenido!.lineas.map(l => l.lineaId);
+    let resultado: { ok: boolean; aplicadas: number } | undefined;
+    await act(async () => {
+      resultado = current.editarVarios(ids.map(id => ivaDe(id)));
+    });
+    await settle();
+    expect(resultado).toEqual({ ok: true, aplicadas: 3 });
+    expect(current.contenido!.lineas.map(l => l.correcciones.tasaIva)).toEqual(ids.map(() => ({ valor: '16', motivo: 'IVA indicado manualmente: 16 %' })));
+    expect(blockerCodes()).not.toContain('iva_tasa_desconocida');
+  });
+
+  it('produces exactly the content of the same edits applied one by one through editar', async () => {
+    const repo = fakeRepo();
+    await startHook(repo);
+    const ids = current.contenido!.lineas.map(l => l.lineaId);
+    const ediciones = [ivaDe(ids[0], '0'), { tipo: 'factor_conversion' as const, lineaId: ids[1], valor: '1' }, ivaDe(ids[2])];
+    const esperado = ediciones.reduce((contenido, edicion) => {
+      const paso = aplicarEdicion(contenido, current.extraccion, edicion);
+      if (!paso.ok) throw new Error('fixture');
+      return paso.contenido;
+    }, current.contenido!);
+    await act(async () => {
+      expect(current.editarVarios(ediciones).ok).toBe(true);
+    });
+    await settle();
+    expect(current.contenido).toEqual(esperado);
+  });
+
+  it('applies nothing when one edit is invalid, and says no line changed', async () => {
+    const repo = fakeRepo();
+    await startHook(repo);
+    const antes = current.contenido;
+    const ids = antes!.lineas.map(l => l.lineaId);
+    let resultado: { ok: boolean; aplicadas: number } | undefined;
+    await act(async () => {
+      resultado = current.editarVarios([ivaDe(ids[0]), ivaDe(ids[1], 'abc'), ivaDe(ids[2])]);
+    });
+    await settle();
+    expect(resultado).toEqual({ ok: false, aplicadas: 0 });
+    expect(current.contenido).toBe(antes);
+    expect(current.aviso).toEqual({ tipo: 'error', texto: 'Ese valor no es válido: no se cambió ningún renglón.' });
+  });
+
+  it('fails closed for a stale context, another session or a save in flight', async () => {
+    const guardada = savedRevision();
+    const repo = fakeRepo({ leerRevisiones: jest.fn(async () => [guardada]), leerExtracciones: jest.fn(async () => [extraccionRow()]) });
+    let uid: string | null = OWNER_A;
+    const view = await mountHook(repo, { getSessionUid: () => uid });
+    const ids = current.contenido!.lineas.map(l => l.lineaId);
+    const contexto = current.contextoActual();
+
+    await act(async () => {
+      await current.recargar();
+    });
+    await settle();
+    const recargado = current.contenido;
+    expect(recargado).not.toBeNull();
+    await act(async () => {
+      expect(current.editarVarios([ivaDe(ids[0])], contexto)).toEqual({ ok: false, aplicadas: 0 });
+    });
+    await settle();
+    expect(current.contenido).toBe(recargado);
+    // Positive control: the same batch under the current context applies.
+    await act(async () => {
+      expect(current.editarVarios([ivaDe(ids[0])], current.contextoActual())).toEqual({ ok: true, aplicadas: 1 });
+    });
+    await settle();
+
+    const pendiente = deferred<{ revision: number; fingerprint: string; replay: boolean }>();
+    repo.guardarRevision.mockImplementationOnce(() => pendiente.promise);
+    let guardado: Promise<boolean> | undefined;
+    await act(async () => {
+      guardado = current.guardar('Lote');
+    });
+    expect(current.ocupado).toBe('guardando');
+    const enVuelo = current.contenido;
+    await act(async () => {
+      expect(current.editarVarios([ivaDe(ids[1])], current.contextoActual())).toEqual({ ok: false, aplicadas: 0 });
+    });
+    expect(current.contenido).toBe(enVuelo);
+    await act(async () => {
+      pendiente.resolve({ revision: 2, fingerprint: FP, replay: false });
+      await guardado;
+    });
+    await settle();
+
+    uid = OWNER_B;
+    view.rerenderUi(<Hook {...hookProps(repo, { getSessionUid: () => uid })} />);
+    await settle();
+    const sinSesion = current.contenido;
+    await act(async () => {
+      expect(current.editarVarios([ivaDe(ids[1])]).ok).toBe(false);
+    });
+    expect(current.contenido).toBe(sinSesion);
+  });
+});
