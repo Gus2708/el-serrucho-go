@@ -716,3 +716,65 @@ describe('matchInvoiceLines: hybrid retrieval ranks', () => {
     expect(ranked.candidates.map((c) => c.codigoInterno)).toEqual(['P1', 'P2']);
   });
 });
+
+describe('matchInvoiceLines: audited battery line against the charger catalog rows', () => {
+  const catalog = [
+    prod('7453118025275', 'BATERIA 20V LITIO 24H CARGA ZASC'),
+    prod('7453118025299', 'CARGADOR 2.0A 110V BATERIA 20V ZASC'),
+    prod('CV-BC-75A', 'CARGADOR DE BATERIA COVO'),
+    prod('CV-BAT-4AH', 'BATERIA O PILA 20V 4AMP COVO'),
+    prod('00431', 'BATERIA RECARGABLE 20V / 20AH MARCA INGCO'),
+  ];
+  const batteryLine = () => [line(7, { codigoProveedor: 'Z-RXB-2-20V', descripcion: 'BATERIA 20V (LI-ION) 24HORAS DE CARGA', unidad: 'UND' })];
+  const probe = (match: LineMatch) => ({
+    ids: match.candidates.map((c) => c.codigoInterno),
+    evidence: match.candidates.map((c) => c.evidence.map((e) => e.source)),
+    status: match.status,
+    conflicts: match.conflicts,
+  });
+
+  const entry = (codigoInterno: string, rank: number) => ({ codigoInterno, rank });
+  const SCREENSHOT_ORDER = ['7453118025275', '7453118025299', 'CV-BC-75A', 'CV-BAT-4AH', '00431'];
+
+  it('without retrieval ranks keeps only trigram-similar rows, battery first, and never suggests', () => {
+    const match = run(batteryLine(), catalog)[0];
+    expect(probe(match)).toEqual({
+      ids: ['7453118025275', 'CV-BC-75A', '7453118025299'],
+      evidence: [['descripcion'], ['descripcion'], ['descripcion']],
+      status: 'review',
+      conflicts: [],
+    });
+    expect(match.candidates.map((c) => c.similarity?.toFixed(2))).toEqual(['0.49', '0.37', '0.33']);
+    expect(match.excluded).toEqual([]);
+  });
+
+  it('with the retrieval order seen in the audit it lists the five rows, retrieval-only rows carry no evidence', () => {
+    const [match] = run(batteryLine(), catalog, {
+      hybridRanks: [{ lineIndex: 0, lexical: SCREENSHOT_ORDER.map((sku, i) => entry(sku, i + 1)) }] as never,
+    });
+    expect(probe(match)).toEqual({
+      ids: SCREENSHOT_ORDER,
+      evidence: [['descripcion'], ['descripcion'], ['descripcion'], [], []],
+      status: 'review',
+      conflicts: [],
+    });
+  });
+
+  it('lets a top retrieval rank put a low-similarity retrieval-only row first: order follows ranks, not similarity', () => {
+    const [match] = run(batteryLine(), catalog, {
+      hybridRanks: [{ lineIndex: 0, lexical: [entry('00431', 1), entry('7453118025275', 2)] }] as never,
+    });
+    expect(match.candidates.map((c) => c.codigoInterno)).toEqual(['00431', '7453118025275', 'CV-BC-75A', '7453118025299']);
+    expect(match.candidates[0].evidence).toEqual([]);
+    expect(match.status).toBe('review');
+    expect(match.conflicts).toEqual([]);
+  });
+
+  it('never reports code evidence for the printed code, so no candidate can be recommended', () => {
+    const [match] = run(batteryLine(), catalog, {
+      hybridRanks: [{ lineIndex: 0, lexical: SCREENSHOT_ORDER.map((sku, i) => entry(sku, i + 1)) }] as never,
+    });
+    expect(match.candidates.every((c) => c.evidence.every((e) => e.source === 'descripcion'))).toBe(true);
+    expect(match.status).not.toBe('suggested');
+  });
+});

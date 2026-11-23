@@ -5,7 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { scaleFont } from '../theme/responsive';
 import { useTheme } from '../theme/ThemeContext';
 import type { ExtraidoDescuento } from '../lib/facturaExtractionContract';
-import type { LineMatch } from '../lib/facturaMatching';
+import type { EvidenceSource, LineMatch, MatchCandidate } from '../lib/facturaMatching';
 import { precioVentaValido, resolverPrecioVenta } from '../lib/facturaRevision';
 import type { CalculoLinea, Edicion, EstadoCodigoBarras, LineaCampoEscalar, LineaEfectiva, TipoDocumento } from '../lib/facturaRevision';
 import { ETIQUETA_ESTADO_LINEA, type EstadoLinea } from '../lib/facturaRevisionPasos';
@@ -102,6 +102,50 @@ function EstadoChip({ testID, estado }: { testID: string; estado: EstadoLinea })
   );
 }
 
+const CHIP_CODIGO = 'Código impreso coincide';
+
+/** Chips come only from the matcher evidence of this candidate; retrieval-only candidates carry no evidence at all. */
+function etiquetasEvidencia(candidato: MatchCandidate): string[] {
+  if (candidato.evidence.length === 0) return ['Encontrado por la búsqueda'];
+  const fuentes = new Set(candidato.evidence.map(e => e.source));
+  return [
+    fuentes.has('alias') ? 'Alias del proveedor' : null,
+    ['codigo_interno', 'codigo_barras', 'referencia'].some(f => fuentes.has(f as EvidenceSource)) ? CHIP_CODIGO : null,
+    fuentes.has('descripcion') ? 'Descripción parecida' : null,
+  ].filter((e): e is string => e !== null);
+}
+
+const tieneEvidenciaDeCodigo = (candidato: MatchCandidate): boolean => candidato.evidence.some(e => e.source !== 'descripcion');
+
+function TarjetaCandidato(props: { id: string; candidato: MatchCandidate; recomendado: boolean; elegido: boolean; onElegir: () => void }): React.JSX.Element {
+  const { colors } = useTheme();
+  const { id, candidato, recomendado, elegido, onElegir } = props;
+  return (
+    <View testID={`${id}-tarjeta-${candidato.codigoInterno}`} style={[styles.candidato, { borderColor: elegido ? colors.primary : colors.border, backgroundColor: colors.surfaceAlt }]}>
+      <Texto>{candidato.descripcion}</Texto>
+      <Texto small tone="muted">{`Código ${candidato.codigoInterno}`}</Texto>
+      <View style={styles.fila}>
+        {recomendado ? <Texto small tone="primary">Recomendado</Texto> : null}
+        {etiquetasEvidencia(candidato).map(etiqueta => (
+          <View key={etiqueta} style={[styles.chip, { borderColor: colors.border }]}>
+            <Text style={[styles.chipTexto, { color: colors.textMuted }]}>{etiqueta}</Text>
+          </View>
+        ))}
+      </View>
+      <Pressable
+        testID={`${id}-candidato-${candidato.codigoInterno}`}
+        accessibilityRole="button"
+        accessibilityLabel={`Confirmar ${candidato.descripcion}, código ${candidato.codigoInterno}`}
+        accessibilityState={{ selected: elegido }}
+        onPress={onElegir}
+        style={({ pressed }) => [styles.confirmar, { borderColor: colors.primary, backgroundColor: elegido ? colors.primaryFaded : colors.surface, opacity: pressed ? 0.7 : 1 }]}
+      >
+        <Text style={[styles.chipTexto, { color: colors.primary }]}>Confirmar</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }): React.JSX.Element {
   const { colors } = useTheme();
   return (
@@ -177,6 +221,7 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
   }
 
   const mostrarCodigoImpreso = !esNuevo || efectiva.usarCodigoFactura;
+  const codigoImpreso = (codigo ?? '').trim();
 
   function renderProducto(): React.JSX.Element {
     return (
@@ -190,17 +235,26 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
           </Texto>
         ) : null}
         {match && match.candidates.length > 0 ? (
-          match.candidates.map(candidato => (
-            <Boton
-              key={candidato.codigoInterno}
-              testID={`${id}-candidato-${candidato.codigoInterno}`}
-              label={`Confirmar ${candidato.codigoInterno} · ${candidato.descripcion}`}
-              selected={efectiva.asociacion.codigoInterno === candidato.codigoInterno}
-              onPress={() => onElegirCandidato(candidato.codigoInterno)}
-            />
-          ))
+          <>
+            {match.candidates.map((candidato, i) => (
+              <TarjetaCandidato
+                key={candidato.codigoInterno}
+                id={id}
+                candidato={candidato}
+                recomendado={i === 0 && match.status === 'suggested'}
+                elegido={efectiva.asociacion.codigoInterno === candidato.codigoInterno}
+                onElegir={() => onElegirCandidato(candidato.codigoInterno)}
+              />
+            ))}
+            {codigoImpreso !== '' && !match.candidates.some(tieneEvidenciaDeCodigo) ? (
+              <Texto testID={`${id}-codigo-sin-coincidencia`} small tone="muted">{`Entre estos candidatos, ninguno tiene el código impreso ${codigoImpreso}.`}</Texto>
+            ) : null}
+          </>
         ) : match ? (
-          <Texto testID={`${id}-sin-candidatos`} small tone="warning">{catalogoParcial ? 'Sin candidatos en una lectura parcial: no prueba que el producto no exista. Sigue sin decidir.' : 'Sin candidatos en la lectura acotada del catálogo. Sigue sin decidir.'}</Texto>
+          <>
+            <Texto testID={`${id}-sin-candidatos`} small tone="warning">{catalogoParcial ? 'Sin candidatos en una lectura parcial: no prueba que el producto no exista. Busca por SKU antes de marcarlo como nuevo.' : 'Sin candidatos en la lectura acotada del catálogo. Sigue sin decidir.'}</Texto>
+            {catalogoParcial ? <Boton testID={`${id}-sin-candidatos-sku`} label="Buscar por SKU" onPress={() => setPanelProducto('manual')} /> : null}
+          </>
         ) : null}
         {match && match.conflicts.length > 0 ? <Texto small tone="danger">Hay señales en conflicto entre código y descripción: revisa con cuidado.</Texto> : null}
         <View style={styles.fila}>
@@ -379,6 +433,10 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
       <View testID={`${id}-detalle`} style={modo === 'detalle' ? [styles.tarjeta, { backgroundColor: colors.surface, borderColor: colors.primary }] : styles.detalle}>
         {modo === 'detalle' ? <Texto tone="primary">{titulo}</Texto> : null}
         {estado === 'revisar' && bloqueos.length > 0 ? bloqueos.map((texto, i) => <Texto key={i} small tone="danger">{`• ${texto}`}</Texto>) : null}
+        <View style={styles.fila}>
+          <Texto testID={`${id}-lectura`} small tone="muted">{`Leído de la factura: cantidad ${cantidad ?? 'sin dato'} · costo unitario ${monto(efectiva.campos.precioUnitario.valor)}`}</Texto>
+          <Boton testID={`${id}-lectura-corregir`} label="Corregir cantidad o costo" onPress={() => setCorregir(true)} />
+        </View>
         {renderProducto()}
         {estado === 'falta_codigo' ? <Texto small tone="warning">Escanea o escribe el código de barras del producto nuevo: sin él no se puede preparar el borrador de compra.</Texto> : null}
         {esNuevo && props.capturaCodigo ? <FacturaCodigoBarrasNuevo key={props.capturaCodigo.contexto} {...props.capturaCodigo} id={id} /> : null}
@@ -445,6 +503,8 @@ const styles = StyleSheet.create({
   cabezaTexto: { flexGrow: 1, flexShrink: 1, flexBasis: 0, gap: 3 },
   cabezaEstado: { alignItems: 'flex-end', gap: 6 },
   filaCodigo: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
+  candidato: { borderWidth: 0.5, borderRadius: 10, padding: 10, gap: 6 },
+  confirmar: { borderWidth: 1, borderRadius: 8, minHeight: 44, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
   chipTexto: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold' },
   detalle: { gap: 12 },
