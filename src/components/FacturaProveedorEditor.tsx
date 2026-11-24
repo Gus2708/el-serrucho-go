@@ -14,6 +14,7 @@ import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { scaleFont } from '../theme/responsive';
+import { useDeviceSize } from '../hooks/useDeviceSize';
 import { useTheme } from '../theme/ThemeContext';
 import { pressScale } from '../theme/motion';
 import { notify, confirm } from '../lib/notify';
@@ -247,6 +248,7 @@ export default function FacturaProveedorEditor(props: FacturaProveedorEditorProp
 function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorController }): React.JSX.Element {
   const { controller, ownerId, onClose, onReload } = props;
   const { colors } = useTheme();
+  const { isDesktop } = useDeviceSize();
   const queryClient = useQueryClient();
   const state = useSyncExternalStore(controller.subscribe, controller.getState);
   const { draft } = state;
@@ -582,7 +584,12 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
         <PressableScale onPress={handleClose} hitSlop={8} activeScale={pressScale.icon} accessibilityRole="button" accessibilityLabel="Cerrar factura" testID="factura-close">
           <Feather name="chevron-left" size={22} color={colors.text} />
         </PressableScale>
-        <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>{encabezado}</Text>
+        <View style={styles.headerText}>
+          <Text testID="factura-title" style={[styles.title, { color: colors.text }]} numberOfLines={1}>{isDesktop ? encabezado : titulo}</Text>
+          {!isDesktop && draft.proveedorNombre.trim() !== '' ? (
+            <Text testID="factura-supplier-title" style={[styles.secondaryText, { color: colors.textMuted }]} numberOfLines={1}>{draft.proveedorNombre}</Text>
+          ) : null}
+        </View>
         <FacturaEstadoPill texto={estado.texto} tono={estado.tono} />
       </View>
 
@@ -819,7 +826,8 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 0.5 },
-  title: { flex: 1, fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
+  headerText: { flex: 1, minWidth: 0, gap: 2 },
+  title: { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
   avisos: { paddingHorizontal: 16, gap: 8 },
   oculto: { display: 'none' },
   scroll: { padding: 16, gap: 12, paddingBottom: 32 },
@@ -837,7 +845,7 @@ const styles = StyleSheet.create({
   bannerBtn: { borderWidth: 0.5, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center' },
   bannerBtnText: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold' },
   docName: { flex: 1, fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_500Medium' },
-  secondaryBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 0.5, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  secondaryBtn: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 0.5, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
   secondaryText: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium' },
   attachBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderRadius: 12, paddingVertical: 12 },
   attachText: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },

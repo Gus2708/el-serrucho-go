@@ -4,6 +4,11 @@ import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import FacturaProveedorEditor from './FacturaProveedorEditor';
 import type { FacturaCamaraFotoProps } from './FacturaCamaraFoto';
+
+let mockPhone = false;
+jest.mock('../hooks/useDeviceSize', () => ({
+  useDeviceSize: () => ({ width: mockPhone ? 390 : 1280, height: 844, isDesktop: !mockPhone }),
+}));
 import { facturaEditorService, listFacturaBorradores, publishFacturaSession } from '../hooks/useFacturasProveedor';
 import { createDraft } from '../lib/facturaProveedor';
 import { buildDocumentPath } from '../lib/facturaDocumento';
@@ -79,6 +84,7 @@ function nextFactura(): string {
 let alert: jest.SpyInstance;
 
 beforeEach(() => {
+  mockPhone = false;
   resetBackend();
   (DocumentPicker.getDocumentAsync as jest.Mock).mockReset();
   alert = spyOnAlert();
@@ -610,6 +616,29 @@ const record = (facturaId: string, withDocument = true, overrides: Record<string
   ...overrides,
 });
 const revisionProps = (): Record<string, unknown> => (globalThis as unknown as { __revisionProps: Record<string, unknown> }).__revisionProps;
+
+describe('compact invoice targets', () => {
+  it('keeps the supplier on its own visible line on a phone without changing data', async () => {
+    mockPhone = true;
+    await openSaved();
+    expect(screen.getByTestId('factura-title')).toHaveTextContent('Factura A-1');
+    expect(screen.getByTestId('factura-supplier-title')).toHaveTextContent('Proveedor Uno');
+    expect(backend.rpc).not.toHaveBeenCalled();
+  });
+
+  it('gives every attachment action a minimum 44-point touch target', async () => {
+    await openSaved();
+    for (const id of ['factura-ver-documento', 'factura-replace', 'factura-quitar-documento']) {
+      expect(screen.getByTestId(id)).toHaveStyle({ minHeight: 44 });
+    }
+  });
+
+  it('preserves the full desktop invoice heading', async () => {
+    await openSaved();
+    expect(screen.getByText('Factura A-1 · Proveedor Uno')).toBeTruthy();
+    expect(screen.queryByTestId('factura-supplier-title')).toBeNull();
+  });
+});
 
 async function openSaved(withDocument = true, overrides: Record<string, unknown> = {}) {
   const facturaId = nextFactura();
