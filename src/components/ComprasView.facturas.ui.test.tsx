@@ -6,7 +6,9 @@ let mockRole: string | undefined = 'admin';
 let mockDemo = false;
 let mockFacturaVinculada = false;
 let mockItemsOverride: any[] | null = null;
+let mockDescuentosGenerales: number[] = [];
 const mockUpdateItem = jest.fn();
+const mockSetDescuentosGenerales = jest.fn();
 
 jest.mock('../hooks/useUserRole', () => ({
   useUserRole: () => ({ data: { role: mockRole, profile: { id: 'a0000000-0000-4000-8000-00000000000a' } } }),
@@ -20,6 +22,7 @@ jest.mock('../hooks/useCompra', () => ({
     proveedorCodigo: 'P1',
     proveedorNombre: 'Prov Uno',
     items: mockItemsOverride ?? (mockFacturaVinculada ? [{ codigo_producto: 'SKU-1', descripcion: 'Artículo', cantidad: 2, costo: 1, precio: 1.3, referencia: null, es_nuevo: false }] : []),
+    descuentosGenerales: mockDescuentosGenerales,
     nota: '',
     titulo: '',
     numeroDocumento: '',
@@ -30,6 +33,7 @@ jest.mock('../hooks/useCompra', () => ({
     borradorId: mockFacturaVinculada ? 7 : null,
     facturaVinculada: mockFacturaVinculada,
     setProveedor: jest.fn(),
+    setDescuentosGenerales: mockSetDescuentosGenerales,
     addItem: jest.fn(),
     removeItem: jest.fn(),
     updateItem: mockUpdateItem,
@@ -67,7 +71,9 @@ describe('ComprasView invoice entry gate', () => {
     mockDemo = false;
     mockFacturaVinculada = false;
     mockItemsOverride = null;
+    mockDescuentosGenerales = [];
     mockUpdateItem.mockClear();
+    mockSetDescuentosGenerales.mockClear();
   });
   it('admin: entry present, modal closed, opens on press with supplier prefill', async () => {
     const r = await mount();
@@ -144,5 +150,55 @@ describe('ComprasView invoice entry gate', () => {
     const modalQtyInput = r.getByTestId('producto-nuevo-cantidad-input');
     await act(async () => { fireEvent.changeText(modalQtyInput, '5...'); });
     expect(r.getByTestId('producto-nuevo-ajuste-aviso')).toBeTruthy();
+  });
+
+  it('supports per-item and cascaded discounts, general toggle, net cost receipt, and ProductoNuevoModal preview', async () => {
+    mockDescuentosGenerales = [5];
+    mockItemsOverride = [{
+      codigo_producto: 'SKU-1',
+      descripcion: 'Artículo',
+      cantidad: 2,
+      costo: 7.37,
+      costo_lista: 10,
+      descuentos: [20, 3],
+      excluir_descuento_general: false,
+      precio: 15,
+      referencia: null,
+      es_nuevo: false,
+      es_ajuste: false,
+    }];
+
+    const r = await mount();
+
+    // General discount panel is open and shows combined 5%
+    expect(r.getByTestId('compra-desc-general-panel')).toBeTruthy();
+    expect(r.getByTestId('compra-desc-general-badge')).toBeTruthy();
+
+    // Item card shows net cost receipt and rounding notice (10 * 0.80 * 0.97 * 0.95 = 7.372 -> 7.37)
+    expect(r.getByTestId('compra-item-costo-neto-SKU-1')).toBeTruthy();
+    expect(r.getByTestId('compra-item-redondeo-SKU-1')).toBeTruthy();
+
+    // Typing a new discount step updates item discounts
+    const itemDescInput = r.getByTestId('compra-item-desc-SKU-1-input');
+    await act(async () => { fireEvent.changeText(itemDescInput, '2'); });
+    expect(mockUpdateItem).toHaveBeenLastCalledWith('SKU-1', { descuentos: [20, 3, 2] });
+
+    // Toggling general exclusion calls updateItem
+    await act(async () => { fireEvent.press(r.getByTestId('compra-item-toggle-general-SKU-1')); });
+    expect(mockUpdateItem).toHaveBeenLastCalledWith('SKU-1', { excluir_descuento_general: true });
+
+    // ProductoNuevoModal live net cost preview with cascaded discount + general discount
+    await act(async () => { fireEvent.press(r.getByText('Producto nuevo')); });
+    await act(async () => { fireEvent.changeText(r.getByTestId('producto-nuevo-costo-input'), '10'); });
+    await act(async () => { fireEvent.changeText(r.getByTestId('producto-nuevo-desc-input'), '20'); });
+    expect(r.getByTestId('producto-nuevo-costo-neto')).toBeTruthy();
+  });
+
+  it('expands DescuentoGeneralCard on tap and calls setDescuentosGenerales when typing cascade', async () => {
+    const r = await mount();
+    await act(async () => { fireEvent.press(r.getByTestId('compra-desc-general-toggle')); });
+    const genInput = r.getByTestId('compra-desc-general-input');
+    await act(async () => { fireEvent.changeText(genInput, '20+5'); });
+    expect(mockSetDescuentosGenerales).toHaveBeenLastCalledWith([20, 5]);
   });
 });

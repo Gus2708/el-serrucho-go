@@ -33,11 +33,12 @@ export default function ComprasHistorialView({ onEditRetry }: ComprasHistorialVi
         return;
       }
       loadForEdit({
-        compraId:        compra.id,
-        proveedorCodigo: compra.proveedor_codigo,
-        proveedorNombre: compra.proveedor_nombre,
-        nota:            compra.nota ?? '',
-        numeroDocumento: compra.numero_documento ?? '',
+        compraId:            compra.id,
+        proveedorCodigo:     compra.proveedor_codigo,
+        proveedorNombre:     compra.proveedor_nombre,
+        nota:                compra.nota ?? '',
+        numeroDocumento:     compra.numero_documento ?? '',
+        descuentosGenerales: compra.descuentos_generales ?? [],
         items,
       });
       onEditRetry?.();

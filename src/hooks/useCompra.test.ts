@@ -10,14 +10,9 @@ const mockIn = jest.fn();
 
 jest.mock('../lib/supabase', () => ({
   supabase: {
-    from: jest.fn((table: string) => ({
+    from: jest.fn((_table: string) => ({
       select: jest.fn(() => ({ in: mockIn })),
-      insert: mockInsert.mockImplementation(() => ({
-        select: mockSelect.mockImplementation(() => ({
-          single: mockSingle,
-        })),
-        error: null,
-      })),
+      insert: mockInsert,
       update: mockUpdate.mockImplementation(() => ({
         eq: mockEq.mockReturnThis(),
         error: null,
@@ -51,6 +46,12 @@ describe('useCompra autosave draft', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockInsert.mockImplementation(() => ({
+      select: mockSelect.mockImplementation(() => ({
+        single: mockSingle,
+      })),
+      error: null,
+    }));
     useCompra.getState().clear();
   });
 
@@ -150,6 +151,12 @@ describe('useCompra submit: negative-stock compensation at the emission boundary
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockInsert.mockImplementation(() => ({
+      select: mockSelect.mockImplementation(() => ({
+        single: mockSingle,
+      })),
+      error: null,
+    }));
     mockSingle.mockResolvedValue({ data: { id: 321 }, error: null });
     useCompra.getState().clear();
     useCompra.getState().setProveedor('PRV-01', 'FLORIPAINT');
@@ -239,5 +246,123 @@ describe('useCompra submit: negative-stock compensation at the emission boundary
     expect(sentItemRows()).toEqual([
       expect.objectContaining({ codigo_producto: 'P-001', cantidad: 4, es_ajuste: false }),
     ]);
+  });
+});
+
+describe('useCompra discounts: exact reduced net cost sent to writeback', () => {
+  const item = (overrides: Partial<CompraDraftItem> = {}): CompraDraftItem => ({
+    codigo_producto: 'P-001',
+    descripcion: 'PINTURA CAUCHO',
+    cantidad: 4,
+    costo: 10.0,
+    precio: 15.0,
+    referencia: null,
+    es_nuevo: false,
+    ...overrides,
+  });
+
+  function sentItemRows(): Record<string, unknown>[] {
+    const call = mockInsert.mock.calls.find(([arg]) => Array.isArray(arg));
+    return call ? (call[0] as Record<string, unknown>[]) : [];
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockInsert.mockImplementation(() => ({
+      select: mockSelect.mockImplementation(() => ({
+        single: mockSingle,
+      })),
+      error: null,
+    }));
+    mockSingle.mockResolvedValue({ data: { id: 444 }, error: null });
+    mockIn.mockResolvedValue({ data: [{ codigo_interno: 'P-001', existencia: 5 }, { codigo_interno: 'P-002', existencia: 2 }], error: null });
+    useCompra.getState().clear();
+    useCompra.getState().setProveedor('PRV-01', 'FLORIPAINT');
+  });
+
+  it('sends reduced net costo for a single percentage discount while preserving costo_lista', async () => {
+    useCompra.getState().addItem(item({ costo: 100, descuentos: [15] }));
+
+    await useCompra.getState().submit('user-123');
+
+    expect(sentItemRows()).toEqual([
+      expect.objectContaining({
+        codigo_producto: 'P-001',
+        costo: 85,
+        costo_lista: 100,
+        descuentos: [15],
+        excluir_descuento_general: false,
+      }),
+    ]);
+  });
+
+  it('applies cascaded discounts [20, 5] as 24% real (7.60 on $10) and not 25%', async () => {
+    useCompra.getState().addItem(item({ costo: 10, descuentos: [20, 5] }));
+
+    await useCompra.getState().submit('user-123');
+
+    expect(sentItemRows()).toEqual([
+      expect.objectContaining({
+        costo: 7.6,
+        costo_lista: 10,
+        descuentos: [20, 5],
+      }),
+    ]);
+  });
+
+  it('applies general discount to existing and new items, recalculating from costo_lista without double-discounting, and honors excluir_descuento_general', async () => {
+    useCompra.getState().addItem(item({ codigo_producto: 'P-001', costo: 10, descuentos: [20] }));
+    useCompra.getState().addItem(item({ codigo_producto: 'P-002', costo: 100, excluir_descuento_general: true }));
+
+    useCompra.getState().setDescuentosGenerales([5]);
+    expect(useCompra.getState().items[0].costo).toBe(7.6);
+    expect(useCompra.getState().items[1].costo).toBe(100);
+
+    // Changing general discount recalculates from costo_lista (10), never from 7.60
+    useCompra.getState().setDescuentosGenerales([10]);
+    expect(useCompra.getState().items[0].costo).toBe(7.2);
+
+    await useCompra.getState().submit('user-123');
+
+    expect(sentItemRows()).toEqual([
+      expect.objectContaining({ codigo_producto: 'P-001', costo: 7.2, costo_lista: 10, descuentos: [20], excluir_descuento_general: false }),
+      expect.objectContaining({ codigo_producto: 'P-002', costo: 100, costo_lista: 100, descuentos: [], excluir_descuento_general: true }),
+    ]);
+  });
+
+  it('falls back cleanly when migration 053 discount columns are missing (42703) while still sending reduced net costo', async () => {
+    // Header insert with descuentos_generales fails with 42703, fallback succeeds
+    mockSingle
+      .mockResolvedValueOnce({ data: null, error: { code: '42703', message: 'column "descuentos_generales" does not exist' } })
+      .mockResolvedValueOnce({ data: { id: 555 }, error: null });
+
+    // Items insert with discount metadata fails once with 42703, fallback succeeds
+    let itemsAttempt = 0;
+    mockInsert.mockImplementation((arg: unknown) => {
+      if (Array.isArray(arg)) {
+        itemsAttempt += 1;
+        if (itemsAttempt === 1) {
+          return { error: { code: '42703', message: 'column "costo_lista" does not exist' } };
+        }
+        return { error: null };
+      }
+      return {
+        select: mockSelect.mockImplementation(() => ({
+          single: mockSingle,
+        })),
+        error: null,
+      };
+    });
+
+    useCompra.getState().setDescuentosGenerales([5]);
+    useCompra.getState().addItem(item({ costo: 10, descuentos: [20] }));
+
+    const res = await useCompra.getState().submit('user-123');
+    expect(res).toEqual({ compraId: 555 });
+
+    const fallbackRows = mockInsert.mock.calls.filter(([arg]) => Array.isArray(arg))[1][0] as Record<string, unknown>[];
+    expect(fallbackRows[0].costo).toBe(7.6);
+    expect(fallbackRows[0]).not.toHaveProperty('costo_lista');
+    expect(fallbackRows[0]).not.toHaveProperty('descuentos');
   });
 });
