@@ -77,7 +77,9 @@ describe('ComprasView invoice entry gate', () => {
   });
   it('admin: entry present, modal closed, opens on press with supplier prefill', async () => {
     const r = await mount();
-    expect(r.getByText('Foto o carga manual')).toBeTruthy();
+    expect(r.getByText('FACTURA DE PROVEEDOR')).toBeTruthy();
+    expect(r.getByText('Cargar factura con foto')).toBeTruthy();
+    expect(r.queryByText('Foto o carga manual')).toBeNull();
     expect(r.getByLabelText('Facturas de proveedor')).toBeTruthy();
     expect(r.getByTestId('mock-facturas-modal').props.children).toBe('false|P1');
     await act(async () => { fireEvent.press(r.getByLabelText('Facturas de proveedor')); });

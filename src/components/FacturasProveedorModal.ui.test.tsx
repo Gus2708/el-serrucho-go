@@ -75,12 +75,13 @@ afterEach(() => {
 });
 
 describe('lista de facturas: entrada guiada', () => {
-  it('explica que la lectura la pide el usuario y no promete lo contrario', async () => {
+  it('explica en lenguaje simple el flujo y que la búsqueda la pide el usuario', async () => {
     renderModal();
     await screen.findByText('Aún no hay facturas guardadas');
 
     expect(screen.getByText('Nueva factura')).toBeTruthy();
-    expect(screen.getByText(/el sistema lee los productos cuando tú lo pides/)).toBeTruthy();
+    expect(screen.getByText(/Cuando tú lo pidas, el sistema busca los productos/)).toBeTruthy();
+    expect(screen.getByText(/borrador de compra/)).toBeTruthy();
     expect(screen.queryByText(/No registra ninguna compra/)).toBeNull();
   });
 
@@ -153,8 +154,8 @@ describe('lista de facturas: borradores locales primero', () => {
     await screen.findByLabelText('Número de factura');
 
     expect(screen.getByLabelText('Número de factura').props.value).toBe('A-3');
-    expect(screen.getByText('RENGLONES (2)')).toBeTruthy();
-    expect(screen.getAllByLabelText('Código interno (SKU)').map(node => node.props.value)).toEqual(['SKU-1', 'SKU-1']);
+    expect(screen.getByText('PRODUCTOS A MANO (2)')).toBeTruthy();
+    expect(screen.getAllByLabelText('Código del producto').map(node => node.props.value)).toEqual(['SKU-1', 'SKU-1']);
     expect(screen.getAllByLabelText('Cantidad').map(node => node.props.value)).toEqual(['2', '7']);
     expect(backend.rpc).not.toHaveBeenCalled();
   });

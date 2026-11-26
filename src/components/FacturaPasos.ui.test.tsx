@@ -1,11 +1,13 @@
 import * as React from 'react';
-import { fireEvent, screen } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
+import { fireEvent, screen, within } from '@testing-library/react-native';
 import { FacturaEstadoPill, FacturaPasos, type PasoFactura } from './FacturaPasos';
 import { renderWithProviders } from '../test-utils/facturaUiHarness';
+import { elSerrucho } from '../theme/brands/el-serrucho';
 
 jest.mock('../lib/supabase', () => ({ supabase: require('../test-utils/facturaUiHarness').backend.client }));
 
-const PASOS: PasoFactura[] = ['factura', 'leer', 'productos', 'compra'];
+const PASOS: PasoFactura[] = ['factura', 'productos', 'compra'];
 
 function renderPasos(seleccionado: PasoFactura, deshabilitados: PasoFactura[] = []) {
   const onSeleccionar = jest.fn();
@@ -14,14 +16,22 @@ function renderPasos(seleccionado: PasoFactura, deshabilitados: PasoFactura[] = 
 }
 
 describe('FacturaPasos', () => {
-  it('muestra los cuatro pasos con nombre y marca solo el seleccionado', () => {
+  it('muestra exactamente tres pasos visibles sin Leer y marca solo el seleccionado', () => {
     renderPasos('productos');
 
     expect(screen.getByLabelText('Paso 1: Factura')).toBeTruthy();
-    expect(screen.getByLabelText('Paso 2: Leer')).toBeTruthy();
-    expect(screen.getByLabelText('Paso 3: Productos')).toBeTruthy();
-    expect(screen.getByLabelText('Paso 4: Compra')).toBeTruthy();
-    expect(PASOS.map(paso => screen.getByTestId(`factura-paso-${paso}`).props.accessibilityState.selected)).toEqual([false, false, true, false]);
+    expect(screen.getByLabelText('Paso 2: Productos')).toBeTruthy();
+    expect(screen.getByLabelText('Paso 3: Compra')).toBeTruthy();
+    expect(screen.queryByTestId('factura-paso-leer')).toBeNull();
+    expect(screen.queryByLabelText(/Leer/i)).toBeNull();
+    expect(PASOS.map(paso => screen.getByTestId(`factura-paso-${paso}`).props.accessibilityState.selected)).toEqual([false, true, false]);
+  });
+
+  it('mapea el paso heredado leer al paso visible Productos', () => {
+    renderPasos('leer');
+
+    expect(screen.queryByTestId('factura-paso-leer')).toBeNull();
+    expect(PASOS.map(paso => screen.getByTestId(`factura-paso-${paso}`).props.accessibilityState.selected)).toEqual([false, true, false]);
   });
 
   it('cada paso es un botón y avisa cuál se eligió', () => {
@@ -35,12 +45,36 @@ describe('FacturaPasos', () => {
   });
 
   it('un paso no disponible queda deshabilitado y no avisa al pulsarlo', () => {
-    const onSeleccionar = renderPasos('factura', ['leer', 'productos', 'compra']);
+    const onSeleccionar = renderPasos('factura', ['productos', 'compra']);
 
-    expect(screen.getByTestId('factura-paso-leer').props.accessibilityState).toMatchObject({ disabled: true, selected: false });
+    expect(screen.getByTestId('factura-paso-productos').props.accessibilityState).toMatchObject({ disabled: true, selected: false });
+    expect(screen.getByTestId('factura-paso-compra').props.accessibilityState).toMatchObject({ disabled: true, selected: false });
     expect(screen.getByTestId('factura-paso-factura').props.accessibilityState).toMatchObject({ disabled: false, selected: true });
-    fireEvent.press(screen.getByTestId('factura-paso-leer'));
+    fireEvent.press(screen.getByTestId('factura-paso-productos'));
 
+    expect(onSeleccionar).not.toHaveBeenCalled();
+  });
+
+  it('deshabilita Productos cuando recibe el alias heredado leer', () => {
+    const onSeleccionar = renderPasos('factura', ['leer', 'compra']);
+
+    expect(screen.getByTestId('factura-paso-productos').props.accessibilityState).toMatchObject({ disabled: true, selected: false });
+    fireEvent.press(screen.getByTestId('factura-paso-productos'));
+
+    expect(onSeleccionar).not.toHaveBeenCalled();
+  });
+
+  it('mantiene legibles los pasos deshabilitados sin doble opacidad ni texto #444444', () => {
+    const onSeleccionar = renderPasos('factura', ['productos', 'compra']);
+    const productosBtn = screen.getByTestId('factura-paso-productos');
+    const productosLabel = within(productosBtn).getByText('Productos');
+    const labelStyle = StyleSheet.flatten(productosLabel.props.style);
+
+    expect(productosBtn.props.accessibilityState).toMatchObject({ disabled: true, selected: false });
+    expect(productosBtn.props.dimmed).not.toBe(true);
+    expect(labelStyle.color).toBe(elSerrucho.colors.textMuted);
+    expect(labelStyle.color).not.toBe(elSerrucho.colors.textDim);
+    fireEvent.press(productosBtn);
     expect(onSeleccionar).not.toHaveBeenCalled();
   });
 });

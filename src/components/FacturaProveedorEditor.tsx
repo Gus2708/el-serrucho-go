@@ -85,7 +85,7 @@ function Field({ label, value, testID, error, placeholder, keyboardType = 'defau
         accessibilityLabel={label}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={colors.textDim}
+        placeholderTextColor={colors.textMuted}
         keyboardType={keyboardType}
         multiline={multiline}
         autoCorrect={false}
@@ -110,10 +110,19 @@ const SAVED_ON_DEVICE = 'Guardado en este dispositivo';
 const UNSAVED_ON_DEVICE = 'Sin guardar en este dispositivo';
 const UPLOAD_INTERRUPTED = 'Carga interrumpida: el archivo no se adjuntó. Vuelve a adjuntarlo.';
 const MANUAL_SAVED = 'Factura guardada. Registra la compra desde Compras como siempre.';
-const REVIEW_STEPS: readonly PasoFactura[] = ['leer', 'productos', 'compra'];
+const REVIEW_STEPS: readonly PasoFactura[] = ['productos', 'compra'];
+
+function normalizarPaso(destino: PasoFactura): PasoFactura {
+  return destino === 'leer' ? 'productos' : destino;
+}
+
+function normalizarEtapa(destino: EtapaRevision): EtapaRevision {
+  return destino === 'leer' ? 'productos' : destino;
+}
 
 interface PrimaryAction {
   texto: string;
+  icono: React.ComponentProps<typeof Feather>['name'];
   onPress: () => unknown;
   testID: string;
   habilitada: boolean;
@@ -135,7 +144,7 @@ const CAMPOS_CABECERA: ReadonlyArray<{ campo: CampoCabecera; leido: keyof Cabece
 ];
 
 const ADOPTION_WARNING =
-  'Se completan solo los campos vacíos con lo leído de la foto; lo que ya escribiste no cambia. Al guardar, la factura cambia de versión y la revisión se debe volver a guardar y aprobar.';
+  'Se completan solo los campos vacíos con lo leído de la foto; lo que ya escribiste no cambia. Al guardar, tendrás que volver a guardar y confirmar la revisión.';
 
 function valorLeido(cabecera: CabeceraLeida | null, campo: keyof CabeceraLeida): string {
   return cabecera?.[campo]?.trim() ?? '';
@@ -260,7 +269,7 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
   const [revisionOpen, setRevisionOpen] = useState<boolean>(false);
   const [revisionDirty, setRevisionDirty] = useState<boolean>(false);
   const [paso, setPaso] = useState<PasoFactura>('factura');
-  const [etapa, setEtapa] = useState<EtapaRevision>('leer');
+  const [etapa, setEtapa] = useState<EtapaRevision>('productos');
   const [masDatosPedido, setMasDatosPedido] = useState<boolean>(false);
   const [manualPedido, setManualPedido] = useState<boolean>(false);
   const [camaraToken, setCamaraToken] = useState<number | null>(null);
@@ -416,24 +425,27 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
   }
 
   function irAPaso(destino: PasoFactura): void {
-    if (destino !== 'factura') {
+    const pasoDestino = normalizarPaso(destino);
+    if (pasoDestino !== 'factura') {
       setRevisionOpen(true);
-      setEtapa(destino);
+      setEtapa(pasoDestino);
     }
-    setPaso(destino);
+    setPaso(pasoDestino);
   }
 
   async function handleGuardarYContinuar(): Promise<void> {
-    if (await handleSave()) irAPaso('leer');
+    if (await handleSave()) irAPaso('productos');
   }
 
   /** The review reports its own stage changes; a hidden review must not pull the user off the form. */
   function cambiarEtapa(destino: EtapaRevision): void {
-    setEtapa(destino);
-    setPaso(actual => (actual === 'factura' ? actual : destino));
+    const etapaDestino = normalizarEtapa(destino);
+    setEtapa(etapaDestino);
+    setPaso(actual => (actual === 'factura' ? actual : etapaDestino));
   }
 
   function seguirAMano(): void {
+    setMasDatosPedido(true);
     setManualPedido(true);
     setPaso('factura');
   }
@@ -456,7 +468,7 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
     confirm({
       title: 'Cerrar con cambios sin guardar',
       message: revisionDirty
-        ? 'La revisión asistida tiene cambios sin guardar que se perderán al cerrar. Guárdalos en la revisión antes de salir.'
+        ? 'Tienes productos sin guardar que se perderán al cerrar. Guárdalos antes de salir.'
         : 'Los cambios se conservan como borrador en este dispositivo.',
       confirmText: 'Cerrar',
       cancelText: 'Seguir editando',
@@ -488,7 +500,7 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
   function handleReload(): void {
     confirm({
       title: 'Recargar la factura',
-      message: 'Se descartan tus cambios locales y se carga la última versión guardada.',
+      message: 'Se descartan tus cambios locales y se carga la factura guardada más reciente.',
       confirmText: 'Recargar',
       destructive: true,
       onConfirm: async () => {
@@ -518,8 +530,15 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
 
   const guardada = draft.version >= 1;
   const conDocumento = draft.documento !== null;
-  const masDatosAbierto = masDatosPedido || draft.numeroControl !== '' || draft.notas !== '' || Boolean(errors.numeroControl || errors.notas);
-  const manualAbierto = manualPedido || draft.lineas.length > 0 || !conDocumento;
+  const hayErroresLineas = Boolean(errors.lineas) || Object.keys(errors).some(key => key.includes(':'));
+  const manualObligatorio = draft.lineas.length > 0 || hayErroresLineas;
+  const manualAbierto = manualPedido || manualObligatorio;
+  const masDatosObligatorio =
+    draft.numeroControl !== '' ||
+    draft.notas !== '' ||
+    Boolean(errors.numeroControl || errors.notas) ||
+    manualObligatorio;
+  const masDatosAbierto = masDatosPedido || manualPedido || masDatosObligatorio;
   const leida =
     cabeceraLeida !== null && cabeceraLeida.facturaId === draft.facturaId && cabeceraLeida.sha256 === (draft.documento?.sha256 ?? null)
       ? cabeceraLeida.cabecera
@@ -535,7 +554,7 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
   const encabezado = [titulo, draft.proveedorNombre.trim()].filter(parte => parte !== '').join(' · ');
 
   let estado: React.ComponentProps<typeof FacturaEstadoPill> = { texto: 'Borrador', tono: 'neutro' };
-  if (state.dirty) estado = { texto: 'Factura sin guardar', tono: 'aviso' };
+  if (state.dirty) estado = { texto: 'Sin guardar', tono: 'aviso' };
   else if (guardada) estado = { texto: 'Guardada', tono: 'ok' };
 
   /** Explicit, confirmed: fills only fields that are still empty when the user confirms, never saves. */
@@ -566,13 +585,42 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
     });
   }
 
-  // One primary action for the form step: continue when it is already saved, otherwise save (and continue with a document).
-  let primaria: PrimaryAction = { texto: canSave || state.saving ? 'Guardar factura' : 'Sin cambios', onPress: handleSave, testID: 'factura-save', habilitada: canSave };
-  if (conDocumento && guardada && !canSave && !state.saving) {
-    primaria = { texto: 'Continuar', onPress: () => irAPaso('leer'), testID: 'factura-abrir-revision', habilitada: !state.uploading };
-  } else if (conDocumento) {
-    primaria = { texto: 'Guardar y continuar', onPress: handleGuardarYContinuar, testID: 'factura-save', habilitada: canSave };
+  function alternarMasDatos(): void {
+    if (masDatosAbierto && !masDatosObligatorio) {
+      setMasDatosPedido(false);
+      setManualPedido(false);
+      return;
+    }
+    setMasDatosPedido(true);
   }
+
+  // One primary action for the form step: continue when already saved, otherwise save (and move to Productos with a document).
+  let primaria: PrimaryAction = {
+    texto: canSave || state.saving ? 'Guardar factura' : 'Sin cambios',
+    icono: 'save',
+    onPress: handleSave,
+    testID: 'factura-save',
+    habilitada: canSave,
+  };
+  if (conDocumento && guardada && !canSave && !state.saving) {
+    primaria = {
+      texto: 'Continuar',
+      icono: 'arrow-right',
+      onPress: () => irAPaso('productos'),
+      testID: 'factura-abrir-revision',
+      habilitada: !state.uploading,
+    };
+  } else if (conDocumento) {
+    primaria = {
+      texto: 'Guardar y continuar',
+      icono: 'save',
+      onPress: handleGuardarYContinuar,
+      testID: 'factura-save',
+      habilitada: canSave,
+    };
+  }
+
+  const hayAvisos = revisionDirty || !guardada || banner !== null || showInterrupted || deviceStatus !== null;
 
   return (
     <KeyboardAvoidingView
@@ -581,7 +629,15 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
       testID="factura-editor"
     >
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <PressableScale onPress={handleClose} hitSlop={8} activeScale={pressScale.icon} accessibilityRole="button" accessibilityLabel="Cerrar factura" testID="factura-close">
+        <PressableScale
+          onPress={handleClose}
+          hitSlop={8}
+          activeScale={pressScale.icon}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Cerrar factura"
+          testID="factura-close"
+        >
           <Feather name="chevron-left" size={22} color={colors.text} />
         </PressableScale>
         <View style={styles.headerText}>
@@ -595,68 +651,70 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
 
       <FacturaPasos seleccionado={paso} onSeleccionar={irAPaso} deshabilitados={guardada ? [] : REVIEW_STEPS} />
 
-      <View style={styles.avisos}>
-        {revisionDirty ? (
-          <View style={[styles.pillRevision, { borderColor: colors.warning }]} testID="factura-revision-pill" accessibilityLiveRegion="polite">
-            <Feather name="alert-circle" size={12} color={colors.warning} />
-            <Text style={[styles.pillRevisionTexto, { color: colors.warning }]}>Revisión sin guardar</Text>
-          </View>
-        ) : null}
-        {!guardada ? (
-          <Text style={[styles.hint, { color: colors.textDim }]}>
-            Guarda la factura para leerla y revisar sus productos. La captura manual no lo necesita.
-          </Text>
-        ) : null}
-        {banner ? (
-          <View style={[styles.banner, { borderColor: bannerColor, backgroundColor: colors.surface }]} testID="factura-banner" accessibilityLiveRegion="polite">
-            <Text style={[styles.bannerText, { color: bannerColor }]}>{banner.text}</Text>
-            {canRetry ? (
-              <PressableScale onPress={handleSave} style={[styles.bannerBtn, { borderColor: bannerColor }]} accessibilityRole="button" testID="factura-retry">
-                <Text style={[styles.bannerBtnText, { color: bannerColor }]}>Reintentar</Text>
-              </PressableScale>
-            ) : null}
-            {banner.kind === 'conflict' ? (
-              <PressableScale onPress={handleReload} style={[styles.bannerBtn, { borderColor: bannerColor }]} accessibilityRole="button" testID="factura-reload">
-                <Text style={[styles.bannerBtnText, { color: bannerColor }]}>Recargar versión del servidor</Text>
-              </PressableScale>
-            ) : null}
-          </View>
-        ) : null}
-        {showInterrupted ? (
-          <View style={[styles.banner, { borderColor: colors.warning, backgroundColor: colors.surface }]} testID="factura-carga-interrumpida">
-            <Text style={[styles.bannerText, { color: colors.warning }]}>{UPLOAD_INTERRUPTED}</Text>
-          </View>
-        ) : null}
-        {deviceStatus ? (
-          <Text style={[styles.hint, { color: colors.textDim }]} testID="factura-estado-local">{deviceStatus}</Text>
-        ) : null}
-      </View>
+      {hayAvisos ? (
+        <View style={[styles.avisos, isDesktop && styles.desktopInner]}>
+          {revisionDirty ? (
+            <View style={[styles.pillRevision, { borderColor: colors.warning }]} testID="factura-revision-pill" accessibilityLiveRegion="polite">
+              <Feather name="alert-circle" size={12} color={colors.warning} />
+              <Text style={[styles.pillRevisionTexto, { color: colors.warning }]}>Productos sin guardar</Text>
+            </View>
+          ) : null}
+          {!guardada ? (
+            <Text style={[styles.hint, { color: colors.textMuted }]}>
+              Guarda la factura para pasar a Productos. Si no subes foto, puedes guardarla sin ese paso.
+            </Text>
+          ) : null}
+          {banner ? (
+            <View style={[styles.banner, { borderColor: bannerColor, backgroundColor: colors.surface }]} testID="factura-banner" accessibilityLiveRegion="polite">
+              <Text style={[styles.bannerText, { color: bannerColor }]}>{banner.text}</Text>
+              {canRetry ? (
+                <PressableScale onPress={handleSave} style={[styles.bannerBtn, { borderColor: bannerColor }]} accessibilityRole="button" testID="factura-retry">
+                  <Text style={[styles.bannerBtnText, { color: bannerColor }]}>Reintentar</Text>
+                </PressableScale>
+              ) : null}
+              {banner.kind === 'conflict' ? (
+                <PressableScale onPress={handleReload} style={[styles.bannerBtn, { borderColor: bannerColor }]} accessibilityRole="button" testID="factura-reload">
+                  <Text style={[styles.bannerBtnText, { color: bannerColor }]}>Recargar factura del servidor</Text>
+                </PressableScale>
+              ) : null}
+            </View>
+          ) : null}
+          {showInterrupted ? (
+            <View style={[styles.banner, { borderColor: colors.warning, backgroundColor: colors.surface }]} testID="factura-carga-interrumpida">
+              <Text style={[styles.bannerText, { color: colors.warning }]}>{UPLOAD_INTERRUPTED}</Text>
+            </View>
+          ) : null}
+          {deviceStatus ? (
+            <Text style={[styles.hint, { color: colors.textMuted }]} testID="factura-estado-local">{deviceStatus}</Text>
+          ) : null}
+        </View>
+      ) : null}
 
       {/* Both panels stay mounted: hiding the review must not drop its unsaved edits or dirty signal. */}
       <View style={[styles.flex, paso !== 'factura' && styles.oculto]}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={[styles.scroll, isDesktop && styles.desktopInner]} keyboardShouldPersistTaps="handled">
           <Text style={[styles.section, { color: colors.primary }]}>FOTO O PDF DE LA FACTURA</Text>
           <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <PressableScale onPress={abrirCamara} disabled={busy || state.saving} dimmed={busy || state.saving} style={[styles.attachBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }]} accessibilityRole="button" testID="factura-tomar-foto">
-              <Feather name="camera" size={18} color={colors.primary} />
-              <Text style={[styles.attachText, { color: colors.primary }]}>Tomar foto</Text>
-            </PressableScale>
             {draft.documento ? (
               <>
                 <View style={styles.row}>
                   <Feather name={draft.documento.mime === 'application/pdf' ? 'file-text' : 'image'} size={18} color={colors.primary} />
                   <Text style={[styles.docName, { color: colors.text }]} numberOfLines={1}>{draft.documento.nombre}</Text>
                 </View>
-                <View style={styles.row}>
+                <View style={styles.actionsWrap}>
                   <PressableScale onPress={abrirVisor} dimmed={busy} disabled={busy} style={[styles.secondaryBtn, { borderColor: colors.border }]} accessibilityRole="button" testID="factura-ver-documento">
                     <Feather name="eye" size={14} color={colors.text} />
                     <Text style={[styles.secondaryText, { color: colors.text }]}>Ver</Text>
                   </PressableScale>
-                  <PressableScale onPress={handleAttach} dimmed={busy} disabled={busy} style={[styles.secondaryBtn, { borderColor: colors.border }]} testID="factura-replace">
+                  <PressableScale onPress={handleAttach} dimmed={busy} disabled={busy} style={[styles.secondaryBtn, { borderColor: colors.border }]} accessibilityRole="button" testID="factura-replace">
                     <Feather name="refresh-cw" size={14} color={colors.text} />
-                    <Text style={[styles.secondaryText, { color: colors.text }]}>Reemplazar</Text>
+                    <Text style={[styles.secondaryText, { color: colors.text }]}>Cambiar foto</Text>
                   </PressableScale>
-                  <PressableScale onPress={handleRemoveDocument} dimmed={busy} disabled={busy} style={[styles.secondaryBtn, { borderColor: colors.border }]} testID="factura-quitar-documento">
+                  <PressableScale onPress={abrirCamara} disabled={busy || state.saving} dimmed={busy || state.saving} style={[styles.secondaryBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }]} accessibilityRole="button" testID="factura-tomar-foto">
+                    <Feather name="camera" size={14} color={colors.primary} />
+                    <Text style={[styles.secondaryText, { color: colors.primary }]}>Tomar foto</Text>
+                  </PressableScale>
+                  <PressableScale onPress={handleRemoveDocument} dimmed={busy} disabled={busy} style={[styles.secondaryBtn, { borderColor: colors.border }]} accessibilityRole="button" testID="factura-quitar-documento">
                     <Feather name="x" size={14} color={colors.danger} />
                     <Text style={[styles.secondaryText, { color: colors.danger }]}>Quitar</Text>
                   </PressableScale>
@@ -669,118 +727,168 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
                 ) : null}
               </>
             ) : (
-              <PressableScale onPress={handleAttach} dimmed={busy} disabled={busy} style={[styles.attachBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }]} testID="factura-attach">
-                {busy ? <ActivityIndicator color={colors.primary} /> : <Feather name="upload" size={16} color={colors.primary} />}
-                <Text style={[styles.attachText, { color: colors.primary }]}>Subir foto o PDF</Text>
-              </PressableScale>
+              <View style={styles.docActionsRow}>
+                <PressableScale
+                  onPress={abrirCamara}
+                  disabled={busy || state.saving}
+                  dimmed={busy || state.saving}
+                  style={[
+                    isDesktop ? styles.attachBtn : styles.attachBtnPhone,
+                    styles.flex,
+                    { borderColor: colors.primary, backgroundColor: colors.primaryFaded },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Tomar foto"
+                  testID="factura-tomar-foto"
+                >
+                  <Feather name="camera" size={18} color={colors.primary} />
+                  <Text style={[isDesktop ? styles.attachText : styles.attachTextPhone, { color: colors.primary }]}>Tomar foto</Text>
+                </PressableScale>
+                <PressableScale
+                  onPress={handleAttach}
+                  dimmed={busy}
+                  disabled={busy}
+                  style={[
+                    isDesktop ? styles.attachBtn : styles.attachBtnPhone,
+                    styles.flex,
+                    { borderColor: colors.border, backgroundColor: colors.bg },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Subir foto o PDF"
+                  testID="factura-attach"
+                >
+                  {busy ? <ActivityIndicator color={colors.primary} /> : <Feather name="upload" size={16} color={colors.text} />}
+                  <Text style={[isDesktop ? styles.attachText : styles.attachTextPhone, { color: colors.text }]}>Subir foto o PDF</Text>
+                </PressableScale>
+              </View>
             )}
-            <Text style={[styles.hint, { color: colors.textDim }]}>
-              Privado, máximo 10 MB. Se lee solo cuando tú lo pides, en el paso Leer. La foto es opcional.
+            <Text style={[styles.hint, { color: colors.textMuted }]}>
+              Privado, máximo 10 MB. Los productos se buscan solo cuando tú lo pides en el paso Productos. La foto es opcional.
             </Text>
           </View>
 
           <Text style={[styles.section, { color: colors.primary }]}>DATOS DE LA FACTURA</Text>
           <Field label="Proveedor" testID="factura-field-proveedorNombre" value={draft.proveedorNombre} error={errors.proveedorNombre} leido={notaLeida(valorLeido(leida, 'proveedorNombre'), draft.proveedorNombre)} onChangeText={t => setField('proveedorNombre', t)} />
-          <Field label="Número de factura" testID="factura-field-numeroDocumento" value={draft.numeroDocumento} error={errors.numeroDocumento} leido={notaLeida(valorLeido(leida, 'numeroDocumento'), draft.numeroDocumento)} onChangeText={t => setField('numeroDocumento', t)} />
-          <Field label="Fecha" testID="factura-field-fechaDocumento" value={draft.fechaDocumento} error={errors.fechaDocumento} placeholder="AAAA-MM-DD" leido={notaLeida(valorLeido(leida, 'fechaEmision'), draft.fechaDocumento)} onChangeText={t => setField('fechaDocumento', t)} />
+          <View style={isDesktop ? styles.fieldRow : styles.fieldStack}>
+            <View style={isDesktop ? styles.flex : undefined}>
+              <Field label="Número de factura" testID="factura-field-numeroDocumento" value={draft.numeroDocumento} error={errors.numeroDocumento} leido={notaLeida(valorLeido(leida, 'numeroDocumento'), draft.numeroDocumento)} onChangeText={t => setField('numeroDocumento', t)} />
+            </View>
+            <View style={isDesktop ? styles.flex : undefined}>
+              <Field label="Fecha" testID="factura-field-fechaDocumento" value={draft.fechaDocumento} error={errors.fechaDocumento} placeholder="AAAA-MM-DD" leido={notaLeida(valorLeido(leida, 'fechaEmision'), draft.fechaDocumento)} onChangeText={t => setField('fechaDocumento', t)} />
+            </View>
+          </View>
           {completables.length > 0 ? (
             <PressableScale onPress={pedirCompletarVacios} style={[styles.secondaryBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }]} accessibilityRole="button" testID="factura-completar-leido">
               <Feather name="check" size={14} color={colors.primary} />
-              <Text style={[styles.secondaryText, { color: colors.primary }]}>Completar campos vacíos con lo leído</Text>
+              <Text style={[styles.secondaryText, { color: colors.primary }]}>Completar con lo leído</Text>
             </PressableScale>
           ) : null}
-          {masDatosAbierto ? (
-            <>
-              <Field label="Número de control" testID="factura-field-numeroControl" value={draft.numeroControl} error={errors.numeroControl} onChangeText={t => setField('numeroControl', t)} />
-              <Field label="Notas" testID="factura-field-notas" value={draft.notas} error={errors.notas} multiline onChangeText={t => setField('notas', t)} />
-            </>
-          ) : (
-            <PressableScale onPress={() => setMasDatosPedido(true)} style={[styles.secondaryBtn, { borderColor: colors.border }]} accessibilityRole="button" testID="factura-mas-datos">
-              <Feather name="chevron-right" size={14} color={colors.text} />
-              <Text style={[styles.secondaryText, { color: colors.text }]}>Más datos (control, notas)</Text>
-            </PressableScale>
-          )}
-          <Text style={[styles.hint, { color: colors.textDim }]}>
-            {`Importes en USD. Moneda del documento: ${draft.moneda || 'sin indicar'}.`}
-            {isForeignCurrency ? ' Se muestran tal como están en el documento, sin convertir.' : ''}
-          </Text>
-          {errors.moneda ? <Text style={[styles.error, { color: colors.danger }]}>{errors.moneda}</Text> : null}
 
-          {manualAbierto ? (
-            <>
-              <Text style={[styles.section, { color: colors.primary }]}>{`RENGLONES (${draft.lineas.length})`}</Text>
-              {errors.lineas ? <Text style={[styles.error, { color: colors.danger }]}>{errors.lineas}</Text> : null}
-              {draft.lineas.map((linea, index) => {
-                const id = `factura-linea-${index}`;
-                return (
-                  <View key={linea.lineaId} testID={id} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    <View style={styles.lineaHeader}>
-                      <Text style={[styles.lineaTitle, { color: colors.text }]}>{`Renglón ${index + 1}`}</Text>
-                      <PressableScale onPress={() => edit(current => removeLinea(current, linea.lineaId))} hitSlop={8} activeScale={pressScale.icon} accessibilityRole="button" accessibilityLabel={`Quitar renglón ${index + 1}`} testID={`${id}-quitar`}>
-                        <Feather name="trash-2" size={16} color={colors.danger} />
-                      </PressableScale>
-                    </View>
-                    <Field label="Código del proveedor" testID={`${id}-codigoProveedor`} value={linea.codigoProveedor} error={errors[`${linea.lineaId}:codigoProveedor`]} onChangeText={t => setLineaField(linea.lineaId, 'codigoProveedor', t)} />
-                    <Field label="Código interno (SKU)" testID={`${id}-codigoProducto`} value={linea.codigoProducto} error={errors[`${linea.lineaId}:codigoProducto`]} onChangeText={t => setLineaField(linea.lineaId, 'codigoProducto', t)} />
-                    <Field label="Descripción" testID={`${id}-descripcion`} value={linea.descripcion} error={errors[`${linea.lineaId}:descripcion`]} onChangeText={t => setLineaField(linea.lineaId, 'descripcion', t)} />
-                    <Field label="Cantidad" testID={`${id}-cantidad`} value={linea.cantidad} error={errors[`${linea.lineaId}:cantidad`]} keyboardType="decimal-pad" onChangeText={t => setLineaField(linea.lineaId, 'cantidad', t)} />
-                    <Field label="Unidad" testID={`${id}-unidad`} value={linea.unidad} error={errors[`${linea.lineaId}:unidad`]} onChangeText={t => setLineaField(linea.lineaId, 'unidad', t)} />
-                    <Field label="Costo unitario (USD)" testID={`${id}-costoUnitario`} value={linea.costoUnitario} error={errors[`${linea.lineaId}:costoUnitario`]} keyboardType="decimal-pad" onChangeText={t => setLineaField(linea.lineaId, 'costoUnitario', t)} />
-                    <Field label="Total del renglón (USD)" testID={`${id}-total`} value={linea.total} error={errors[`${linea.lineaId}:total`]} keyboardType="decimal-pad" onChangeText={t => setLineaField(linea.lineaId, 'total', t)} />
-                    <Field label="Nota" testID={`${id}-nota`} value={linea.nota} error={errors[`${linea.lineaId}:nota`]} onChangeText={t => setLineaField(linea.lineaId, 'nota', t)} />
-                  </View>
-                );
-              })}
-              <PressableScale onPress={() => edit(current => addLinea(current, newUuid(), {}))} style={[styles.attachBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }]} testID="factura-add-linea">
-                <Feather name="plus" size={16} color={colors.primary} />
-                <Text style={[styles.attachText, { color: colors.primary }]}>Agregar renglón</Text>
-              </PressableScale>
-              <Text style={[styles.hint, { color: colors.textDim }]}>
-                Cada renglón se guarda tal como aparece en la factura, aunque el SKU se repita.
-              </Text>
-            </>
-          ) : (
-            <PressableScale onPress={() => setManualPedido(true)} style={[styles.secondaryBtn, { borderColor: colors.border }]} accessibilityRole="button" testID="factura-manual-toggle">
-              <Feather name="chevron-right" size={14} color={colors.text} />
-              <Text style={[styles.secondaryText, { color: colors.text }]}>Cargar renglones a mano (sin foto)</Text>
+          <View style={[styles.disclosureBlock, { borderTopColor: colors.border }]}>
+            <PressableScale
+              onPress={alternarMasDatos}
+              style={[styles.disclosureToggle, { borderColor: colors.border, backgroundColor: colors.surface }]}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: masDatosAbierto }}
+              testID="factura-mas-datos"
+            >
+              <Feather name={masDatosAbierto ? 'chevron-down' : 'chevron-right'} size={16} color={colors.text} />
+              <View style={styles.flex}>
+                <Text style={[styles.secondaryText, { color: colors.text }]}>Más datos</Text>
+                <Text style={[styles.hint, { color: colors.textMuted }]}>Control, notas o productos a mano</Text>
+              </View>
             </PressableScale>
-          )}
+
+            {masDatosAbierto ? (
+              <View style={styles.masDatosBody}>
+                <Field label="Número de control" testID="factura-field-numeroControl" value={draft.numeroControl} error={errors.numeroControl} onChangeText={t => setField('numeroControl', t)} />
+                <Field label="Notas" testID="factura-field-notas" value={draft.notas} error={errors.notas} multiline onChangeText={t => setField('notas', t)} />
+                <Text style={[styles.hint, { color: colors.textMuted }]}>
+                  {`Importes en USD. Moneda del documento: ${draft.moneda || 'sin indicar'}.`}
+                  {isForeignCurrency ? ' Se muestran tal como están en el documento, sin convertir.' : ''}
+                </Text>
+                {errors.moneda ? <Text style={[styles.error, { color: colors.danger }]}>{errors.moneda}</Text> : null}
+
+                {manualAbierto ? (
+                  <View style={styles.manualSection}>
+                    <Text style={[styles.section, { color: colors.primary }]}>{`PRODUCTOS A MANO (${draft.lineas.length})`}</Text>
+                    {errors.lineas ? <Text style={[styles.error, { color: colors.danger }]}>{errors.lineas}</Text> : null}
+                    {draft.lineas.map((linea, index) => {
+                      const id = `factura-linea-${index}`;
+                      return (
+                        <View key={linea.lineaId} testID={id} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                          <View style={styles.lineaHeader}>
+                            <Text style={[styles.lineaTitle, { color: colors.text }]}>{`Producto ${index + 1}`}</Text>
+                            <PressableScale onPress={() => edit(current => removeLinea(current, linea.lineaId))} hitSlop={8} activeScale={pressScale.icon} accessibilityRole="button" accessibilityLabel={`Quitar producto ${index + 1}`} testID={`${id}-quitar`}>
+                              <Feather name="trash-2" size={16} color={colors.danger} />
+                            </PressableScale>
+                          </View>
+                          <Field label="Código del proveedor" testID={`${id}-codigoProveedor`} value={linea.codigoProveedor} error={errors[`${linea.lineaId}:codigoProveedor`]} onChangeText={t => setLineaField(linea.lineaId, 'codigoProveedor', t)} />
+                          <Field label="Código del producto" testID={`${id}-codigoProducto`} value={linea.codigoProducto} error={errors[`${linea.lineaId}:codigoProducto`]} onChangeText={t => setLineaField(linea.lineaId, 'codigoProducto', t)} />
+                          <Field label="Descripción" testID={`${id}-descripcion`} value={linea.descripcion} error={errors[`${linea.lineaId}:descripcion`]} onChangeText={t => setLineaField(linea.lineaId, 'descripcion', t)} />
+                          <Field label="Cantidad" testID={`${id}-cantidad`} value={linea.cantidad} error={errors[`${linea.lineaId}:cantidad`]} keyboardType="decimal-pad" onChangeText={t => setLineaField(linea.lineaId, 'cantidad', t)} />
+                          <Field label="Unidad" testID={`${id}-unidad`} value={linea.unidad} error={errors[`${linea.lineaId}:unidad`]} onChangeText={t => setLineaField(linea.lineaId, 'unidad', t)} />
+                          <Field label="Costo unitario (USD)" testID={`${id}-costoUnitario`} value={linea.costoUnitario} error={errors[`${linea.lineaId}:costoUnitario`]} keyboardType="decimal-pad" onChangeText={t => setLineaField(linea.lineaId, 'costoUnitario', t)} />
+                          <Field label="Total (USD)" testID={`${id}-total`} value={linea.total} error={errors[`${linea.lineaId}:total`]} keyboardType="decimal-pad" onChangeText={t => setLineaField(linea.lineaId, 'total', t)} />
+                          <Field label="Nota" testID={`${id}-nota`} value={linea.nota} error={errors[`${linea.lineaId}:nota`]} onChangeText={t => setLineaField(linea.lineaId, 'nota', t)} />
+                        </View>
+                      );
+                    })}
+                    <PressableScale onPress={() => edit(current => addLinea(current, newUuid(), {}))} style={[styles.attachBtn, { borderColor: colors.primary, backgroundColor: colors.primaryFaded }]} accessibilityRole="button" testID="factura-add-linea">
+                      <Feather name="plus" size={16} color={colors.primary} />
+                      <Text style={[styles.attachText, { color: colors.primary }]}>Agregar producto</Text>
+                    </PressableScale>
+                    <Text style={[styles.hint, { color: colors.textMuted }]}>
+                      Cada producto se guarda tal como aparece en la factura, aunque el código se repita.
+                    </Text>
+                  </View>
+                ) : (
+                  <PressableScale onPress={() => setManualPedido(true)} style={[styles.secondaryBtn, { borderColor: colors.border }]} accessibilityRole="button" testID="factura-manual-toggle">
+                    <Feather name="edit-3" size={14} color={colors.text} />
+                    <Text style={[styles.secondaryText, { color: colors.text }]}>Escribir productos a mano</Text>
+                  </PressableScale>
+                )}
+              </View>
+            ) : null}
+          </View>
 
           {guardada && !conDocumento ? (
             <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               {!state.dirty ? <Text style={[styles.hint, { color: colors.textMuted }]}>{MANUAL_SAVED}</Text> : null}
-              <PressableScale onPress={() => irAPaso('leer')} style={[styles.secondaryBtn, { borderColor: colors.border }]} accessibilityRole="button" testID="factura-abrir-revision">
+              <PressableScale onPress={() => irAPaso('productos')} style={[styles.secondaryBtn, { borderColor: colors.border }]} accessibilityRole="button" testID="factura-abrir-revision">
                 <Feather name="check-square" size={14} color={colors.text} />
-                <Text style={[styles.secondaryText, { color: colors.text }]}>Abrir revisión sin foto</Text>
+                <Text style={[styles.secondaryText, { color: colors.text }]}>Revisar productos sin foto</Text>
               </PressableScale>
             </View>
           ) : null}
         </ScrollView>
 
         <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.bg }]}>
-          <PressableScale
-            onPress={handleDiscard}
-            dimmed={state.saving || state.uploading}
-            disabled={state.saving || state.uploading}
-            style={[styles.discardBtn, { borderColor: colors.border }]}
-            accessibilityRole="button"
-            accessibilityLabel="Descartar borrador"
-            testID="factura-discard"
-          >
-            <Feather name="trash-2" size={14} color={colors.danger} />
-            <Text style={[styles.secondaryText, { color: colors.danger }]}>Descartar</Text>
-          </PressableScale>
-          <PressableScale
-            onPress={primaria.onPress}
-            dimmed={!primaria.habilitada}
-            disabled={!primaria.habilitada}
-            style={[styles.saveBtn, { backgroundColor: colors.primary }]}
-            accessibilityRole="button"
-            testID={primaria.testID}
-          >
-            {state.saving ? <ActivityIndicator color={colors.onPrimary} /> : <Feather name="save" size={16} color={colors.onPrimary} />}
-            <Text style={[styles.saveText, { color: colors.onPrimary }]}>{primaria.texto}</Text>
-          </PressableScale>
+          <View style={[styles.footerInner, isDesktop && styles.desktopInner]}>
+            <PressableScale
+              onPress={handleDiscard}
+              dimmed={state.saving || state.uploading}
+              disabled={state.saving || state.uploading}
+              style={[styles.discardBtn, { borderColor: colors.border }]}
+              accessibilityRole="button"
+              accessibilityLabel="Descartar borrador"
+              testID="factura-discard"
+            >
+              <Feather name="trash-2" size={14} color={colors.danger} />
+              <Text style={[styles.secondaryText, { color: colors.danger }]}>Descartar</Text>
+            </PressableScale>
+            <PressableScale
+              onPress={primaria.onPress}
+              dimmed={!primaria.habilitada}
+              disabled={!primaria.habilitada}
+              style={[styles.saveBtn, { backgroundColor: colors.primary }]}
+              accessibilityRole="button"
+              testID={primaria.testID}
+            >
+              {state.saving ? <ActivityIndicator color={colors.onPrimary} /> : <Feather name={primaria.icono} size={16} color={colors.onPrimary} />}
+              <Text style={[styles.saveText, { color: colors.onPrimary }]}>{primaria.texto}</Text>
+            </PressableScale>
+          </View>
         </View>
       </View>
 
@@ -825,30 +933,42 @@ function EditorBody(props: FacturaProveedorEditorProps & { controller: EditorCon
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 0.5 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 0.5 },
+  backBtn: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   headerText: { flex: 1, minWidth: 0, gap: 2 },
   title: { fontSize: scaleFont(15), fontFamily: 'JetBrainsMono_700Bold' },
-  avisos: { paddingHorizontal: 16, gap: 8 },
+  avisos: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4, gap: 6 },
+  desktopInner: { maxWidth: 720, width: '100%', alignSelf: 'center' },
   oculto: { display: 'none' },
   scroll: { padding: 16, gap: 12, paddingBottom: 32 },
-  section: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1, marginTop: 8 },
+  section: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1, marginTop: 6 },
   card: { borderWidth: 0.5, borderRadius: 12, padding: 12, gap: 10 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  docActionsRow: { flexDirection: 'row', alignItems: 'stretch', gap: 8, flexWrap: 'wrap' },
+  actionsWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  fieldRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  fieldStack: { gap: 12 },
   field: { gap: 4 },
   label: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_500Medium' },
-  input: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_400Regular', borderWidth: 0.5, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  input: { minHeight: 44, fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_400Regular', borderWidth: 0.5, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
   inputMultiline: { minHeight: 64, textAlignVertical: 'top' },
   error: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular' },
   hint: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', lineHeight: scaleFont(16) },
   banner: { borderWidth: 0.5, borderRadius: 12, padding: 12, gap: 8 },
   bannerText: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium', lineHeight: scaleFont(17) },
-  bannerBtn: { borderWidth: 0.5, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center' },
+  bannerBtn: { minHeight: 44, borderWidth: 0.5, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
   bannerBtnText: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold' },
   docName: { flex: 1, fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_500Medium' },
   secondaryBtn: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 0.5, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
   secondaryText: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium' },
-  attachBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderRadius: 12, paddingVertical: 12 },
-  attachText: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
+  attachBtn: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
+  attachBtnPhone: { minHeight: 56, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, borderWidth: 1, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 10 },
+  attachText: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', textAlign: 'center' },
+  attachTextPhone: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold', textAlign: 'center' },
+  disclosureBlock: { borderTopWidth: 0.5, paddingTop: 12, gap: 12 },
+  disclosureToggle: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 0.5, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
+  masDatosBody: { gap: 12 },
+  manualSection: { gap: 10 },
   preview: { width: '100%', height: 160, borderRadius: 8 },
   miniatura: { gap: 4 },
   leido: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_500Medium', lineHeight: scaleFont(16) },
@@ -856,8 +976,9 @@ const styles = StyleSheet.create({
   pillRevisionTexto: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_500Medium' },
   lineaHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   lineaTitle: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
-  footer: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16, borderTopWidth: 0.5 },
-  discardBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 0.5, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14 },
-  saveBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 12, paddingVertical: 14 },
+  footer: { padding: 12, borderTopWidth: 0.5 },
+  footerInner: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  discardBtn: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 0.5, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12 },
+  saveBtn: { minHeight: 44, flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 12, paddingVertical: 12 },
   saveText: { fontSize: scaleFont(14), fontFamily: 'JetBrainsMono_700Bold' },
 });

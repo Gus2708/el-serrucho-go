@@ -1,9 +1,10 @@
 import * as React from 'react';
-import { Linking } from 'react-native';
-import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { Linking, StyleSheet } from 'react-native';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import FacturaProveedorEditor from './FacturaProveedorEditor';
 import type { FacturaCamaraFotoProps } from './FacturaCamaraFoto';
+import { elSerrucho } from '../theme/brands/el-serrucho';
 
 let mockPhone = false;
 jest.mock('../hooks/useDeviceSize', () => ({
@@ -184,10 +185,18 @@ async function pressLabel(label: string): Promise<void> {
   });
 }
 
-/** "Más datos" holds the control number and notes; it is collapsed while both are empty. */
+/** "Más datos" holds control number, notes, and the optional manual products editor. */
 async function openMasDatos(): Promise<void> {
   await act(async () => {
     fireEvent.press(screen.getByTestId('factura-mas-datos'));
+  });
+}
+
+/** Opens "Más datos" and expands the manual products editor inside it. */
+async function openManualLines(): Promise<void> {
+  await openMasDatos();
+  await act(async () => {
+    fireEvent.press(screen.getByTestId('factura-manual-toggle'));
   });
 }
 
@@ -371,7 +380,7 @@ describe('almacenamiento y respuestas perdidas', () => {
 
     expect(screen.getByText(UPLOAD_INTERRUPTED)).toBeTruthy();
     expect(value('Número de factura')).toBe('A-7');
-    expect(screen.queryByText('Reemplazar')).toBeNull();
+    expect(screen.queryByTestId('factura-replace')).toBeNull();
     expect(screen.getByText('Subir foto o PDF')).toBeTruthy();
   });
 });
@@ -448,16 +457,17 @@ describe('cerrar y descartar', () => {
 });
 
 describe('reconstrucción completa desde el dispositivo', () => {
-  it('restaura campos, renglones repetidos con sus ids y el orden exacto', async () => {
+  it('restaura campos, productos manuales repetidos con sus ids y el orden exacto', async () => {
     const facturaId = nextFactura();
     const first = await openEditor(facturaId);
     type('Proveedor', 'Ferretería Norte');
     type('Número de factura', 'A-12');
-    await pressText('Agregar renglón');
-    await pressText('Agregar renglón');
-    type('Código interno (SKU)', 'SKU-1', 0);
+    await openManualLines();
+    await pressText('Agregar producto');
+    await pressText('Agregar producto');
+    type('Código del producto', 'SKU-1', 0);
     type('Cantidad', '2', 0);
-    type('Código interno (SKU)', 'SKU-1', 1);
+    type('Código del producto', 'SKU-1', 1);
     type('Cantidad', '5', 1);
     type('Costo unitario (USD)', '12,50', 1);
     await settle();
@@ -472,8 +482,8 @@ describe('reconstrucción completa desde el dispositivo', () => {
 
     expect(value('Proveedor')).toBe('Ferretería Norte');
     expect(value('Número de factura')).toBe('A-12');
-    expect(screen.getByText('RENGLONES (2)')).toBeTruthy();
-    expect([value('Código interno (SKU)', 0), value('Código interno (SKU)', 1)]).toEqual(['SKU-1', 'SKU-1']);
+    expect(screen.getByText('PRODUCTOS A MANO (2)')).toBeTruthy();
+    expect([value('Código del producto', 0), value('Código del producto', 1)]).toEqual(['SKU-1', 'SKU-1']);
     expect([value('Cantidad', 0), value('Cantidad', 1)]).toEqual(['2', '5']);
     expect(value('Costo unitario (USD)', 1)).toBe('12,50');
     const idsAfter = (storedRecords()[0] as { draft: { lineas: Array<{ lineaId: string }> } }).draft.lineas.map(linea => linea.lineaId);
@@ -559,11 +569,12 @@ describe('adjunto opcional y entrada manual', () => {
   it('la entrada manual con importes en USD viaja normalizada y con etiquetas explícitas', async () => {
     const { facturaId } = await openEditor();
     scriptRpc(committed(facturaId, 1));
-    await pressText('Agregar renglón');
+    await openManualLines();
+    await pressText('Agregar producto');
     type('Descripción', 'Tornillo 1/4');
     type('Cantidad', '3');
     type('Costo unitario (USD)', '12,50');
-    type('Total del renglón (USD)', '37,5');
+    type('Total (USD)', '37,5');
 
     expect(screen.getByText(/Importes en USD\./)).toBeTruthy();
 
@@ -584,7 +595,8 @@ describe('adjunto opcional y entrada manual', () => {
 describe('identificadores para pruebas de extremo a extremo', () => {
   it('expone ids estables en las acciones y en los campos', async () => {
     await openEditor(FACTURA_1);
-    await pressText('Agregar renglón');
+    await openManualLines();
+    await pressText('Agregar producto');
 
     expect(screen.getByTestId('factura-editor')).toBeTruthy();
     expect(screen.getByTestId('factura-save')).toBeTruthy();
@@ -638,6 +650,22 @@ describe('compact invoice targets', () => {
     expect(screen.getByText('Factura A-1 · Proveedor Uno')).toBeTruthy();
     expect(screen.queryByTestId('factura-supplier-title')).toBeNull();
   });
+
+  it('uses legible muted placeholder color on Fecha and balanced centered capture buttons on narrow phones', async () => {
+    mockPhone = true;
+    await openEditor();
+
+    const fecha = screen.getByTestId('factura-field-fechaDocumento');
+    expect(fecha.props.placeholderTextColor).toBe(elSerrucho.colors.textMuted);
+    expect(fecha.props.placeholderTextColor).not.toBe(elSerrucho.colors.textDim);
+
+    const tomar = screen.getByTestId('factura-tomar-foto');
+    const subir = screen.getByTestId('factura-attach');
+    expect(StyleSheet.flatten(tomar.props.style)).toMatchObject({ flexDirection: 'column', minHeight: 56 });
+    expect(StyleSheet.flatten(subir.props.style)).toMatchObject({ flexDirection: 'column', minHeight: 56 });
+    expect(StyleSheet.flatten(within(subir).getByText('Subir foto o PDF').props.style)).toMatchObject({ textAlign: 'center' });
+    expect(subir.props.accessibilityLabel).toBe('Subir foto o PDF');
+  });
 });
 
 async function openSaved(withDocument = true, overrides: Record<string, unknown> = {}) {
@@ -654,7 +682,7 @@ describe('revisión asistida (puente con el editor)', () => {
   it('does not offer the review for an unsaved invoice, and manual entry stays complete', async () => {
     await openEditor();
     expect(screen.queryByTestId('factura-abrir-revision')).toBeNull();
-    expect(screen.getByText(/Guarda la factura para leerla y revisar sus productos/)).toBeTruthy();
+    expect(screen.getByText(/Guarda la factura para pasar a Productos/)).toBeTruthy();
     type('Número de factura', 'A-1');
     expect(value('Número de factura')).toBe('A-1');
     expect(screen.queryByTestId('revision-stub')).toBeNull();
@@ -698,7 +726,7 @@ describe('revisión asistida (puente con el editor)', () => {
     expect(onClose).not.toHaveBeenCalled();
     const [title, message] = alert.mock.calls[alert.mock.calls.length - 1] as [string, string];
     expect(title).toBe('Cerrar con cambios sin guardar');
-    expect(message).toMatch(/revisión asistida/);
+    expect(message).toMatch(/productos sin guardar/i);
     await pressAlertButton(alert, 'Cerrar');
     await settle();
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -736,36 +764,41 @@ function pickNextDocument(): void {
 }
 
 describe('pasos guiados', () => {
-  it('muestra el paso Factura seleccionado, bloquea los demás hasta guardar y no enseña versiones', async () => {
+  it('muestra exactamente tres pasos visibles con Factura seleccionado, bloquea los demás hasta guardar y no enseña versiones', async () => {
     await openEditor();
 
     expect(pasoState('factura')).toMatchObject({ selected: true });
-    ['leer', 'productos', 'compra'].forEach(paso => expect(pasoState(paso)).toMatchObject({ disabled: true, selected: false }));
+    expect(screen.queryByTestId('factura-paso-leer')).toBeNull();
+    ['productos', 'compra'].forEach(paso => expect(pasoState(paso)).toMatchObject({ disabled: true, selected: false }));
     expect(screen.queryByText('nueva')).toBeNull();
   });
 
   it('una factura guardada habilita los pasos, titula con número y proveedor y no enseña la versión', async () => {
     await openSaved();
 
-    ['leer', 'productos', 'compra'].forEach(paso => expect(pasoState(paso)).toMatchObject({ disabled: false }));
+    expect(screen.queryByTestId('factura-paso-leer')).toBeNull();
+    ['productos', 'compra'].forEach(paso => expect(pasoState(paso)).toMatchObject({ disabled: false }));
     expect(screen.getByText('Factura A-1 · Proveedor Uno')).toBeTruthy();
     expect(screen.queryByText('v2')).toBeNull();
   });
 
-  it('con documento, Guardar y continuar guarda y pasa a Leer con la revisión montada', async () => {
+  it('con documento, Guardar y continuar guarda sin buscar productos y pasa a Productos con la revisión montada', async () => {
     const { facturaId } = await openEditor();
     pickNextDocument();
     scriptRpc(committed(facturaId, 1));
     await pressText('Subir foto o PDF');
     await settle();
 
+    expect(screen.getByText('Guardar y continuar')).toBeTruthy();
+    expect(screen.queryByText('Guardar y buscar productos')).toBeNull();
+
     await pressText('Guardar y continuar');
     await settle();
 
     expect(backend.rpc).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('revision-stub')).toBeTruthy();
-    expect(revisionProps()).toMatchObject({ facturaVersion: 1, etapa: 'leer' });
-    expect(pasoState('leer')).toMatchObject({ selected: true });
+    expect(revisionProps()).toMatchObject({ facturaVersion: 1, etapa: 'productos' });
+    expect(pasoState('productos')).toMatchObject({ selected: true });
     expect(screen.queryByLabelText('Número de factura')).toBeNull();
   });
 
@@ -810,9 +843,25 @@ describe('pasos guiados', () => {
     expect(screen.getByLabelText('Número de factura')).toBeTruthy();
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId('factura-paso-leer'));
+      fireEvent.press(screen.getByTestId('factura-paso-productos'));
     });
     expect(screen.getByText('revision-marcada')).toBeTruthy();
+  });
+
+  it('mapea una solicitud heredada de etapa leer a productos sin mostrar paso Leer', async () => {
+    await openReview();
+
+    await act(async () => {
+      (revisionProps().onEtapaChange as (etapa: string) => void)('compra');
+    });
+    expect(pasoState('compra')).toMatchObject({ selected: true });
+
+    await act(async () => {
+      (revisionProps().onEtapaChange as (etapa: string) => void)('leer');
+    });
+    expect(screen.queryByTestId('factura-paso-leer')).toBeNull();
+    expect(pasoState('productos')).toMatchObject({ selected: true });
+    expect(revisionProps()).toMatchObject({ etapa: 'productos' });
   });
 
   it('la revisión elige la etapa desde dentro y la etapa sobrevive a pasar por Factura', async () => {
@@ -835,7 +884,7 @@ describe('pasos guiados', () => {
     expect(pasoState('compra')).toMatchObject({ selected: true });
   });
 
-  it('Seguir a mano vuelve al paso Factura con los renglones manuales abiertos', async () => {
+  it('Seguir a mano vuelve al paso Factura con los productos manuales abiertos bajo Más datos', async () => {
     await openReview();
     expect(screen.queryByTestId('factura-add-linea')).toBeNull();
 
@@ -852,7 +901,7 @@ describe('pasos guiados', () => {
     await act(async () => {
       fireEvent.press(screen.getByTestId('revision-stub'));
     });
-    expect(screen.getByTestId('factura-revision-pill')).toHaveTextContent('Revisión sin guardar');
+    expect(screen.getByTestId('factura-revision-pill')).toHaveTextContent('Productos sin guardar');
     expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Guardada');
 
     await act(async () => {
@@ -863,7 +912,7 @@ describe('pasos guiados', () => {
     expect(onClose).not.toHaveBeenCalled();
     const [title, message] = alert.mock.calls[alert.mock.calls.length - 1] as [string, string];
     expect(title).toBe('Cerrar con cambios sin guardar');
-    expect(message).toMatch(/revisión asistida/);
+    expect(message).toMatch(/productos sin guardar/i);
   });
 
   it('los cambios manuales marcan el estado y no se pierden al cambiar de paso', async () => {
@@ -872,10 +921,10 @@ describe('pasos guiados', () => {
       fireEvent.press(screen.getByTestId('factura-paso-factura'));
     });
     type('Número de factura', 'A-77');
-    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Factura sin guardar');
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Sin guardar');
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId('factura-paso-leer'));
+      fireEvent.press(screen.getByTestId('factura-paso-productos'));
     });
     await act(async () => {
       fireEvent.press(screen.getByTestId('factura-paso-factura'));
@@ -887,14 +936,15 @@ describe('pasos guiados', () => {
 });
 
 describe('paso Factura: entrada guiada', () => {
-  it('con documento ofrece Continuar y no promete que solo se guarda', async () => {
+  it('con documento ofrece Continuar y aclara que la búsqueda se pide en Productos', async () => {
     await openSaved();
 
     expect(screen.getByTestId('factura-abrir-revision')).toBeTruthy();
     expect(screen.getByText('Continuar')).toBeTruthy();
     expect(screen.queryByText(/solo se guarda/)).toBeNull();
     expect(screen.queryByText(/No se lee ni se crea ninguna compra/)).toBeNull();
-    expect(screen.getByText(/Se lee solo cuando tú lo pides/)).toBeTruthy();
+    expect(screen.queryByText(/paso Leer/i)).toBeNull();
+    expect(screen.getByText(/solo cuando tú lo pides en el paso Productos/)).toBeTruthy();
   });
 
   it('la entrada manual guardada dice dónde registrar la compra y sigue pudiéndose abrir la revisión', async () => {
@@ -908,8 +958,18 @@ describe('paso Factura: entrada guiada', () => {
     expect(screen.getByTestId('factura-abrir-revision')).toBeTruthy();
   });
 
-  it('con documento y sin renglones, la carga manual está plegada hasta pedirla', async () => {
-    await openSaved();
+  it('agrupa control, notas y el editor manual de productos bajo Más datos hasta pedirlos', async () => {
+    await openEditor();
+    expect(screen.queryByLabelText('Notas')).toBeNull();
+    expect(screen.queryByLabelText('Número de control')).toBeNull();
+    expect(screen.queryByTestId('factura-manual-toggle')).toBeNull();
+    expect(screen.queryByTestId('factura-add-linea')).toBeNull();
+
+    await openMasDatos();
+
+    expect(screen.getByLabelText('Notas')).toBeTruthy();
+    expect(screen.getByLabelText('Número de control')).toBeTruthy();
+    expect(screen.getByTestId('factura-manual-toggle')).toBeTruthy();
     expect(screen.queryByTestId('factura-add-linea')).toBeNull();
 
     await act(async () => {
@@ -917,18 +977,18 @@ describe('paso Factura: entrada guiada', () => {
     });
 
     expect(screen.getByTestId('factura-add-linea')).toBeTruthy();
-    expect(screen.getByText('RENGLONES (0)')).toBeTruthy();
+    expect(screen.getByText('PRODUCTOS A MANO (0)')).toBeTruthy();
   });
 
-  it('control y notas están plegados en Más datos salvo que ya tengan contenido', async () => {
-    await openEditor();
-    expect(screen.queryByLabelText('Notas')).toBeNull();
-    expect(screen.queryByLabelText('Número de control')).toBeNull();
+  it('con documento y sin productos manuales, la carga manual queda bajo Más datos hasta pedirla', async () => {
+    await openSaved();
+    expect(screen.queryByTestId('factura-add-linea')).toBeNull();
+    expect(screen.queryByTestId('factura-manual-toggle')).toBeNull();
 
-    await openMasDatos();
+    await openManualLines();
 
-    expect(screen.getByLabelText('Notas')).toBeTruthy();
-    expect(screen.getByLabelText('Número de control')).toBeTruthy();
+    expect(screen.getByTestId('factura-add-linea')).toBeTruthy();
+    expect(screen.getByText('PRODUCTOS A MANO (0)')).toBeTruthy();
   });
 
   it('un borrador con notas restaura Más datos abierto', async () => {
@@ -1195,14 +1255,13 @@ describe('cabecera leída (atribución y adopción explícita)', () => {
     expect(screen.queryByTestId('factura-completar-leido')).toBeNull();
   });
 
-  it('adopts the read values only into empty fields, after an explicit confirmation that warns about the new version', async () => {
+  it('adopts the read values only into empty fields, after an explicit confirmation that warns about reconfirming', async () => {
     await openCabecera({ fecha_documento: null });
-    await press(screen.getByText('Completar campos vacíos con lo leído'));
+    await press(screen.getByText('Completar con lo leído'));
 
     const [, message] = alert.mock.calls[alert.mock.calls.length - 1] as [string, string];
     expect(message).toMatch(/solo los campos vacíos/);
-    expect(message).toMatch(/cambia de versión/);
-    expect(message).toMatch(/volver a guardar y aprobar/);
+    expect(message).toMatch(/volver a guardar y confirmar/);
     expect(value('Fecha')).toBe('');
     expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Guardada');
 
@@ -1211,7 +1270,7 @@ describe('cabecera leída (atribución y adopción explícita)', () => {
     expect(value('Fecha')).toBe('2026-11-20');
     expect(value('Número de factura')).toBe('A-1');
     expect(value('Proveedor')).toBe('Proveedor Uno');
-    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Factura sin guardar');
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Sin guardar');
     expect(backend.rpc).not.toHaveBeenCalled();
   });
 
@@ -1302,18 +1361,18 @@ describe('título y estado por origen', () => {
       fireEvent.press(screen.getByTestId('revision-stub'));
     });
     expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Guardada');
-    expect(screen.getByTestId('factura-revision-pill')).toHaveTextContent('Revisión sin guardar');
+    expect(screen.getByTestId('factura-revision-pill')).toHaveTextContent('Productos sin guardar');
 
     await irAFactura();
     type('Número de factura', 'A-5');
-    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Factura sin guardar');
-    expect(screen.getByTestId('factura-revision-pill')).toHaveTextContent('Revisión sin guardar');
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Sin guardar');
+    expect(screen.getByTestId('factura-revision-pill')).toHaveTextContent('Productos sin guardar');
   });
 
   it('shows only the invoice state when only the form changed', async () => {
     await openSaved();
     type('Número de factura', 'A-6');
-    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Factura sin guardar');
+    expect(screen.getByTestId('factura-estado-pill')).toHaveTextContent('Sin guardar');
     expect(screen.queryByTestId('factura-revision-pill')).toBeNull();
   });
 

@@ -7,15 +7,20 @@ import { pressScale } from '../theme/motion';
 import { PressableScale } from './PressableScale';
 import type { EtapaRevision } from './FacturaRevisionView';
 
-/** The guided invoice journey: the form first, then the three review stages. */
+/** The guided three-step invoice journey; legacy `'leer'` maps to `'productos'`. */
 export type PasoFactura = 'factura' | EtapaRevision;
 
-const PASOS: ReadonlyArray<{ paso: PasoFactura; nombre: string }> = [
+type PasoVisible = 'factura' | 'productos' | 'compra';
+
+const PASOS: ReadonlyArray<{ paso: PasoVisible; nombre: string }> = [
   { paso: 'factura', nombre: 'Factura' },
-  { paso: 'leer', nombre: 'Leer' },
   { paso: 'productos', nombre: 'Productos' },
   { paso: 'compra', nombre: 'Compra' },
 ];
+
+function normalizarPaso(paso: PasoFactura): PasoVisible {
+  return paso === 'leer' ? 'productos' : paso;
+}
 
 interface FacturaPasosProps {
   seleccionado: PasoFactura;
@@ -26,36 +31,57 @@ interface FacturaPasosProps {
 
 export function FacturaPasos({ seleccionado, onSeleccionar, deshabilitados = [] }: FacturaPasosProps): React.JSX.Element {
   const { colors } = useTheme();
+  const pasoActivo = normalizarPaso(seleccionado);
+  const bloqueados = new Set<PasoVisible>(deshabilitados.map(normalizarPaso));
+
   return (
-    <View style={styles.pasos}>
+    <View style={[styles.pasos, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
       {PASOS.map(({ paso, nombre }, index) => {
-        const activo = paso === seleccionado;
-        const bloqueado = deshabilitados.includes(paso);
-        let tinte = colors.textMuted;
-        if (activo) tinte = colors.primary;
-        else if (bloqueado) tinte = colors.textDim;
+        const activo = paso === pasoActivo;
+        const bloqueado = bloqueados.has(paso);
+        let tinteBordeNumero = colors.textMuted;
+        let colorNumero = colors.text;
+        let colorNombre = colors.text;
+        let fondoSegmento = 'transparent';
+        let bordeSegmento = 'transparent';
+        if (activo) {
+          tinteBordeNumero = colors.primary;
+          colorNumero = colors.onPrimary;
+          colorNombre = colors.text;
+          fondoSegmento = colors.primaryFaded;
+          bordeSegmento = colors.primary;
+        } else if (bloqueado) {
+          tinteBordeNumero = colors.border;
+          colorNumero = colors.textMuted;
+          colorNombre = colors.textMuted;
+        }
+
         return (
           <PressableScale
             key={paso}
             onPress={() => onSeleccionar(paso)}
             disabled={bloqueado}
-            dimmed={bloqueado}
             activeScale={pressScale.row}
             accessibilityRole="button"
             accessibilityLabel={`Paso ${index + 1}: ${nombre}`}
             accessibilityState={{ selected: activo, disabled: bloqueado }}
             testID={`factura-paso-${paso}`}
-            style={styles.paso}
+            style={[
+              styles.paso,
+              { backgroundColor: fondoSegmento, borderColor: bordeSegmento },
+            ]}
           >
             <View
               style={[
                 styles.numero,
-                { borderColor: tinte, backgroundColor: activo ? colors.primary : 'transparent' },
+                { borderColor: tinteBordeNumero, backgroundColor: activo ? colors.primary : 'transparent' },
               ]}
             >
-              <Text style={[styles.numeroTexto, { color: activo ? colors.onPrimary : tinte }]}>{index + 1}</Text>
+              <Text style={[styles.numeroTexto, { color: colorNumero }]}>{index + 1}</Text>
             </View>
-            <Text style={[styles.nombre, { color: tinte }, activo && styles.nombreActivo]} numberOfLines={1}>{nombre}</Text>
+            <Text style={[styles.nombre, { color: colorNombre }, activo && styles.nombreActivo]} numberOfLines={1}>
+              {nombre}
+            </Text>
           </PressableScale>
         );
       })}
@@ -90,11 +116,22 @@ export function FacturaEstadoPill({ texto, tono = 'neutro' }: FacturaEstadoPillP
 }
 
 const styles = StyleSheet.create({
-  pasos: { flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 6 },
-  paso: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 4 },
-  numero: { width: 24, height: 24, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  numeroTexto: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold', fontVariant: ['tabular-nums'] },
-  nombre: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_500Medium' },
+  pasos: { flexDirection: 'row', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderBottomWidth: 0.5 },
+  paso: {
+    flex: 1,
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderRadius: 10,
+  },
+  numero: { width: 20, height: 20, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  numeroTexto: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold', fontVariant: ['tabular-nums'] },
+  nombre: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_500Medium', flexShrink: 1 },
   nombreActivo: { fontFamily: 'JetBrainsMono_700Bold' },
   pill: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 0.5, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
   pillTexto: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_500Medium' },

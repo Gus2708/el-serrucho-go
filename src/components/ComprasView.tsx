@@ -523,11 +523,13 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
             accessibilityRole="button"
             accessibilityLabel="Facturas de proveedor"
           >
-            <Feather name="paperclip" size={16} color={colors.primary} />
+            <View style={[styles.facturaIconBadge, { backgroundColor: colors.primaryFaded }]}>
+              <Feather name="camera" size={16} color={colors.primary} />
+            </View>
             <View style={styles.proveedorBtnText}>
-              <Text style={[styles.proveedorLabel, { color: colors.textMuted }]}>FACTURAS DE PROVEEDOR</Text>
+              <Text style={[styles.proveedorLabel, { color: colors.textMuted }]}>FACTURA DE PROVEEDOR</Text>
               <Text style={[styles.proveedorValue, { color: colors.text }]} numberOfLines={1}>
-                Foto o carga manual
+                Cargar factura con foto
               </Text>
             </View>
             <FacturaBorradoresBadge />
@@ -1999,6 +2001,13 @@ const styles = StyleSheet.create({
     borderWidth:       0.5,
   },
   proveedorBtnText: { flex: 1 },
+  facturaIconBadge: {
+    width:          32,
+    height:         32,
+    borderRadius:   8,
+    alignItems:     'center',
+    justifyContent: 'center',
+  },
   proveedorLabel: {
     fontSize:      scaleFont(9),
     fontFamily:    'JetBrainsMono_500Medium',

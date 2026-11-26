@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scaleFont } from '../theme/responsive';
 import { useTheme } from '../theme/ThemeContext';
 import { pressScale } from '../theme/motion';
+import { useDeviceSize } from '../hooks/useDeviceSize';
 import { PressableScale } from './PressableScale';
 import FacturaProveedorEditor from './FacturaProveedorEditor';
 import { useUserRole } from '../hooks/useUserRole';
@@ -104,6 +105,7 @@ export default function FacturasProveedorModal({
   onClose,
 }: FacturasProveedorModalProps): React.JSX.Element {
   const { colors } = useTheme();
+  const { isDesktop } = useDeviceSize();
   const insets = useSafeAreaInsets();
   const { data: userAuth } = useUserRole();
   const ownerId = userAuth?.profile?.id ?? null;
@@ -224,18 +226,25 @@ export default function FacturasProveedorModal({
       <>
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <Text style={[styles.title, { color: colors.text }]}>Facturas de proveedor</Text>
-          <PressableScale onPress={handleClose} hitSlop={8} activeScale={pressScale.icon} accessibilityRole="button" accessibilityLabel="Cerrar">
+          <PressableScale
+            onPress={handleClose}
+            hitSlop={8}
+            activeScale={pressScale.icon}
+            style={styles.closeBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar"
+          >
             <Feather name="x" size={20} color={colors.textMuted} />
           </PressableScale>
         </View>
 
-        <View style={styles.body}>
+        <View style={[styles.body, isDesktop && styles.desktopBody]}>
           <PressableScale onPress={openNew} dimmed={ownerId === null} disabled={ownerId === null} accessibilityRole="button" style={[styles.newBtn, { borderColor: colors.primary, backgroundColor: colors.primary }]}>
             <Feather name="plus" size={16} color={colors.onPrimary} />
             <Text style={[styles.newBtnText, { color: colors.onPrimary }]}>Nueva factura</Text>
           </PressableScale>
-          <Text style={[styles.hint, { color: colors.textDim }]}>
-            Sube la foto de la factura y el sistema lee los productos cuando tú lo pides. También puedes cargarla a mano.
+          <Text style={[styles.hint, { color: colors.textMuted }]}>
+            Toma una foto de la factura. Cuando tú lo pidas, el sistema busca los productos y tú los confirmas. Al final se crea un borrador de compra.
           </Text>
 
           {list.isLoading ? <SkeletonRows /> : null}
@@ -280,17 +289,19 @@ export default function FacturasProveedorModal({
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 0.5 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 0.5 },
+  closeBtn: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: scaleFont(16), fontFamily: 'JetBrainsMono_700Bold' },
   body: { flex: 1, padding: 16, gap: 12 },
+  desktopBody: { maxWidth: 720, width: '100%', alignSelf: 'center' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
-  newBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16 },
+  newBtn: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16 },
   newBtnText: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold' },
-  hint: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', lineHeight: scaleFont(16) },
+  hint: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_400Regular', lineHeight: scaleFont(17) },
   listContent: { gap: 8, paddingBottom: 24 },
   section: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold', letterSpacing: 1, marginTop: 4 },
   emptyTitle: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_500Medium', textAlign: 'center', marginTop: 24 },
-  rowCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 0.5, borderRadius: 12, padding: 12 },
+  rowCard: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 0.5, borderRadius: 12, padding: 12 },
   rowText: { flex: 1, gap: 4, alignItems: 'flex-start' },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 0.5, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
   chipText: { fontSize: scaleFont(10), fontFamily: 'JetBrainsMono_500Medium' },
