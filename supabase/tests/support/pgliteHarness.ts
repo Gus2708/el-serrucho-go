@@ -1,4 +1,4 @@
-import { PGlite } from '@electric-sql/pglite';
+import { PGlite, type Extensions } from '@electric-sql/pglite';
 import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 
@@ -88,8 +88,8 @@ export function findFollowUpMigrationsSql(): string[] {
     .map(name => readFileSync(join(MIGRATIONS_DIR, name), 'utf8'));
 }
 
-export async function createMigratedDb(): Promise<PGlite> {
-  const db = new PGlite();
+export async function createMigratedDb(extensions?: Extensions): Promise<PGlite> {
+  const db = extensions ? new PGlite({ extensions }) : new PGlite();
   await db.exec(SUPABASE_FIXTURE);
   await db.exec(findMigrationSql());
   for (const sql of findFollowUpMigrationsSql()) await db.exec(sql);
