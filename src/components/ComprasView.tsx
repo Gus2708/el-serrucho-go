@@ -36,12 +36,38 @@ import RegistroProveedorModal from './RegistroProveedorModal';
 import GuardarBorradorModal from './GuardarBorradorModal';
 import FacturasProveedorModal from './FacturasProveedorModal';
 import FacturaBorradoresBadge from './FacturaBorradoresBadge';
+import { CascadeDiscountInput } from './CascadeDiscountInput';
+import {
+  calcularCostoConDescuento,
+  calcularPorcentajeEfectivo,
+  formatearCascada,
+  resolverDescuentosEfectivos,
+} from '../lib/compraDescuentos';
 import { isDemoActive } from '../demo/useDemoStore';
 
 // Ficha de Inventario de HybridLite trunca la descripción a los 60 caracteres
 // (confirmado en compras.log 2026-07-17: "PUERTA MULTILOCK...QUINTE" != "...QUINTERO",
 // 63 chars -> mismatch -> alta cancelada -> compra entera marcada 'error').
 const DESCRIPCION_MAX = 60;
+
+export function parseCantidadConAjuste(raw: string): {
+  display: string;
+  cantidad: number;
+  esAjuste: boolean;
+} {
+  const normalized = raw
+    .replace(/\u2026/g, '...')
+    .replace(/,/g, '.')
+    .replace(/\.{3,}$/, '...');
+  const numericPart = normalized.replace(/\.+$/, '');
+  const cantidad = parseFloat(numericPart);
+  const esAjuste = normalized.endsWith('...') && !isNaN(cantidad);
+  return { display: normalized, cantidad, esAjuste };
+}
+
+export function formatCantidadConAjuste(cantidad: number, esAjuste?: boolean): string {
+  return esAjuste ? `${cantidad}...` : String(cantidad);
+}
 
 interface ComprasViewProps {
   router:        any;
@@ -58,6 +84,7 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
     proveedorCodigo,
     proveedorNombre,
     items,
+    descuentosGenerales,
     nota,
     titulo,
     numeroDocumento,
@@ -68,6 +95,7 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
     borradorId,
     facturaVinculada,
     setProveedor,
+    setDescuentosGenerales,
     addItem,
     removeItem,
     updateItem,
@@ -89,6 +117,12 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
   const [productoNuevoModalVisible, setProductoNuevoModalVisible] = useState(false);
   const [borradorModalVisible, setBorradorModalVisible] = useState(false);
   const [facturasModalVisible, setFacturasModalVisible] = useState(false);
+  const [generalDiscountInvalid, setGeneralDiscountInvalid] = useState(false);
+  const [invalidItemDiscounts, setInvalidItemDiscounts] = useState<Record<string, boolean>>({});
+
+  const handleItemDiscountValidity = React.useCallback((codigo: string, invalid: boolean) => {
+    setInvalidItemDiscounts(prev => (prev[codigo] === invalid ? prev : { ...prev, [codigo]: invalid }));
+  }, []);
 
   // Existencia fresca de los ítems ya existentes: los que están en negativo se
   // cargan con unidades extra al emitir (ver compensarExistenciasNegativas en
@@ -109,12 +143,21 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
   const { data: colisiones } = useColisionesCodigo(codigosDeItems);
 
   function faltanteDe(item: CompraDraftItem): number {
-    if (item.es_nuevo) return 0;
+    if (item.es_nuevo || item.es_ajuste) return 0;
     return faltantePorNegativo(existencias?.[item.codigo_producto]);
   }
 
+  const totalLista = items.reduce(
+    (sum, item) => sum + (item.cantidad + faltanteDe(item)) * (item.costo_lista ?? item.costo),
+    0,
+  );
   const total = items.reduce((sum, item) => sum + (item.cantidad + faltanteDe(item)) * item.costo, 0);
+  const ahorroTotal = Math.max(0, totalLista - total);
+  const itemsConDescuento = items.filter(
+    item => resolverDescuentosEfectivos(item.descuentos, descuentosGenerales, item.excluir_descuento_general).length > 0,
+  ).length;
   const itemsCompensados = items.filter(item => faltanteDe(item) > 0).length;
+  const itemsConAjuste = items.filter(item => Boolean(item.es_ajuste)).length;
 
   // Lo último agregado se muestra de PRIMERO: el ítem recién añadido queda justo
   // debajo de los botones de agregar y se edita sin scroll. Es solo
@@ -161,7 +204,7 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
         clearTimeout(autoSaveTimerRef.current);
       }
     };
-  }, [items, proveedorCodigo, proveedorNombre, nota, numeroDocumento, editingCompraId]);
+  }, [items, descuentosGenerales, proveedorCodigo, proveedorNombre, nota, numeroDocumento, editingCompraId]);
 
   function handleSelectProveedor(proveedor: Proveedor): void {
     setProveedor(proveedor.codigo, proveedor.nombre);
@@ -181,15 +224,26 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
       precio:          producto.precio_venta ?? 0,
       referencia:      producto.referencia ?? null,
       es_nuevo:        false,
+      es_ajuste:       false,
     });
     setProductoModalVisible(false);
   }
 
   /** Devuelve el primer problema que impide emitir, o null si todo está listo. */
   function primerItemInvalido(): string | null {
+    if (generalDiscountInvalid) {
+      return 'El descuento general tiene un valor inválido (debe ser menor a 100%).';
+    }
     for (const it of items) {
       if (!(it.cantidad > 0)) return `${it.descripcion}: la cantidad debe ser mayor a 0.`;
-      if (!(it.costo > 0))    return `${it.descripcion}: falta el costo.`;
+      if (invalidItemDiscounts[it.codigo_producto]) {
+        return `${it.descripcion}: el descuento debe ser menor a 100%.`;
+      }
+      const costoLista = it.costo_lista ?? it.costo;
+      if (!(costoLista > 0)) return `${it.descripcion}: falta el costo.`;
+      if (!(it.costo > 0)) {
+        return `${it.descripcion}: el costo neto después del descuento queda en $0.00.`;
+      }
       if (!(it.precio > 0))   return `${it.descripcion}: falta el precio.`;
       if (it.es_nuevo && it.descripcion.length > DESCRIPCION_MAX) {
         return `${it.descripcion}: la descripción supera los ${DESCRIPCION_MAX} caracteres.`;
@@ -270,11 +324,17 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
     const avisoNegativos = itemsCompensados > 0
       ? `\n\n${itemsCompensados} ítem${itemsCompensados > 1 ? 's están' : ' está'} en negativo: se cargarán las unidades faltantes además de lo comprado, para que el stock quede en la cantidad que escribiste.`
       : '';
+    const avisoAjustes = itemsConAjuste > 0
+      ? `\n\n${itemsConAjuste} ítem${itemsConAjuste > 1 ? 's tienen' : ' tiene'} ajuste fijo (...): se ajustará su existencia a la cantidad indicada mediante Ajustes de Inventario en vez de sumarse.`
+      : '';
+    const avisoDescuentos = itemsConDescuento > 0
+      ? `\n\nDescuentos aplicados en ${itemsConDescuento} ítem${itemsConDescuento > 1 ? 's' : ''} (ahorro ${formatUSD(ahorroTotal)}): los costos ya viajan rebajados a Hybrid.`
+      : '';
     confirm({
       title:       isEditing ? 'Reintentar compra' : 'Emitir compra',
       message:     (isEditing
         ? `Se reencolará C-${String(editingCompraId).padStart(4, '0')} a ${proveedorNombre} con ${items.length} ítem${items.length > 1 ? 's' : ''}.`
-        : `Se registrará una compra a ${proveedorNombre} con ${items.length} ítem${items.length > 1 ? 's' : ''}.`) + avisoNegativos,
+        : `Se registrará una compra a ${proveedorNombre} con ${items.length} ítem${items.length > 1 ? 's' : ''}.`) + avisoNegativos + avisoAjustes + avisoDescuentos,
       confirmText: isEditing ? 'Reintentar' : 'Emitir',
       onConfirm:   performSubmit,
     });
@@ -475,6 +535,14 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
           </PressableScale>
         ) : null}
 
+        <DescuentoGeneralCard
+          descuentos={descuentosGenerales}
+          itemCount={items.length}
+          affectedCount={items.filter(it => !it.excluir_descuento_general).length}
+          onChange={setDescuentosGenerales}
+          onValidationChange={setGeneralDiscountInvalid}
+        />
+
         </View>
 
         {/* Agregar producto CTAs — quedan fijos arriba al hacer scroll, así se
@@ -521,17 +589,42 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
               <CompraItemCard
                 key={item.codigo_producto}
                 item={item}
+                descuentosGenerales={descuentosGenerales}
                 existencia={item.es_nuevo ? null : existencias?.[item.codigo_producto] ?? null}
                 colision={colisiones?.[item.codigo_producto] ?? null}
                 onRemove={() => removeItem(item.codigo_producto)}
                 onUpdate={updates => updateItem(item.codigo_producto, updates)}
+                onDiscountValidityChange={invalid => handleItemDiscountValidity(item.codigo_producto, invalid)}
               />
             ))}
 
             {/* Total */}
-            <View style={[styles.totalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Text style={[styles.totalLabel, { color: colors.textMuted }]}>TOTAL COMPRA</Text>
-              <Text style={[styles.totalValue, { color: colors.primary }]}>{formatUSD(total)}</Text>
+            <View
+              testID="compra-total-card"
+              style={[styles.totalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            >
+              {ahorroTotal > 0 ? (
+                <View style={styles.totalBreakdown}>
+                  <View style={styles.totalRow}>
+                    <Text style={[styles.totalSubLabel, { color: colors.textMuted }]}>Subtotal lista</Text>
+                    <Text style={[styles.totalSubValue, { color: colors.textMuted }]}>{formatUSD(totalLista)}</Text>
+                  </View>
+                  <View style={styles.totalRow}>
+                    <Text style={[styles.totalSubLabel, { color: colors.success }]}>Ahorro descuentos</Text>
+                    <Text style={[styles.totalSubValue, { color: colors.success }]}>-{formatUSD(ahorroTotal)}</Text>
+                  </View>
+                  <View style={[styles.totalDivider, { backgroundColor: colors.border }]} />
+                  <View style={styles.totalRow}>
+                    <Text style={[styles.totalLabel, { color: colors.textMuted }]}>TOTAL NETO (HYBRID)</Text>
+                    <Text style={[styles.totalValue, { color: colors.primary }]}>{formatUSD(total)}</Text>
+                  </View>
+                </View>
+              ) : (
+                <>
+                  <Text style={[styles.totalLabel, { color: colors.textMuted }]}>TOTAL COMPRA</Text>
+                  <Text style={[styles.totalValue, { color: colors.primary }]}>{formatUSD(total)}</Text>
+                </>
+              )}
             </View>
 
             {/* Número de orden/factura */}
@@ -673,6 +766,7 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
       <ProductoNuevoModal
         visible={productoNuevoModalVisible}
         existingCodes={items.map(i => i.codigo_producto)}
+        descuentosGenerales={descuentosGenerales}
         onClose={() => setProductoNuevoModalVisible(false)}
         onAdd={addItem}
       />
@@ -695,40 +789,182 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
   );
 }
 
+// ── Descuento general ─────────────────────────────────────────────────────────
+
+interface DescuentoGeneralCardProps {
+  descuentos:         number[];
+  itemCount:          number;
+  affectedCount:      number;
+  onChange:           (descuentos: number[]) => void;
+  onValidationChange: (invalid: boolean) => void;
+}
+
+function DescuentoGeneralCard({
+  descuentos,
+  itemCount,
+  affectedCount,
+  onChange,
+  onValidationChange,
+}: DescuentoGeneralCardProps): React.JSX.Element {
+  const { colors } = useTheme();
+  const [expanded, setExpanded] = useState<boolean>(() => descuentos.length > 0);
+  const isOpen = expanded || descuentos.length > 0;
+  const { porcentajeEfectivoStr } = calcularPorcentajeEfectivo(descuentos);
+  const sumaLineal = descuentos.reduce((acc, d) => acc + d, 0);
+
+  if (!isOpen) {
+    return (
+      <PressableScale
+        testID="compra-desc-general-toggle"
+        style={[
+          styles.proveedorBtn,
+          { borderColor: colors.border, backgroundColor: colors.surface },
+        ]}
+        activeScale={pressScale.row}
+        onPress={() => setExpanded(true)}
+        accessibilityRole="button"
+        accessibilityLabel="Agregar descuento general"
+      >
+        <Feather name="percent" size={16} color={colors.textDim} />
+        <View style={styles.proveedorBtnText}>
+          <Text style={[styles.proveedorLabel, { color: colors.textMuted }]}>DESCUENTO GENERAL (OPCIONAL)</Text>
+          <Text style={[styles.proveedorValue, { color: colors.textDim }]} numberOfLines={1}>
+            Sin descuento general
+          </Text>
+        </View>
+        <Text style={[styles.descAddHint, { color: colors.primary }]}>+ Agregar</Text>
+      </PressableScale>
+    );
+  }
+
+  return (
+    <View
+      testID="compra-desc-general-panel"
+      style={[
+        styles.descGeneralCard,
+        {
+          borderColor:     descuentos.length > 0 ? colors.primary + '55' : colors.border,
+          backgroundColor: colors.surface,
+        },
+      ]}
+    >
+      <View style={styles.descGeneralHeader}>
+        <View style={styles.descGeneralTitleRow}>
+          <Feather name="percent" size={14} color={colors.primary} />
+          <Text style={[styles.descGeneralTitle, { color: colors.textMuted }]}>DESCUENTO GENERAL</Text>
+          {descuentos.length > 0 ? (
+            <View
+              testID="compra-desc-general-badge"
+              style={[styles.descBadge, { backgroundColor: colors.primaryFaded, borderColor: colors.primary + '55' }]}
+            >
+              <Text style={[styles.descBadgeText, { color: colors.primary }]}>
+                -{porcentajeEfectivoStr}%{descuentos.length > 1 ? ' REAL' : ''}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+        <PressableScale
+          testID="compra-desc-general-clear"
+          onPress={() => {
+            onChange([]);
+            onValidationChange(false);
+            setExpanded(false);
+          }}
+          hitSlop={8}
+          activeScale={pressScale.icon}
+          accessibilityRole="button"
+          accessibilityLabel={descuentos.length > 0 ? 'Quitar descuento general' : 'Cerrar descuento general'}
+        >
+          <Text style={[styles.descClearBtnText, { color: colors.textMuted }]}>
+            {descuentos.length > 0 ? 'Quitar' : 'Cerrar'}
+          </Text>
+        </PressableScale>
+      </View>
+
+      <CascadeDiscountInput
+        value={descuentos}
+        onChange={onChange}
+        onValidationChange={onValidationChange}
+        placeholder="Ej: 10 o 20 + 5"
+        autoFocus={expanded && descuentos.length === 0}
+        testIDPrefix="compra-desc-general"
+        accessibilityLabel="Descuento general de la compra"
+      />
+
+      <Text testID="compra-desc-general-helper" style={[styles.descHelperText, { color: colors.textMuted }]}>
+        {descuentos.length > 1
+          ? `Cascada: ${formatearCascada(descuentos)} = -${porcentajeEfectivoStr}% real (no ${sumaLineal}%).`
+          : 'Aplica a toda la compra; usa + para encadenar otro %.'}
+        {itemCount > 0
+          ? ` Aplica a ${affectedCount} de ${itemCount} ítem${itemCount > 1 ? 's' : ''}.`
+          : ''}
+      </Text>
+    </View>
+  );
+}
+
 // ── Item card ─────────────────────────────────────────────────────────────────
 
 interface CompraItemCardProps {
-  item:       CompraDraftItem;
-  existencia: number | null;          // saldo actual; null para productos nuevos o aún sin cargar
-  colision:   ColisionCodigo | null;  // producto que HybridLite cargaría en su lugar
-  onRemove:   () => void;
-  onUpdate:   (updates: Partial<CompraDraftItem>) => void;
+  item:                     CompraDraftItem;
+  descuentosGenerales:      number[];
+  existencia:               number | null;          // saldo actual; null para productos nuevos o aún sin cargar
+  colision:                 ColisionCodigo | null;  // producto que HybridLite cargaría en su lugar
+  onRemove:                 () => void;
+  onUpdate:                 (updates: Partial<CompraDraftItem>) => void;
+  onDiscountValidityChange: (invalid: boolean) => void;
 }
 
-function CompraItemCard({ item, existencia, colision, onRemove, onUpdate }: CompraItemCardProps): React.JSX.Element {
+function CompraItemCard({
+  item,
+  descuentosGenerales,
+  existencia,
+  colision,
+  onRemove,
+  onUpdate,
+  onDiscountValidityChange,
+}: CompraItemCardProps): React.JSX.Element {
   const { colors, formatUSD } = useTheme();
-  const [cantidadInput, setCantidadInput] = useState<string>(String(item.cantidad));
-  const [costoInput, setCostoInput] = useState<string>(String(item.costo));
+  const costoLista = item.costo_lista !== undefined ? item.costo_lista : item.costo;
+  const [cantidadInput, setCantidadInput] = useState<string>(() =>
+    formatCantidadConAjuste(item.cantidad, item.es_ajuste)
+  );
+  const [costoInput, setCostoInput] = useState<string>(String(costoLista));
   const [precioInput, setPrecioInput] = useState<string>(String(item.precio));
+
+  const descuentosEfectivos = resolverDescuentosEfectivos(
+    item.descuentos,
+    descuentosGenerales,
+    item.excluir_descuento_general,
+  );
+  const resultadoDescuento = calcularCostoConDescuento(costoLista, descuentosEfectivos);
+  const generalEfectivo = calcularPorcentajeEfectivo(descuentosGenerales);
 
   // Producto en negativo: al emitir se cargan también las unidades faltantes
   // para que el saldo final sea la cantidad escrita, no cantidad + negativo.
-  const faltante = faltantePorNegativo(existencia);
+  const faltante = item.es_ajuste ? 0 : faltantePorNegativo(existencia);
   const cantidadACargar = item.cantidad + faltante;
   const subtotal = cantidadACargar * item.costo;
   const decimalKeyboard = Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad';
 
   // Estos valores pueden cambiar por fuera de la tarjeta: volver a agregar el
   // mismo producto lo reemplaza con los valores frescos de la DB. Sin esto los
-  // inputs se quedan con lo viejo. Se compara el número para no pisar lo que el
-  // usuario está tecleando.
+  // inputs se quedan con lo viejo. Se compara el número y el modo ajuste para
+  // no pisar lo que el usuario está tecleando (incluidos los puntos intermedios).
   useEffect(() => {
-    setCantidadInput(prev => (parseFloat(prev) === item.cantidad ? prev : String(item.cantidad)));
-  }, [item.cantidad]);
+    setCantidadInput(prev => {
+      const parsed = parseCantidadConAjuste(prev);
+      const targetAjuste = Boolean(item.es_ajuste);
+      if (parsed.cantidad === item.cantidad && parsed.esAjuste === targetAjuste) {
+        return prev;
+      }
+      return formatCantidadConAjuste(item.cantidad, targetAjuste);
+    });
+  }, [item.cantidad, item.es_ajuste]);
 
   useEffect(() => {
-    setCostoInput(prev => (parseFloat(prev) === item.costo ? prev : String(item.costo)));
-  }, [item.costo]);
+    setCostoInput(prev => (parseFloat(prev) === costoLista ? prev : String(costoLista)));
+  }, [costoLista]);
 
   useEffect(() => {
     setPrecioInput(prev => (parseFloat(prev) === item.precio ? prev : String(item.precio)));
@@ -748,17 +984,20 @@ function CompraItemCard({ item, existencia, colision, onRemove, onUpdate }: Comp
     : colors.success;
 
   function handleCantidadChange(v: string): void {
-    const val = v.replace(',', '.');
-    setCantidadInput(val);
-    const n = parseFloat(val);
-    if (!isNaN(n) && n >= 0) onUpdate({ cantidad: n });
+    const { display, cantidad, esAjuste } = parseCantidadConAjuste(v);
+    setCantidadInput(display);
+    if (!isNaN(cantidad) && cantidad >= 0) {
+      onUpdate({ cantidad, es_ajuste: esAjuste });
+    } else if (esAjuste !== Boolean(item.es_ajuste)) {
+      onUpdate({ es_ajuste: esAjuste });
+    }
   }
 
   function handleCostoChange(v: string): void {
     const val = v.replace(',', '.');
     setCostoInput(val);
     const n = parseFloat(val);
-    if (!isNaN(n) && n >= 0) onUpdate({ costo: n });
+    if (!isNaN(n) && n >= 0) onUpdate({ costo_lista: n });
   }
 
   function handlePrecioChange(v: string): void {
@@ -774,7 +1013,7 @@ function CompraItemCard({ item, existencia, colision, onRemove, onUpdate }: Comp
         <View style={styles.itemInfo}>
           <View style={styles.itemNameRow}>
             {item.es_nuevo ? (
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <TextInput
                   style={[styles.itemNameInput, { color: colors.text }]}
                   value={item.descripcion}
@@ -789,9 +1028,20 @@ function CompraItemCard({ item, existencia, colision, onRemove, onUpdate }: Comp
                 ) : null}
               </View>
             ) : (
-              <Text style={[styles.itemName, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
-                {item.descripcion}
-              </Text>
+              <ScrollView
+                testID="compra-item-name-scroll"
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                nestedScrollEnabled
+                style={styles.itemNameScroll}
+              >
+                <Text
+                  style={[styles.itemName, { color: colors.text }]}
+                  numberOfLines={Platform.OS === 'web' ? undefined : 1}
+                >
+                  {item.descripcion}
+                </Text>
+              </ScrollView>
             )}
             {item.es_nuevo ? (
               <View style={[styles.nuevoBadge, { backgroundColor: colors.primary + '20', borderColor: colors.primary + '40' }]}>
@@ -815,6 +1065,7 @@ function CompraItemCard({ item, existencia, colision, onRemove, onUpdate }: Comp
         <View style={styles.fieldColumn}>
           <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>CANTIDAD</Text>
           <TextInput
+            testID="compra-item-cantidad-input"
             style={[styles.fieldInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
             keyboardType={decimalKeyboard}
             value={cantidadInput}
@@ -824,8 +1075,11 @@ function CompraItemCard({ item, existencia, colision, onRemove, onUpdate }: Comp
         </View>
 
         <View style={styles.fieldColumn}>
-          <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>COSTO ($)</Text>
+          <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>
+            {resultadoDescuento.tieneDescuento ? 'COSTO LISTA ($)' : 'COSTO ($)'}
+          </Text>
           <TextInput
+            testID={`compra-item-costo-input-${item.codigo_producto}`}
             style={[styles.fieldInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
             keyboardType={decimalKeyboard}
             value={costoInput}
@@ -846,7 +1100,121 @@ function CompraItemCard({ item, existencia, colision, onRemove, onUpdate }: Comp
         </View>
       </View>
 
-      {faltante > 0 ? (
+      {/* Descuento por producto + herencia de descuento general */}
+      <View style={styles.discountStrip}>
+        <CascadeDiscountInput
+          compact
+          placeholder="Desc %"
+          value={item.descuentos ?? []}
+          onChange={descuentos => onUpdate({ descuentos })}
+          onValidationChange={onDiscountValidityChange}
+          testIDPrefix={`compra-item-desc-${item.codigo_producto}`}
+          accessibilityLabel={`Descuento para ${item.descripcion}`}
+        />
+        {descuentosGenerales.length > 0 ? (
+          <PressableScale
+            testID={`compra-item-toggle-general-${item.codigo_producto}`}
+            onPress={() => onUpdate({ excluir_descuento_general: !item.excluir_descuento_general })}
+            hitSlop={6}
+            activeScale={pressScale.button}
+            accessibilityRole="button"
+            accessibilityLabel={item.excluir_descuento_general ? 'Incluir descuento general' : 'Excluir descuento general'}
+            style={[
+              styles.generalTogglePill,
+              item.excluir_descuento_general
+                ? { borderColor: colors.border, backgroundColor: colors.surfaceAlt }
+                : { borderColor: colors.primary + '55', backgroundColor: colors.primaryFaded },
+            ]}
+          >
+            <Feather
+              name={item.excluir_descuento_general ? 'slash' : 'check'}
+              size={11}
+              color={item.excluir_descuento_general ? colors.textMuted : colors.primary}
+            />
+            <Text
+              style={[
+                styles.generalToggleText,
+                { color: item.excluir_descuento_general ? colors.textMuted : colors.primary },
+              ]}
+              numberOfLines={1}
+            >
+              {item.excluir_descuento_general ? 'Sin gral' : `Gral -${generalEfectivo.porcentajeEfectivoStr}%`}
+            </Text>
+          </PressableScale>
+        ) : null}
+      </View>
+
+      {resultadoDescuento.tieneDescuento ? (
+        <View
+          testID={`compra-item-costo-neto-${item.codigo_producto}`}
+          style={[
+            styles.netCostBox,
+            {
+              backgroundColor: resultadoDescuento.costoNeto <= 0 ? colors.danger + '12' : colors.surfaceAlt,
+              borderColor:     resultadoDescuento.costoNeto <= 0 ? colors.danger + '40' : colors.border,
+            },
+          ]}
+        >
+          <View style={styles.netCostTopRow}>
+            <Text style={[styles.netCostLabel, { color: colors.textMuted }]}>NETO HYBRID</Text>
+            <View style={styles.netCostValuesRow}>
+              <Text style={[styles.netCostStrike, { color: colors.textDim }]}>
+                {formatUSD(costoLista)}
+              </Text>
+              <Feather name="arrow-right" size={11} color={colors.textMuted} />
+              <Text
+                style={[
+                  styles.netCostFinal,
+                  { color: resultadoDescuento.costoNeto <= 0 ? colors.danger : colors.primary },
+                ]}
+              >
+                {formatUSD(resultadoDescuento.costoNeto)}
+              </Text>
+              <View
+                style={[
+                  styles.netCostPctPill,
+                  {
+                    backgroundColor: (resultadoDescuento.costoNeto <= 0 ? colors.danger : colors.success) + '1A',
+                    borderColor:     (resultadoDescuento.costoNeto <= 0 ? colors.danger : colors.success) + '45',
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.netCostPctText,
+                    { color: resultadoDescuento.costoNeto <= 0 ? colors.danger : colors.success },
+                  ]}
+                >
+                  -{resultadoDescuento.porcentajeEfectivoStr}%
+                </Text>
+              </View>
+            </View>
+          </View>
+          {resultadoDescuento.costoNeto <= 0 ? (
+            <Text style={[styles.netCostNote, { color: colors.danger }]}>
+              El costo neto queda en $0.00 — revisa el costo o descuento.
+            </Text>
+          ) : resultadoDescuento.fueRedondeado ? (
+            <Text testID={`compra-item-redondeo-${item.codigo_producto}`} style={[styles.netCostNote, { color: colors.textMuted }]}>
+              Redondeado a 2 dec. para Hybrid (exacto ${resultadoDescuento.costoNetoExactoStr})
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
+      {item.es_ajuste ? (
+        <View
+          testID="compra-item-ajuste-aviso"
+          style={[styles.negativoAviso, { backgroundColor: colors.primary + '14', borderColor: colors.primary + '35' }]}
+        >
+          <Feather name="sliders" size={12} color={colors.primary} />
+          <Text style={[styles.negativoAvisoText, { color: colors.primary }]}>
+            {existencia !== null && !item.es_nuevo
+              ? `En ${existencia} · no se suma: se ajustará la existencia a ${item.cantidad}`
+              : `Ajuste fijo (...) · no se suma: la existencia quedará en ${item.cantidad}`}
+          </Text>
+        </View>
+      ) : faltante > 0 ? (
         <View style={[styles.negativoAviso, { backgroundColor: colors.warning + '14', borderColor: colors.warning + '30' }]}>
           <Feather name="corner-down-right" size={12} color={colors.warning} />
           <Text style={[styles.negativoAvisoText, { color: colors.warning }]}>
@@ -1105,20 +1473,30 @@ function ProductoPickerModal({ visible, initialSearch = '', onClose, onSelect }:
 // ── Modal: producto nuevo ────────────────────────────────────────────────────
 
 interface ProductoNuevoModalProps {
-  visible:       boolean;
-  existingCodes: string[];
-  onClose:       () => void;
-  onAdd:         (item: CompraDraftItem) => void;
+  visible:             boolean;
+  existingCodes:       string[];
+  descuentosGenerales: number[];
+  onClose:             () => void;
+  onAdd:               (item: CompraDraftItem) => void;
 }
 
-function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: ProductoNuevoModalProps): React.JSX.Element {
-  const { colors } = useTheme();
+function ProductoNuevoModal({
+  visible,
+  existingCodes,
+  descuentosGenerales,
+  onClose,
+  onAdd,
+}: ProductoNuevoModalProps): React.JSX.Element {
+  const { colors, formatUSD } = useTheme();
   const [codigo, setCodigo] = useState<string>('');
   const [descripcion, setDescripcion] = useState<string>('');
   const [referencia, setReferencia] = useState<string>('');
   const [cantidadInput, setCantidadInput] = useState<string>('1');
   const [costoInput, setCostoInput] = useState<string>('');
   const [precioInput, setPrecioInput] = useState<string>('');
+  const [descuentos, setDescuentos] = useState<number[]>([]);
+  const [excluirGeneral, setExcluirGeneral] = useState<boolean>(false);
+  const [discountInvalid, setDiscountInvalid] = useState<boolean>(false);
   const [scannerTarget, setScannerTarget] = useState<'codigo' | 'referencia' | null>(null);
 
   const [checkingCode, setCheckingCode] = useState<boolean>(false);
@@ -1175,6 +1553,9 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
     setCantidadInput('1');
     setCostoInput('');
     setPrecioInput('');
+    setDescuentos([]);
+    setExcluirGeneral(false);
+    setDiscountInvalid(false);
     setExistingProductInDb(null);
     setCheckingCode(false);
   }
@@ -1184,11 +1565,24 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
     onClose();
   }
 
+  const parsedCostoPreview = parseFloat(costoInput.replace(',', '.'));
+  const parsedPrecioPreview = parseFloat(precioInput.replace(',', '.'));
+  const descuentosEfectivosPreview = resolverDescuentosEfectivos(descuentos, descuentosGenerales, excluirGeneral);
+  const previewResultado = calcularCostoConDescuento(
+    !isNaN(parsedCostoPreview) && parsedCostoPreview > 0 ? parsedCostoPreview : 0,
+    descuentosEfectivosPreview,
+  );
+  const generalEfectivoModal = calcularPorcentajeEfectivo(descuentosGenerales);
+  const previewMargin =
+    !isNaN(parsedPrecioPreview) && parsedPrecioPreview > 0 && previewResultado.costoNeto > 0
+      ? (((parsedPrecioPreview / 1.16) - previewResultado.costoNeto) / (parsedPrecioPreview / 1.16)) * 100
+      : null;
+
   async function handleAdd(): Promise<void> {
     const codigoTrim = codigo.trim().toUpperCase();
     const descripcionTrim = descripcion.trim();
-    const cantidad = parseFloat(cantidadInput.replace(',', '.'));
-    const costo = parseFloat(costoInput.replace(',', '.'));
+    const { cantidad, esAjuste } = parseCantidadConAjuste(cantidadInput);
+    const costoLista = parseFloat(costoInput.replace(',', '.'));
     const precio = parseFloat(precioInput.replace(',', '.'));
 
     if (!codigoTrim) {
@@ -1240,8 +1634,20 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
       notify('Error', 'La cantidad debe ser mayor a 0');
       return;
     }
-    if (isNaN(costo) || costo < 0) {
+    if (isNaN(costoLista) || costoLista <= 0) {
       notify('Error', 'El costo es obligatorio');
+      return;
+    }
+    if (discountInvalid) {
+      notify('Error', 'El descuento debe ser menor a 100%');
+      return;
+    }
+    const resultado = calcularCostoConDescuento(
+      costoLista,
+      resolverDescuentosEfectivos(descuentos, descuentosGenerales, excluirGeneral),
+    );
+    if (!(resultado.costoNeto > 0)) {
+      notify('Error', 'El costo neto después del descuento debe ser mayor a $0.00');
       return;
     }
     if (isNaN(precio) || precio < 0) {
@@ -1250,13 +1656,17 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
     }
 
     onAdd({
-      codigo_producto: codigoTrim,
-      descripcion:     descripcionTrim,
-      referencia:      referencia.trim() || null,
+      codigo_producto:           codigoTrim,
+      descripcion:               descripcionTrim,
+      referencia:                referencia.trim() || null,
       cantidad,
-      costo,
+      costo:                     resultado.costoNeto,
+      costo_lista:               costoLista,
+      descuentos,
+      excluir_descuento_general: excluirGeneral,
       precio,
-      es_nuevo:        true,
+      es_nuevo:                  true,
+      es_ajuste:                 esAjuste,
     });
     resetForm();
     onClose();
@@ -1379,17 +1789,21 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
               <View style={[styles.formField, styles.formFieldFlex]}>
                 <Text style={[styles.formLabel, { color: colors.textMuted }]}>CANTIDAD</Text>
                 <TextInput
+                  testID="producto-nuevo-cantidad-input"
                   style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
                   keyboardType={decimalKeyboard}
                   value={cantidadInput}
-                  onChangeText={v => setCantidadInput(v.replace(',', '.'))}
+                  onChangeText={v => setCantidadInput(parseCantidadConAjuste(v).display)}
                   selectTextOnFocus
                 />
               </View>
 
               <View style={[styles.formField, styles.formFieldFlex]}>
-                <Text style={[styles.formLabel, { color: colors.textMuted }]}>COSTO ($)</Text>
+                <Text style={[styles.formLabel, { color: colors.textMuted }]}>
+                  {previewResultado.tieneDescuento ? 'COSTO LISTA ($)' : 'COSTO ($)'}
+                </Text>
                 <TextInput
+                  testID="producto-nuevo-costo-input"
                   style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
                   keyboardType={decimalKeyboard}
                   placeholder="0.00"
@@ -1403,6 +1817,7 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
               <View style={[styles.formField, styles.formFieldFlex]}>
                 <Text style={[styles.formLabel, { color: colors.textMuted }]}>PRECIO ($)</Text>
                 <TextInput
+                  testID="producto-nuevo-precio-input"
                   style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
                   keyboardType={decimalKeyboard}
                   placeholder="0.00"
@@ -1413,6 +1828,103 @@ function ProductoNuevoModal({ visible, existingCodes, onClose, onAdd }: Producto
                 />
               </View>
             </View>
+
+            <View style={styles.formField}>
+              <Text style={[styles.formLabel, { color: colors.textMuted }]}>DESCUENTO (OPCIONAL)</Text>
+              <View style={styles.discountStrip}>
+                <CascadeDiscountInput
+                  value={descuentos}
+                  onChange={setDescuentos}
+                  onValidationChange={setDiscountInvalid}
+                  placeholder="Ej: 15 o 20 + 5"
+                  testIDPrefix="producto-nuevo-desc"
+                  accessibilityLabel="Descuento para producto nuevo"
+                />
+                {descuentosGenerales.length > 0 ? (
+                  <PressableScale
+                    testID="producto-nuevo-toggle-general"
+                    onPress={() => setExcluirGeneral(prev => !prev)}
+                    hitSlop={6}
+                    activeScale={pressScale.button}
+                    accessibilityRole="button"
+                    accessibilityLabel={excluirGeneral ? 'Incluir descuento general' : 'Excluir descuento general'}
+                    style={[
+                      styles.generalTogglePill,
+                      excluirGeneral
+                        ? { borderColor: colors.border, backgroundColor: colors.surfaceAlt }
+                        : { borderColor: colors.primary + '55', backgroundColor: colors.primaryFaded },
+                    ]}
+                  >
+                    <Feather
+                      name={excluirGeneral ? 'slash' : 'check'}
+                      size={11}
+                      color={excluirGeneral ? colors.textMuted : colors.primary}
+                    />
+                    <Text
+                      style={[
+                        styles.generalToggleText,
+                        { color: excluirGeneral ? colors.textMuted : colors.primary },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {excluirGeneral ? 'Sin gral' : `Gral -${generalEfectivoModal.porcentajeEfectivoStr}%`}
+                    </Text>
+                  </PressableScale>
+                ) : null}
+              </View>
+
+              {previewResultado.tieneDescuento ? (
+                <View
+                  testID="producto-nuevo-costo-neto"
+                  style={[styles.netCostBox, { backgroundColor: colors.surface, borderColor: colors.border, marginTop: 8 }]}
+                >
+                  <View style={styles.netCostTopRow}>
+                    <Text style={[styles.netCostLabel, { color: colors.textMuted }]}>NETO HYBRID</Text>
+                    <View style={styles.netCostValuesRow}>
+                      <Text style={[styles.netCostStrike, { color: colors.textDim }]}>
+                        {formatUSD(parsedCostoPreview)}
+                      </Text>
+                      <Feather name="arrow-right" size={11} color={colors.textMuted} />
+                      <Text style={[styles.netCostFinal, { color: colors.primary }]}>
+                        {formatUSD(previewResultado.costoNeto)}
+                      </Text>
+                      <View
+                        style={[
+                          styles.netCostPctPill,
+                          { backgroundColor: colors.success + '1A', borderColor: colors.success + '45' },
+                        ]}
+                      >
+                        <Text style={[styles.netCostPctText, { color: colors.success }]}>
+                          -{previewResultado.porcentajeEfectivoStr}%
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                  {previewMargin !== null ? (
+                    <Text style={[styles.netCostNote, { color: colors.textMuted }]}>
+                      Margen estimado: {previewMargin.toFixed(0)}%
+                      {previewResultado.fueRedondeado ? ` · Exacto $${previewResultado.costoNetoExactoStr}` : ''}
+                    </Text>
+                  ) : previewResultado.fueRedondeado ? (
+                    <Text style={[styles.netCostNote, { color: colors.textMuted }]}>
+                      Redondeado a 2 dec. para Hybrid (exacto ${previewResultado.costoNetoExactoStr})
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+
+            {parseCantidadConAjuste(cantidadInput).esAjuste ? (
+              <View
+                testID="producto-nuevo-ajuste-aviso"
+                style={[styles.negativoAviso, { backgroundColor: colors.primary + '14', borderColor: colors.primary + '35', marginBottom: 12 }]}
+              >
+                <Feather name="sliders" size={12} color={colors.primary} />
+                <Text style={[styles.negativoAvisoText, { color: colors.primary }]}>
+                  Ajuste fijo (...) · no se sumará: la existencia se ajustará a {parseCantidadConAjuste(cantidadInput).cantidad}
+                </Text>
+              </View>
+            ) : null}
 
             <PressableScale
               style={[
@@ -1545,9 +2057,14 @@ const styles = StyleSheet.create({
     alignItems:     'flex-start',
     justifyContent: 'space-between',
   },
-  itemInfo:  { flex: 1 },
-  itemNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  itemName:  { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', flexShrink: 1 },
+  itemInfo:  { flex: 1, minWidth: 0 },
+  itemNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
+  itemNameScroll: { flex: 1, minWidth: 0 },
+  itemName: {
+    fontSize:   scaleFont(13),
+    fontFamily: 'JetBrainsMono_700Bold',
+    ...(Platform.OS === 'web' ? { whiteSpace: 'nowrap' as any } : {}),
+  },
   itemNameInput: { fontSize: scaleFont(13), fontFamily: 'JetBrainsMono_700Bold', padding: 0 },
   itemDescCounter: { fontSize: scaleFont(9), fontFamily: 'JetBrainsMono_400Regular', marginTop: 2 },
   itemCode:  { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular', marginTop: 1 },
@@ -1635,8 +2152,142 @@ const styles = StyleSheet.create({
     borderWidth:       0.5,
     padding:           14,
   },
+  totalBreakdown: {
+    flex: 1,
+    gap:  6,
+  },
+  totalRow: {
+    flexDirection:  'row',
+    justifyContent: 'space-between',
+    alignItems:     'center',
+  },
+  totalSubLabel: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_400Regular' },
+  totalSubValue: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold', fontVariant: ['tabular-nums'] } as any,
+  totalDivider:  { height: 0.5, marginVertical: 2 },
   totalLabel: { fontSize: scaleFont(11), fontFamily: 'JetBrainsMono_700Bold', textTransform: 'uppercase', letterSpacing: 0.3 },
-  totalValue: { fontSize: scaleFont(18), fontFamily: 'JetBrainsMono_700Bold' },
+  totalValue: { fontSize: scaleFont(18), fontFamily: 'JetBrainsMono_700Bold', fontVariant: ['tabular-nums'] } as any,
+
+  descAddHint: {
+    fontSize:   scaleFont(12),
+    fontFamily: 'JetBrainsMono_700Bold',
+  },
+  descGeneralCard: {
+    marginHorizontal: 16,
+    borderRadius:     12,
+    borderWidth:      0.5,
+    padding:          12,
+    gap:              8,
+  },
+  descGeneralHeader: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+    gap:            8,
+  },
+  descGeneralTitleRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           6,
+    flex:          1,
+  },
+  descGeneralTitle: {
+    fontSize:      scaleFont(10),
+    fontFamily:    'JetBrainsMono_700Bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  descBadge: {
+    paddingHorizontal: 6,
+    paddingVertical:   2,
+    borderRadius:      6,
+    borderWidth:       0.5,
+  },
+  descBadgeText: {
+    fontSize:    scaleFont(10),
+    fontFamily:  'JetBrainsMono_700Bold',
+    fontVariant: ['tabular-nums'],
+  } as any,
+  descClearBtnText: {
+    fontSize:   scaleFont(11),
+    fontFamily: 'JetBrainsMono_500Medium',
+  },
+  descHelperText: {
+    fontSize:   scaleFont(10),
+    fontFamily: 'JetBrainsMono_400Regular',
+    lineHeight: scaleFont(14),
+  },
+
+  discountStrip: {
+    flexDirection: 'row',
+    alignItems:    'flex-start',
+    gap:           8,
+  },
+  generalTogglePill: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               4,
+    height:            34,
+    paddingHorizontal: 9,
+    borderRadius:      8,
+    borderWidth:       0.5,
+  },
+  generalToggleText: {
+    fontSize:    scaleFont(10),
+    fontFamily:  'JetBrainsMono_700Bold',
+    fontVariant: ['tabular-nums'],
+  } as any,
+
+  netCostBox: {
+    borderRadius:      8,
+    borderWidth:       0.5,
+    paddingHorizontal: 10,
+    paddingVertical:   7,
+    gap:               3,
+  },
+  netCostTopRow: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+    gap:            8,
+    flexWrap:       'wrap',
+  },
+  netCostLabel: {
+    fontSize:      scaleFont(9),
+    fontFamily:    'JetBrainsMono_700Bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  netCostValuesRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           6,
+  },
+  netCostStrike: {
+    fontSize:           scaleFont(11),
+    fontFamily:         'JetBrainsMono_400Regular',
+    textDecorationLine: 'line-through',
+    fontVariant:        ['tabular-nums'],
+  } as any,
+  netCostFinal: {
+    fontSize:    scaleFont(13),
+    fontFamily:  'JetBrainsMono_700Bold',
+    fontVariant: ['tabular-nums'],
+  } as any,
+  netCostPctPill: {
+    borderRadius:      999,
+    borderWidth:       0.5,
+    paddingHorizontal: 6,
+    paddingVertical:   1,
+  },
+  netCostPctText: {
+    fontSize:    scaleFont(10),
+    fontFamily:  'JetBrainsMono_700Bold',
+    fontVariant: ['tabular-nums'],
+  } as any,
+  netCostNote: {
+    fontSize:   scaleFont(10),
+    fontFamily: 'JetBrainsMono_400Regular',
+  },
 
   notaCard: {
     marginHorizontal: 16,

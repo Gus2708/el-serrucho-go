@@ -36,6 +36,7 @@ import { useUserRole, isPrivilegedRole, canMakePedidos } from '../../src/hooks/u
 import { usePedido } from '../../src/hooks/usePedido';
 import { supabase } from '../../src/lib/supabase';
 import { buildPdfHtml, buildPresupuestoPdfHtml, printHtml, getPresupuestoFilename } from '../../src/utils/pdfGenerator';
+import { resolverOrigenLocal } from '../../src/utils/ordenOrigen';
 import { getSafeUrlOrNull } from '../../src/utils/safeUrl';
 import PresupuestoView from '../../src/components/PresupuestoView';
 import FallasView from '../../src/components/FallasView';
@@ -845,13 +846,19 @@ function HistorialView({
           .eq('orden_id', o.id);
 
         if (error) throw error;
-        // Fetch creator name
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('display_name')
-          .eq('id', o.creado_por)
-          .single();
-        const creadoPor = profileData?.display_name || undefined;
+        // Fetch creator name when orden was created by an authenticated user
+        let creadoPor: string | undefined = o.creado_por_nombre || undefined;
+        if (!creadoPor && o.creado_por) {
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('display_name')
+            .eq('id', o.creado_por)
+            .single();
+          creadoPor = profileData?.display_name || undefined;
+        }
+        if (!creadoPor && !o.creado_por) {
+          creadoPor = resolverOrigenLocal(o.nota);
+        }
         html = buildPdfHtml(items as any[], o.nota, o.id, creadoPor);
         friendlyName = `Ajuste_No_${o.id}.pdf`;
       } else {

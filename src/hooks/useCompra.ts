@@ -6,24 +6,35 @@ import { fetchExistencias, faltantePorNegativo } from './useExistencias';
 import { fetchColisionesCodigo, describirColision, ColisionesMap } from './useColisionesCodigo';
 import { isDemoActive } from '../demo/useDemoStore';
 import { trackAuditEvent } from '../lib/auditLog';
+import {
+  calcularCostoConDescuento,
+  isMissingDiscountColumnError,
+  normalizarDescuentos,
+  resolverDescuentosEfectivos,
+} from '../lib/compraDescuentos';
 
 export interface CompraDraftItem {
-  codigo_producto: string;
-  descripcion:     string;
-  cantidad:        number;
-  costo:           number;
-  precio:          number;
-  referencia:      string | null;   // opcional; null para productos existentes
-  es_nuevo:        boolean;         // true = producto a dar de alta en Hybrid
+  codigo_producto:            string;
+  descripcion:                string;
+  cantidad:                   number;
+  costo:                      number;   // costo neto final (después de descuentos) que viaja al write-back
+  costo_lista?:               number;   // costo de lista original antes de descuentos
+  descuentos?:                number[]; // porcentajes en cascada propios del ítem (ej. [20, 5])
+  excluir_descuento_general?: boolean;  // true = no hereda descuentosGenerales de la cabecera
+  precio:                     number;
+  referencia:                 string | null;   // opcional; null para productos existentes
+  es_nuevo:                   boolean;         // true = producto a dar de alta en Hybrid
+  es_ajuste?:                 boolean;         // true = cantidad con "..." (ajustar existencia a esta cifra en vez de sumar)
 }
 
 export interface CompraEditDraft {
-  compraId:        number;
-  proveedorCodigo: string;
-  proveedorNombre: string | null;
-  nota:            string;
-  numeroDocumento: string;
-  items:           CompraDraftItem[];
+  compraId:             number;
+  proveedorCodigo:      string;
+  proveedorNombre:      string | null;
+  nota:                 string;
+  numeroDocumento:      string;
+  descuentosGenerales?: number[];
+  items:                CompraDraftItem[];
 }
 
 // Draft para retomar un BORRADOR guardado ("lista sin terminar"): la fila ya
@@ -32,75 +43,126 @@ export interface CompraEditDraft {
 // 'emitido' en vez de crear una nueva. El proveedor puede venir null: se puede
 // guardar la lista antes de decidir a quién se le compra.
 export interface CompraBorradorDraft {
-  borradorId:      number;
-  titulo:          string;
-  proveedorCodigo: string | null;
-  proveedorNombre: string | null;
-  nota:            string;
-  numeroDocumento: string;
-  items:           CompraDraftItem[];
-  facturaVinculada?: boolean;
+  borradorId:           number;
+  titulo:               string;
+  proveedorCodigo:      string | null;
+  proveedorNombre:      string | null;
+  nota:                 string;
+  numeroDocumento:      string;
+  descuentosGenerales?: number[];
+  items:                CompraDraftItem[];
+  facturaVinculada?:    boolean;
 }
 
 interface CompraStore {
-  proveedorCodigo:  string | null;
-  proveedorNombre:  string | null;
-  items:            CompraDraftItem[];
-  nota:             string;
-  titulo:           string;   // nombre del borrador ("Reposición tornillería")
-  numeroDocumento:  string;   // opcional; vacío = el backend usa el id de la compra
-  isLoading:        boolean;
-  isAutoSaving:     boolean;
-  lastSavedAt:      Date | null;
-  autoSaveError:    string | null;
-  editingCompraId:  number | null;   // != null => reintentar una compra existente (update, no insert)
-  borradorId:       number | null;   // != null => se está armando sobre un borrador guardado
-  facturaVinculada: boolean;
-  setProveedor:      (codigo: string, nombre: string) => void;
-  addItem:           (item: CompraDraftItem) => void;
-  removeItem:        (codigo: string) => void;
-  updateItem:        (codigo: string, updates: Partial<CompraDraftItem>) => void;
-  setNota:           (nota: string) => void;
-  setTitulo:         (titulo: string) => void;
-  setNumeroDocumento: (numero: string) => void;
-  clear:             () => void;
-  loadForEdit:       (draft: CompraEditDraft) => void;
-  loadBorrador:      (draft: CompraBorradorDraft) => void;
-  saveDraft:         (userId: string, titulo: string) => Promise<{ compraId: number }>;
-  autoSaveDraft:     (userId: string) => Promise<number | null>;
-  deleteActiveDraft: () => Promise<void>;
-  submit:            (userId: string) => Promise<{ compraId: number }>;
+  proveedorCodigo:      string | null;
+  proveedorNombre:      string | null;
+  items:                CompraDraftItem[];
+  descuentosGenerales:  number[];
+  nota:                 string;
+  titulo:               string;   // nombre del borrador ("Reposición tornillería")
+  numeroDocumento:      string;   // opcional; vacío = el backend usa el id de la compra
+  isLoading:            boolean;
+  isAutoSaving:         boolean;
+  lastSavedAt:          Date | null;
+  autoSaveError:        string | null;
+  editingCompraId:      number | null;   // != null => reintentar una compra existente (update, no insert)
+  borradorId:           number | null;   // != null => se está armando sobre un borrador guardado
+  facturaVinculada:     boolean;
+  setProveedor:           (codigo: string, nombre: string) => void;
+  setDescuentosGenerales: (descuentos: number[]) => void;
+  addItem:                (item: CompraDraftItem) => void;
+  removeItem:             (codigo: string) => void;
+  updateItem:             (codigo: string, updates: Partial<CompraDraftItem>) => void;
+  setNota:                (nota: string) => void;
+  setTitulo:              (titulo: string) => void;
+  setNumeroDocumento:     (numero: string) => void;
+  clear:                  () => void;
+  loadForEdit:            (draft: CompraEditDraft) => void;
+  loadBorrador:           (draft: CompraBorradorDraft) => void;
+  saveDraft:              (userId: string, titulo: string) => Promise<{ compraId: number }>;
+  autoSaveDraft:          (userId: string) => Promise<number | null>;
+  deleteActiveDraft:      () => Promise<void>;
+  submit:                 (userId: string) => Promise<{ compraId: number }>;
+}
+
+/**
+ * Recalculates an item's net `costo` from its preserved `costo_lista` and effective
+ * discounts (item + general unless excluded) without ever double-discounting.
+ */
+export function normalizarItemConDescuento(
+  item: CompraDraftItem,
+  descuentosGenerales: readonly number[],
+): CompraDraftItem {
+  const costoLista = item.costo_lista !== undefined ? item.costo_lista : item.costo;
+  const descuentos = normalizarDescuentos(item.descuentos);
+  const excluirGeneral = Boolean(item.excluir_descuento_general);
+  const efectivos = resolverDescuentosEfectivos(descuentos, descuentosGenerales, excluirGeneral);
+  const { costoNeto } = calcularCostoConDescuento(costoLista, efectivos);
+
+  return {
+    ...item,
+    costo_lista: costoLista,
+    costo: costoNeto,
+    descuentos,
+    excluir_descuento_general: excluirGeneral,
+  };
+}
+
+async function withDiscountColumnFallback<R extends { error: unknown }>(
+  primary: () => Promise<R>,
+  fallback: () => Promise<R>,
+): Promise<R> {
+  const result = await primary();
+  if (result.error && isMissingDiscountColumnError(result.error)) {
+    return fallback();
+  }
+  return result;
 }
 
 export const useCompra = create<CompraStore>()((set, get) => ({
-  proveedorCodigo: null,
-  proveedorNombre: null,
-  items:           [],
-  nota:            '',
-  titulo:          '',
-  numeroDocumento: '',
-  isLoading:       false,
-  isAutoSaving:    false,
-  lastSavedAt:     null,
-  autoSaveError:   null,
-  editingCompraId: null,
-  borradorId:      null,
-  facturaVinculada: false,
+  proveedorCodigo:     null,
+  proveedorNombre:     null,
+  items:               [],
+  descuentosGenerales: [],
+  nota:                '',
+  titulo:              '',
+  numeroDocumento:     '',
+  isLoading:           false,
+  isAutoSaving:        false,
+  lastSavedAt:         null,
+  autoSaveError:       null,
+  editingCompraId:     null,
+  borradorId:          null,
+  facturaVinculada:    false,
 
   setProveedor: (codigo, nombre) => set({ proveedorCodigo: codigo, proveedorNombre: nombre }),
 
+  setDescuentosGenerales: (descuentos) => {
+    const normalized = normalizarDescuentos(descuentos);
+    set({
+      descuentosGenerales: normalized,
+      items: get().items.map(i => normalizarItemConDescuento(i, normalized)),
+    });
+  },
+
   addItem: (item) => {
-    const { items } = get();
+    const { items, descuentosGenerales } = get();
     const existing = items.find(i => i.codigo_producto === item.codigo_producto);
     if (existing) {
       // Va al final de la lista: la vista muestra los ítems del más reciente al
       // más antiguo, así que lo último que se tocó queda arriba y a la vista.
+      const costoLista = item.costo_lista !== undefined ? item.costo_lista : item.costo;
+      const merged = normalizarItemConDescuento(
+        { ...existing, ...item, costo_lista: costoLista },
+        descuentosGenerales,
+      );
       set({ items: [
         ...items.filter(i => i.codigo_producto !== item.codigo_producto),
-        { ...existing, ...item },
+        merged,
       ] });
     } else {
-      set({ items: [...items, item] });
+      set({ items: [...items, normalizarItemConDescuento(item, descuentosGenerales)] });
     }
   },
 
@@ -109,7 +171,22 @@ export const useCompra = create<CompraStore>()((set, get) => ({
   },
 
   updateItem: (codigo, updates) => {
-    set({ items: get().items.map(i => i.codigo_producto === codigo ? { ...i, ...updates } : i) });
+    const { items, descuentosGenerales } = get();
+    set({
+      items: items.map(i => {
+        if (i.codigo_producto !== codigo) return i;
+        const costoLista =
+          updates.costo_lista !== undefined
+            ? updates.costo_lista
+            : updates.costo !== undefined
+              ? updates.costo
+              : (i.costo_lista ?? i.costo);
+        return normalizarItemConDescuento(
+          { ...i, ...updates, costo_lista: costoLista },
+          descuentosGenerales,
+        );
+      }),
+    });
   },
 
   setNota: (nota) => set({ nota }),
@@ -119,34 +196,42 @@ export const useCompra = create<CompraStore>()((set, get) => ({
   setNumeroDocumento: (numero) => set({ numeroDocumento: numero }),
 
   clear: () => set({
-    proveedorCodigo: null, proveedorNombre: null, items: [], nota: '', titulo: '', numeroDocumento: '', editingCompraId: null, borradorId: null, facturaVinculada: false, isAutoSaving: false, lastSavedAt: null, autoSaveError: null,
+    proveedorCodigo: null, proveedorNombre: null, items: [], descuentosGenerales: [], nota: '', titulo: '', numeroDocumento: '', editingCompraId: null, borradorId: null, facturaVinculada: false, isAutoSaving: false, lastSavedAt: null, autoSaveError: null,
   }),
 
-  loadForEdit: (draft) => set({
-    editingCompraId: draft.compraId,
-    borradorId:      null,
-    facturaVinculada: false,
-    proveedorCodigo: draft.proveedorCodigo,
-    proveedorNombre: draft.proveedorNombre,
-    nota:            draft.nota,
-    titulo:          '',
-    numeroDocumento: draft.numeroDocumento,
-    items:           draft.items,
-  }),
+  loadForEdit: (draft) => {
+    const descuentosGenerales = normalizarDescuentos(draft.descuentosGenerales);
+    set({
+      editingCompraId:     draft.compraId,
+      borradorId:          null,
+      facturaVinculada:    false,
+      proveedorCodigo:     draft.proveedorCodigo,
+      proveedorNombre:     draft.proveedorNombre,
+      nota:                draft.nota,
+      titulo:              '',
+      numeroDocumento:     draft.numeroDocumento,
+      descuentosGenerales,
+      items:               draft.items.map(i => normalizarItemConDescuento(i, descuentosGenerales)),
+    });
+  },
 
   // Retomar un borrador guardado: la fila ya existe, así que submit() la
   // actualizará a status='emitido' en vez de crear una compra nueva.
-  loadBorrador: (draft) => set({
-    editingCompraId: null,
-    borradorId:      draft.borradorId,
-    facturaVinculada: draft.facturaVinculada ?? false,
-    proveedorCodigo: draft.proveedorCodigo,
-    proveedorNombre: draft.proveedorNombre,
-    nota:            draft.nota,
-    titulo:          draft.titulo,
-    numeroDocumento: draft.numeroDocumento,
-    items:           draft.items,
-  }),
+  loadBorrador: (draft) => {
+    const descuentosGenerales = normalizarDescuentos(draft.descuentosGenerales);
+    set({
+      editingCompraId:     null,
+      borradorId:          draft.borradorId,
+      facturaVinculada:    draft.facturaVinculada ?? false,
+      proveedorCodigo:     draft.proveedorCodigo,
+      proveedorNombre:     draft.proveedorNombre,
+      nota:                draft.nota,
+      titulo:              draft.titulo,
+      numeroDocumento:     draft.numeroDocumento,
+      descuentosGenerales,
+      items:               draft.items.map(i => normalizarItemConDescuento(i, descuentosGenerales)),
+    });
+  },
 
   // Guarda la lista a medio armar como fila status='borrador'. El backend la
   // ignora (listener_compras filtra status=eq.emitido), así que no se registra
@@ -157,14 +242,14 @@ export const useCompra = create<CompraStore>()((set, get) => ({
       get().clear();
       return { compraId: 888 };
     }
-    const { proveedorCodigo, proveedorNombre, items, nota, numeroDocumento, borradorId } = get();
+    const { proveedorCodigo, proveedorNombre, items, descuentosGenerales, nota, numeroDocumento, borradorId } = get();
 
     if (items.length === 0) throw new Error('Agrega al menos un producto antes de guardar el borrador.');
 
     const nombre = titulo.trim();
     if (!nombre) throw new Error('Ponle un nombre al borrador para reconocerlo después.');
 
-    const cabecera = {
+    const cabeceraBase = {
       proveedor_codigo: proveedorCodigo,
       proveedor_nombre: proveedorNombre,
       nota:             nota || null,
@@ -173,6 +258,10 @@ export const useCompra = create<CompraStore>()((set, get) => ({
       status:           'borrador',
       actualizado_en:   new Date().toISOString(),
     };
+    const cabeceraConDesc = {
+      ...cabeceraBase,
+      descuentos_generales: descuentosGenerales,
+    };
 
     set({ isLoading: true });
 
@@ -180,23 +269,44 @@ export const useCompra = create<CompraStore>()((set, get) => ({
       let compraId: number;
 
       if (borradorId === null) {
-        const { data, error } = await withSupabaseRetry(
+        const { data, error } = await withDiscountColumnFallback(
           () =>
-            supabase
-              .from('compras_app')
-              .insert({ ...cabecera, creado_por: userId })
-              .select('id')
-              .single(),
-          { retries: 1 }
+            withSupabaseRetry(
+              () =>
+                supabase
+                  .from('compras_app')
+                  .insert({ ...cabeceraConDesc, creado_por: userId })
+                  .select('id')
+                  .single(),
+              { retries: 1 }
+            ),
+          () =>
+            withSupabaseRetry(
+              () =>
+                supabase
+                  .from('compras_app')
+                  .insert({ ...cabeceraBase, creado_por: userId })
+                  .select('id')
+                  .single(),
+              { retries: 1 }
+            ),
         );
         if (error || !data) throw error ?? new Error('No compra id');
         compraId = data.id;
       } else {
         compraId = borradorId;
 
-        const { error: updateError } = await withSupabaseRetry(
-          () => supabase.from('compras_app').update(cabecera).eq('id', borradorId),
-          { retries: 1 }
+        const { error: updateError } = await withDiscountColumnFallback(
+          () =>
+            withSupabaseRetry(
+              () => supabase.from('compras_app').update(cabeceraConDesc).eq('id', borradorId),
+              { retries: 1 }
+            ),
+          () =>
+            withSupabaseRetry(
+              () => supabase.from('compras_app').update(cabeceraBase).eq('id', borradorId),
+              { retries: 1 }
+            ),
         );
         if (updateError) throw updateError;
 
@@ -207,9 +317,17 @@ export const useCompra = create<CompraStore>()((set, get) => ({
         if (deleteItemsError) throw deleteItemsError;
       }
 
-      const { error: itemsError } = await withSupabaseRetry(
-        () => supabase.from('compras_app_items').insert(buildItemRows(compraId, items)),
-        { retries: 1 }
+      const { error: itemsError } = await withDiscountColumnFallback(
+        () =>
+          withSupabaseRetry(
+            () => supabase.from('compras_app_items').insert(buildItemRows(compraId, items, descuentosGenerales, true)),
+            { retries: 1 }
+          ),
+        () =>
+          withSupabaseRetry(
+            () => supabase.from('compras_app_items').insert(buildItemRows(compraId, items, descuentosGenerales, false)),
+            { retries: 1 }
+          ),
       );
       if (itemsError) throw itemsError;
 
@@ -224,13 +342,13 @@ export const useCompra = create<CompraStore>()((set, get) => ({
   // Autoguardado continuo en segundo plano: no bloquea UI ni lanza excepciones al usuario.
   autoSaveDraft: async (userId: string) => {
     if (isDemoActive()) return 888;
-    const { proveedorCodigo, proveedorNombre, items, nota, numeroDocumento, borradorId, editingCompraId, titulo } = get();
+    const { proveedorCodigo, proveedorNombre, items, descuentosGenerales, nota, numeroDocumento, borradorId, editingCompraId, titulo } = get();
 
     if (items.length === 0 || editingCompraId !== null) return null;
 
     const nombre = titulo.trim() || (proveedorNombre ? `Compra ${proveedorNombre}` : `Borrador ${new Date().toLocaleDateString('es-VE')}`);
 
-    const cabecera = {
+    const cabeceraBase = {
       proveedor_codigo: proveedorCodigo,
       proveedor_nombre: proveedorNombre,
       nota:             nota || null,
@@ -239,6 +357,10 @@ export const useCompra = create<CompraStore>()((set, get) => ({
       status:           'borrador',
       actualizado_en:   new Date().toISOString(),
     };
+    const cabeceraConDesc = {
+      ...cabeceraBase,
+      descuentos_generales: descuentosGenerales,
+    };
 
     set({ isAutoSaving: true, autoSaveError: null });
 
@@ -246,20 +368,29 @@ export const useCompra = create<CompraStore>()((set, get) => ({
       let compraId: number;
 
       if (borradorId === null) {
-        const { data, error } = await supabase
-          .from('compras_app')
-          .insert({ ...cabecera, creado_por: userId })
-          .select('id')
-          .single();
+        const { data, error } = await withDiscountColumnFallback(
+          async () =>
+            supabase
+              .from('compras_app')
+              .insert({ ...cabeceraConDesc, creado_por: userId })
+              .select('id')
+              .single(),
+          async () =>
+            supabase
+              .from('compras_app')
+              .insert({ ...cabeceraBase, creado_por: userId })
+              .select('id')
+              .single(),
+        );
         if (error || !data) throw error ?? new Error('No compra id');
         compraId = data.id;
       } else {
         compraId = borradorId;
 
-        const { error: updateError } = await supabase
-          .from('compras_app')
-          .update(cabecera)
-          .eq('id', borradorId);
+        const { error: updateError } = await withDiscountColumnFallback(
+          async () => supabase.from('compras_app').update(cabeceraConDesc).eq('id', borradorId),
+          async () => supabase.from('compras_app').update(cabeceraBase).eq('id', borradorId),
+        );
         if (updateError) throw updateError;
 
         const { error: deleteItemsError } = await supabase
@@ -269,9 +400,10 @@ export const useCompra = create<CompraStore>()((set, get) => ({
         if (deleteItemsError) throw deleteItemsError;
       }
 
-      const { error: itemsError } = await supabase
-        .from('compras_app_items')
-        .insert(buildItemRows(compraId, items));
+      const { error: itemsError } = await withDiscountColumnFallback(
+        async () => supabase.from('compras_app_items').insert(buildItemRows(compraId, items, descuentosGenerales, true)),
+        async () => supabase.from('compras_app_items').insert(buildItemRows(compraId, items, descuentosGenerales, false)),
+      );
       if (itemsError) throw itemsError;
 
       set({
@@ -314,7 +446,7 @@ export const useCompra = create<CompraStore>()((set, get) => ({
       get().clear();
       return { compraId: 888 };
     }
-    const { proveedorCodigo, proveedorNombre, items, nota, numeroDocumento, editingCompraId, borradorId } = get();
+    const { proveedorCodigo, proveedorNombre, items, descuentosGenerales, nota, numeroDocumento, editingCompraId, borradorId } = get();
 
     if (!proveedorCodigo) throw new Error('Selecciona un proveedor antes de emitir la compra.');
     if (items.length === 0) throw new Error('Agrega al menos un producto antes de emitir la compra.');
@@ -355,6 +487,10 @@ export const useCompra = create<CompraStore>()((set, get) => ({
       throw new Error('No se pudo leer la existencia actual de los productos. Revisa la conexión e intenta de nuevo.');
     }
 
+    const itemsConDescuento = items.filter(it =>
+      resolverDescuentosEfectivos(it.descuentos, descuentosGenerales, it.excluir_descuento_general).length > 0,
+    ).length;
+
     // Dos casos usan la MISMA fila en vez de insertar una nueva: reintentar una
     // compra que falló (editingCompraId) y emitir un borrador guardado
     // (borradorId). En ambos se reemplazan los items y se reencola con
@@ -376,30 +512,47 @@ export const useCompra = create<CompraStore>()((set, get) => ({
         );
         if (deleteItemsError) throw deleteItemsError;
 
-        const { error: itemsError } = await withSupabaseRetry(
-          () => supabase.from('compras_app_items').insert(buildItemRows(existingId, itemsAEnviar)),
-          { retries: 1 }
+        const { error: itemsError } = await withDiscountColumnFallback(
+          () =>
+            withSupabaseRetry(
+              () => supabase.from('compras_app_items').insert(buildItemRows(existingId, itemsAEnviar, descuentosGenerales, true)),
+              { retries: 1 }
+            ),
+          () =>
+            withSupabaseRetry(
+              () => supabase.from('compras_app_items').insert(buildItemRows(existingId, itemsAEnviar, descuentosGenerales, false)),
+              { retries: 1 }
+            ),
         );
         if (itemsError) throw itemsError;
 
         // 2. Solo tras garantizar los items, activamos status='emitido'
-        const { error: updateError } = await withSupabaseRetry(
+        const updateBase = {
+          proveedor_codigo:    proveedorCodigo,
+          proveedor_nombre:    proveedorNombre,
+          nota:                nota || null,
+          numero_documento:    numeroDocumento.trim() || null,
+          status:              'emitido',
+          backend_status:      'pendiente',
+          backend_resultado:   null,
+          backend_intentos:    0,
+          backend_aplicado_en: null,
+        };
+        const { error: updateError } = await withDiscountColumnFallback(
           () =>
-            supabase
-              .from('compras_app')
-              .update({
-                proveedor_codigo:    proveedorCodigo,
-                proveedor_nombre:    proveedorNombre,
-                nota:                nota || null,
-                numero_documento:    numeroDocumento.trim() || null,
-                status:              'emitido',
-                backend_status:      'pendiente',
-                backend_resultado:   null,
-                backend_intentos:    0,
-                backend_aplicado_en: null,
-              })
-              .eq('id', existingId),
-          { retries: 1 }
+            withSupabaseRetry(
+              () =>
+                supabase
+                  .from('compras_app')
+                  .update({ ...updateBase, descuentos_generales: descuentosGenerales })
+                  .eq('id', existingId),
+              { retries: 1 }
+            ),
+          () =>
+            withSupabaseRetry(
+              () => supabase.from('compras_app').update(updateBase).eq('id', existingId),
+              { retries: 1 }
+            ),
         );
         if (updateError) throw updateError;
 
@@ -414,6 +567,8 @@ export const useCompra = create<CompraStore>()((set, get) => ({
             proveedor_nombre: proveedorNombre ?? null,
             numero_documento: numeroDocumento.trim() || null,
             desde_borrador: true,
+            ...(descuentosGenerales.length > 0 ? { descuentos_generales: descuentosGenerales } : {}),
+            ...(itemsConDescuento > 0 ? { items_con_descuento: itemsConDescuento } : {}),
           },
         });
 
@@ -430,30 +585,47 @@ export const useCompra = create<CompraStore>()((set, get) => ({
     try {
       // 1. Crear cabecera en status='borrador' para que el listener NO la procese
       // hasta que todos los items hayan sido confirmados en Supabase.
-      const { data: compra, error: compraError } = await withSupabaseRetry(
+      const insertBase = {
+        creado_por:       userId,
+        proveedor_codigo: proveedorCodigo,
+        proveedor_nombre: proveedorNombre,
+        nota:              nota || null,
+        numero_documento:  numeroDocumento.trim() || null,   // vacío -> el backend usa el id de la compra
+        status:            'borrador',
+      };
+      const { data: compra, error: compraError } = await withDiscountColumnFallback(
         () =>
-          supabase
-            .from('compras_app')
-            .insert({
-              creado_por:       userId,
-              proveedor_codigo: proveedorCodigo,
-              proveedor_nombre: proveedorNombre,
-              nota:              nota || null,
-              numero_documento:  numeroDocumento.trim() || null,   // vacío -> el backend usa el id de la compra
-              status:            'borrador',
-            })
-            .select('id')
-            .single(),
-        { retries: 1 }
+          withSupabaseRetry(
+            () =>
+              supabase
+                .from('compras_app')
+                .insert({ ...insertBase, descuentos_generales: descuentosGenerales })
+                .select('id')
+                .single(),
+            { retries: 1 }
+          ),
+        () =>
+          withSupabaseRetry(
+            () => supabase.from('compras_app').insert(insertBase).select('id').single(),
+            { retries: 1 }
+          ),
       );
 
       if (compraError || !compra) throw compraError ?? new Error('No compra id');
       createdCompraId = compra.id;
 
       // 2. Insertar todos los items
-      const { error: itemsError } = await withSupabaseRetry(
-        () => supabase.from('compras_app_items').insert(buildItemRows(compra.id, itemsAEnviar)),
-        { retries: 1 }
+      const { error: itemsError } = await withDiscountColumnFallback(
+        () =>
+          withSupabaseRetry(
+            () => supabase.from('compras_app_items').insert(buildItemRows(compra.id, itemsAEnviar, descuentosGenerales, true)),
+            { retries: 1 }
+          ),
+        () =>
+          withSupabaseRetry(
+            () => supabase.from('compras_app_items').insert(buildItemRows(compra.id, itemsAEnviar, descuentosGenerales, false)),
+            { retries: 1 }
+          ),
       );
 
       if (itemsError) throw itemsError;
@@ -483,6 +655,8 @@ export const useCompra = create<CompraStore>()((set, get) => ({
           proveedor_codigo: proveedorCodigo,
           proveedor_nombre: proveedorNombre ?? null,
           numero_documento: numeroDocumento || null,
+          ...(descuentosGenerales.length > 0 ? { descuentos_generales: descuentosGenerales } : {}),
+          ...(itemsConDescuento > 0 ? { items_con_descuento: itemsConDescuento } : {}),
         },
       });
 
@@ -513,13 +687,13 @@ export const useCompra = create<CompraStore>()((set, get) => ({
  * existen en Hybrid, arrancan en cero).
  */
 async function compensarExistenciasNegativas(items: CompraDraftItem[]): Promise<CompraDraftItem[]> {
-  const codigos = items.filter(item => !item.es_nuevo).map(item => item.codigo_producto);
+  const codigos = items.filter(item => !item.es_nuevo && !item.es_ajuste).map(item => item.codigo_producto);
   if (codigos.length === 0) return items;
 
   const existencias = await fetchExistencias(codigos);
 
   return items.map(item => {
-    if (item.es_nuevo) return item;
+    if (item.es_nuevo || item.es_ajuste) return item;
     const faltante = faltantePorNegativo(existencias[item.codigo_producto]);
     if (faltante === 0) return item;
     const cantidades = calcularCantidadesCompra(item.cantidad, existencias[item.codigo_producto]);
@@ -527,15 +701,30 @@ async function compensarExistenciasNegativas(items: CompraDraftItem[]): Promise<
   });
 }
 
-function buildItemRows(compraId: number, items: CompraDraftItem[]): Record<string, unknown>[] {
-  return items.map(item => ({
-    compra_id:       compraId,
-    codigo_producto: item.codigo_producto,
-    descripcion:     item.es_nuevo ? item.descripcion.toUpperCase() : item.descripcion,
-    cantidad:        item.cantidad,
-    costo:           item.costo,
-    precio:          item.precio,
-    referencia:      item.referencia,
-    es_nuevo:        item.es_nuevo,
-  }));
+function buildItemRows(
+  compraId: number,
+  items: CompraDraftItem[],
+  descuentosGenerales: readonly number[],
+  includeDiscountMetadata: boolean,
+): Record<string, unknown>[] {
+  return items.map(raw => {
+    const item = normalizarItemConDescuento(raw, descuentosGenerales);
+    const base: Record<string, unknown> = {
+      compra_id:       compraId,
+      codigo_producto: item.codigo_producto,
+      descripcion:     item.es_nuevo ? item.descripcion.toUpperCase() : item.descripcion,
+      cantidad:        item.cantidad,
+      costo:           item.costo,
+      precio:          item.precio,
+      referencia:      item.referencia,
+      es_nuevo:        item.es_nuevo,
+      es_ajuste:       Boolean(item.es_ajuste),
+    };
+    if (includeDiscountMetadata) {
+      base.costo_lista = item.costo_lista ?? item.costo;
+      base.descuentos = item.descuentos ?? [];
+      base.excluir_descuento_general = Boolean(item.excluir_descuento_general);
+    }
+    return base;
+  });
 }

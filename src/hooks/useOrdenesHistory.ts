@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase, OrdenCambio } from '../lib/supabase';
 import { isDemoActive } from '../demo/useDemoStore';
 import { demoOrdenes } from '../demo/demoData';
+import { filtrarEspejosDuplicados, ItemParaDedupe, resolverOrigenLocal } from '../utils/ordenOrigen';
 
 export interface BackendResumen {
   pendientes:         number;
@@ -39,7 +40,7 @@ async function fetchOrdenes(): Promise<OrdenConItems[]> {
       item_count
     `)
     .order('creado_en', { ascending: false })
-    .limit(50);
+    .limit(80);
 
   if (error) throw error;
 
@@ -62,14 +63,15 @@ async function fetchOrdenes(): Promise<OrdenConItems[]> {
     }
   }
 
-  // Batch-fetch backend status resumen (todos los items para resumir el total)
+  // Batch-fetch backend status resumen (todos los items para resumir el total y dedupe de espejos)
   const ids = rows.map((o: any) => o.id);
   let resumenMap: Record<number, BackendResumen> = {};
+  const itemsPorOrden: Record<number, ItemParaDedupe[]> = {};
 
   if (ids.length > 0) {
     const { data: backendItems, error: backendError } = await supabase
       .from('ordenes_cambio_items')
-      .select('orden_id, backend_status')
+      .select('orden_id, codigo_producto, delta, backend_status, backend_aplicado_en')
       .in('orden_id', ids);
 
     if (backendError) {
@@ -90,13 +92,22 @@ async function fetchOrdenes(): Promise<OrdenConItems[]> {
         else if (item.backend_status === 'espera_aprobacion') resumen.espera_aprobacion += 1;
         else if (item.backend_status === 'rechazado') resumen.rechazados += 1;
 
+        if (!itemsPorOrden[ordenId]) itemsPorOrden[ordenId] = [];
+        itemsPorOrden[ordenId].push({
+          codigo_producto: item.codigo_producto,
+          delta: item.delta,
+          backend_aplicado_en: item.backend_aplicado_en,
+        });
+
         acc[ordenId] = resumen;
         return acc;
       }, {});
     }
   }
 
-  return rows.map((o: any) => ({
+  const visibleRows = filtrarEspejosDuplicados(rows, itemsPorOrden).slice(0, 50);
+
+  return visibleRows.map((o: any) => ({
     id:         o.id,
     creado_por: o.creado_por,
     nota:       o.nota,
@@ -108,7 +119,7 @@ async function fetchOrdenes(): Promise<OrdenConItems[]> {
     aprobado_en:       o.aprobado_en ?? null,
     rechazo_motivo:    o.rechazo_motivo ?? null,
     item_count: o.item_count || 0,
-    creado_por_nombre: profileMap[o.creado_por] ?? undefined,
+    creado_por_nombre: profileMap[o.creado_por] ?? (!o.creado_por ? resolverOrigenLocal(o.nota) : undefined),
     backend_resumen: resumenMap[Number(o.id)],
   }));
 }

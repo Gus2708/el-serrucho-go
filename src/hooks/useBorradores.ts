@@ -4,6 +4,7 @@ import { usePedido } from './usePedido';
 import { useCompra } from './useCompra';
 import { fetchPedidoItemsForEdit } from './usePedidosHistory';
 import { fetchCompraItemsForEdit } from './useComprasHistory';
+import { isMissingDiscountColumnError, normalizarDescuentos } from '../lib/compraDescuentos';
 
 /**
  * Borradores = "listas sin terminar". Son filas normales de pedidos_app /
@@ -120,13 +121,35 @@ export async function reanudarBorradorPedido(id: number): Promise<void> {
 
 /** Carga el borrador en el armador de compras y lo deja listo para continuar. */
 export async function reanudarBorradorCompra(id: number): Promise<void> {
-  const { data, error } = await supabase
+  const baseCols = 'id, titulo, proveedor_codigo, proveedor_nombre, nota, numero_documento';
+  const primary = await supabase
     .from('compras_app')
-    .select('id, titulo, proveedor_codigo, proveedor_nombre, nota, numero_documento')
+    .select(`${baseCols}, descuentos_generales`)
     .eq('id', id)
     .single();
 
-  if (error) throw error;
+  let data: {
+    id: number;
+    titulo: string | null;
+    proveedor_codigo: string | null;
+    proveedor_nombre: string | null;
+    nota: string | null;
+    numero_documento: string | null;
+    descuentos_generales?: unknown;
+  } | null = primary.data;
+  let error = primary.error;
+
+  if (error && isMissingDiscountColumnError(error)) {
+    const fallback = await supabase
+      .from('compras_app')
+      .select(baseCols)
+      .eq('id', id)
+      .single();
+    data = fallback.data;
+    error = fallback.error;
+  }
+
+  if (error || !data) throw error ?? new Error('Borrador no encontrado.');
 
   const items = await fetchCompraItemsForEdit(id);
   const { data: binding, error: bindingError } = await supabase
@@ -138,14 +161,15 @@ export async function reanudarBorradorCompra(id: number): Promise<void> {
   if (bindingError) throw bindingError;
 
   useCompra.getState().loadBorrador({
-    borradorId:      data.id,
-    titulo:          data.titulo ?? '',
-    proveedorCodigo: data.proveedor_codigo,
-    proveedorNombre: data.proveedor_nombre,
-    nota:            data.nota ?? '',
-    numeroDocumento: data.numero_documento ?? '',
+    borradorId:          data.id,
+    titulo:              data.titulo ?? '',
+    proveedorCodigo:     data.proveedor_codigo,
+    proveedorNombre:     data.proveedor_nombre,
+    nota:                data.nota ?? '',
+    numeroDocumento:     data.numero_documento ?? '',
+    descuentosGenerales: normalizarDescuentos(data.descuentos_generales),
     items,
-    facturaVinculada: binding !== null,
+    facturaVinculada:    binding !== null,
   });
 }
 
