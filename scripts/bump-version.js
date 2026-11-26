@@ -3,6 +3,7 @@ const path = require('path');
 
 const rootDir = path.resolve(__dirname, '..');
 const pkgPath = path.join(rootDir, 'package.json');
+const lockPath = path.join(rootDir, 'package-lock.json');
 const appJsonPath = path.join(rootDir, 'app.json');
 const layoutPath = path.join(rootDir, 'app', '_layout.tsx');
 const appUpdaterPath = path.join(rootDir, 'src', 'lib', 'appUpdater.ts');
@@ -43,5 +44,13 @@ updaterContent = updaterContent.replace(
   `Constants.expoConfig?.version ?? '${nextVersion}'`
 );
 fs.writeFileSync(appUpdaterPath, updaterContent);
+
+// Keep root metadata aligned without changing any resolved dependency entry.
+if (fs.existsSync(lockPath)) {
+  const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+  lock.version = nextVersion;
+  if (lock.packages?.['']) lock.packages[''].version = nextVersion;
+  fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
+}
 
 console.log(`[Version Sync] Updated app version: ${currentVersion} -> ${nextVersion}`);
