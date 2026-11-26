@@ -306,7 +306,7 @@ async function readCatalog(read: Read, cap: number): Promise<{ rows: ProductRow[
   try {
     const { data, error } = await read;
     const rows = Array.isArray(data) ? (data as ProductRow[]) : [];
-    return { rows, ok: !error && rows.length < cap };
+    return { rows, ok: Array.isArray(data) && !error && rows.length < cap };
   } catch {
     return { rows: [], ok: false };
   }

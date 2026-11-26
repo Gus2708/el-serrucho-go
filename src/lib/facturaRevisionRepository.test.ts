@@ -243,6 +243,25 @@ describe('bounded catalog reads', () => {
     return { data: rows };
   };
 
+  describe('catalog payload shape', () => {
+    it.each([null, undefined, { not: 'catalog' }, 'unexpected'])('marks missing or malformed successful data incomplete: %p', async data => {
+      const { client } = fakeClient({ tables: { productos_view: { data, error: null } } });
+      const repository = createFacturaRevisionRepository(client);
+      const input = [linea(1, { codigoProveedor: 'ABC', descripcion: null })];
+      const before = JSON.stringify(input);
+      expect(await repository.buscarCandidatos(input)).toEqual({ productos: [], parcial: true });
+      expect(await repository.leerColisionesBarras(['ABC'])).toEqual({ ABC: { productos: [], completo: false } });
+      expect(JSON.stringify(input)).toBe(before);
+    });
+
+    it('retains complete empty-array results for both existing catalog consumers', async () => {
+      const { client } = fakeClient({ tables: { productos_view: { data: [], error: null } } });
+      const repository = createFacturaRevisionRepository(client);
+      expect(await repository.buscarCandidatos([linea(1, { codigoProveedor: 'ABC', descripcion: null })])).toEqual({ productos: [], parcial: false });
+      expect(await repository.leerColisionesBarras(['ABC'])).toEqual({ ABC: { productos: [], completo: true } });
+    });
+  });
+
   it('never downloads the whole catalog: every read is filtered and capped', async () => {
     const { client, calls } = fakeClient({ tables: { productos_view: { data: [producto('A')] } } });
     const result = await createFacturaRevisionRepository(client).buscarCandidatos([linea(1), linea(2)]);
