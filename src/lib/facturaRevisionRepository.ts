@@ -246,9 +246,30 @@ function escapeIlikeLiteral(value: string): string {
   return value.replace(/[\\%_*]/g, '\\$&');
 }
 
+/** Connectors and a generic word that never discriminate between products. */
+const DESCRIPTION_STOPWORDS = new Set(['para', 'con', 'sin', 'por', 'del', 'los', 'las', 'una', 'uno', 'unos', 'unas', 'tipo']);
+
+/** Drops one plural "s" so the substring read also reaches the singular spelling. */
+function singular(word: string): string {
+  return word.length >= 5 && /[^sS]s$/i.test(word) ? word.slice(0, -1) : word;
+}
+
+/**
+ * Search words for the bounded description read. They only choose which catalog rows to load: the printed
+ * text, identifiers and identity comparison are untouched. Bracketed codes and digit-bearing tokens (measurement
+ * and model spellings that differ between supplier and catalog) never narrow the read. With fewer than two
+ * useful words the earlier, narrower raw tokens are kept instead of scanning one common word.
+ */
 function descriptionTerms(text: string | null): string[] | null {
-  const words = (text ?? '').match(/[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ]{3,}/g);
-  return words && words.length > 0 ? words.slice(0, 3) : null;
+  const tokens = (text ?? '').replace(/\[[^\]]*\]/g, ' ').match(/[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ]{3,}/g);
+  if (!tokens) return null;
+  const words: string[] = [];
+  for (const token of tokens) {
+    if (/\d/.test(token) || DESCRIPTION_STOPWORDS.has(token.toLowerCase())) continue;
+    const word = singular(token);
+    if (!words.some(known => known.toLowerCase() === word.toLowerCase())) words.push(word);
+  }
+  return words.length >= 2 ? words.slice(0, 2) : tokens.slice(0, 3);
 }
 
 function chunk<T>(items: readonly T[], size: number): T[][] {

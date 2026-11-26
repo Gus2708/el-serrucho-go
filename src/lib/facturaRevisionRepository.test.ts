@@ -264,6 +264,130 @@ describe('bounded catalog reads', () => {
     expect(result.parcial).toBe(false);
   });
 
+  describe('description search terms', () => {
+    const descriptionReads = (calls: Call[]) =>
+      calls
+        .map(call => stepsOf(call, 'ilike').filter(([, column]) => column === 'descripcion').map(([, , pattern]) => pattern))
+        .filter(patterns => patterns.length > 0);
+
+    it('ignores a bracketed supplier code, stopwords and unit-bearing tokens in the search words only', async () => {
+      const retenes = { ...producto('CAT-1'), descripcion: 'ALICATE PARA RETENES 6 4PZAS BRUFER' };
+      const electricista = { ...producto('CAT-2'), descripcion: 'ALICATE ELECTRICISTA 8 BRUFER' };
+      const input = [linea(1, { codigoProveedor: null, descripcion: '[UID7118] ALICATE PARA RETENES DE 6" 4 PZAS' })];
+      const snapshot = JSON.stringify(input);
+      const { client, calls, invoke } = fakeClient({ tables: { productos_view: responderCatalogo([retenes, electricista]) } });
+
+      const result = await createFacturaRevisionRepository(client).buscarCandidatos(input);
+
+      expect(descriptionReads(calls)).toEqual([['%ALICATE%', '%RETENE%']]);
+      expect(result.productos).toEqual([retenes]);
+      expect(result.parcial).toBe(false);
+      expect(JSON.stringify(input)).toBe(snapshot);
+      expect(invoke).not.toHaveBeenCalled();
+    });
+
+    it('finds a catalog row that spells a measurement differently from the printed token', async () => {
+      const plug = { ...producto('CAT-1'), descripcion: 'ENCHUFE 30A 4 POLO GENERADOR L14-30P CLASSIC LUX' };
+      const socket = { ...producto('CAT-2'), descripcion: 'TOMA 30AMP 4 POLOS P/GENERADOR L14-30R CLASSIC LUX' };
+      const { client, calls } = fakeClient({ tables: { productos_view: responderCatalogo([plug, socket]) } });
+
+      const result = await createFacturaRevisionRepository(client).buscarCandidatos([
+        linea(1, { codigoProveedor: null, descripcion: 'ENCHUFE 30amp 4 POLO GENERADOR L14-30P CLASSIC LUX' }),
+      ]);
+
+      expect(descriptionReads(calls)).toEqual([['%ENCHUFE%', '%POLO%']]);
+      expect(result.productos).toEqual([plug]);
+    });
+
+    it('matches a plural printed word against its singular catalog spelling', async () => {
+      const grapa = { ...producto('CAT-1'), descripcion: 'GRAPA REDONDA 1/2 CAJA' };
+      const { client, calls } = fakeClient({ tables: { productos_view: responderCatalogo([grapa]) } });
+
+      const result = await createFacturaRevisionRepository(client).buscarCandidatos([
+        linea(1, { codigoProveedor: null, descripcion: 'Grapas Redondas 1/2' }),
+      ]);
+
+      expect(descriptionReads(calls)).toEqual([['%Grapa%', '%Redonda%']]);
+      expect(result.productos).toEqual([grapa]);
+    });
+
+    it('keeps the narrower raw terms when fewer than two search words remain, instead of scanning one common word', async () => {
+      const wanted = { ...producto('CAT-1'), descripcion: 'Cemento 30x50 blanco' };
+      const sibling = { ...producto('CAT-2'), descripcion: 'Cemento gris 25x50' };
+      const { client, calls } = fakeClient({ tables: { productos_view: responderCatalogo([wanted, sibling]) } });
+
+      const result = await createFacturaRevisionRepository(client).buscarCandidatos([
+        linea(1, { codigoProveedor: null, descripcion: 'Cemento 30x50' }),
+      ]);
+
+      expect(descriptionReads(calls)).toEqual([['%Cemento%', '%30x50%']]);
+      expect(result.productos).toEqual([wanted]);
+    });
+
+    it('reuses one read for lines that reduce to the same words and keeps the 40-read cap as partial', async () => {
+      const same = fakeClient({ tables: { productos_view: responderCatalogo([]) } });
+      const sameResult = await createFacturaRevisionRepository(same.client).buscarCandidatos([
+        linea(1, { codigoProveedor: null, descripcion: 'Tornillo hexagonal 1/4' }),
+        linea(2, { codigoProveedor: null, descripcion: 'Tornillos hexagonal 3/8' }),
+      ]);
+      expect(descriptionReads(same.calls)).toEqual([['%Tornillo%', '%hexagonal%']]);
+      expect(sameResult.parcial).toBe(false);
+
+      const distinct = Array.from({ length: 45 }, (_x, i) =>
+        linea(i + 1, { codigoProveedor: null, descripcion: `Articulo${String.fromCharCode(97 + (i % 26))}${String.fromCharCode(97 + Math.floor(i / 26))} comun` })
+      );
+      const many = fakeClient({ tables: { productos_view: responderCatalogo([]) } });
+      const manyResult = await createFacturaRevisionRepository(many.client).buscarCandidatos(distinct);
+      expect(descriptionReads(many.calls)).toHaveLength(40);
+      expect(manyResult.parcial).toBe(true);
+    });
+
+    it('marks the result partial when a description read reaches the cap or fails, keeping exact-code products', async () => {
+      const exact = producto('00123');
+      const capped = fakeClient({
+        tables: { productos_view: (call: Call) => ({ data: Array.from({ length: stepsOf(call, 'ilike').length > 0 ? 200 : 0 }, (_x, i) => producto(`CAP${i}`)) }) },
+      });
+      const cappedResult = await createFacturaRevisionRepository(capped.client).buscarCandidatos([
+        linea(1, { codigoProveedor: null, descripcion: 'Tornillo hexagonal' }),
+      ]);
+      expect(cappedResult.parcial).toBe(true);
+      expect(cappedResult.productos).toHaveLength(200);
+
+      const failing = fakeClient({
+        tables: {
+          productos_view: (call: Call) => (stepsOf(call, 'ilike').length > 0 ? { error: { code: 'XX000' } } : responderCatalogo([exact])(call)),
+        },
+      });
+      const failResult = await createFacturaRevisionRepository(failing.client).buscarCandidatos([
+        linea(1, { codigoProveedor: '00123', descripcion: 'Tornillo hexagonal' }),
+      ]);
+      expect(failResult.productos).toEqual([exact]);
+      expect(failResult.parcial).toBe(true);
+      expect(failing.calls.flatMap(call => stepsOf(call, 'in'))).toContainEqual(['in', 'codigo_interno', ['00123']]);
+    });
+
+    it('returns description-found candidates next to the session-bound hybrid evidence', async () => {
+      const retenes = { ...producto('CAT-1'), descripcion: 'ALICATE PARA RETENES 6 4PZAS BRUFER' };
+      const other = { ...producto('CAT-2'), descripcion: 'PINZA SACA RETEN 3PCS' };
+      const context = { facturaId: FACTURA, extraccionId: EXTRACCION, versionEsperada: 3 };
+      const { client, invoke } = fakeClient({
+        tables: { productos_view: responderCatalogo([retenes, other]) },
+        invoke: async () => ({ data: { hybridRanks: [{ lineIndex: 0, lexical: [{ codigoInterno: 'CAT-2', rank: 1 }] }], parcial: false }, error: null }),
+        rpc: { data: { decisiones: [] } },
+      });
+
+      const result = await createFacturaRevisionRepository(client).buscarCandidatos(
+        [linea(1, { codigoProveedor: null, descripcion: '[UID7118] ALICATE PARA RETENES DE 6" 4 PZAS' })],
+        context,
+      );
+
+      expect(result.productos.map(p => p.codigo_interno).sort()).toEqual(['CAT-1', 'CAT-2']);
+      expect(result.parcial).toBe(false);
+      expect(result.hybridRanks).toEqual([{ lineIndex: 0, lexical: [{ codigoInterno: 'CAT-2', rank: 1 }] }]);
+      expect(invoke).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('keeps exact internal-code and barcode reads when descriptions are empty', async () => {
     const internal = producto('SKU-A');
     const barcode = producto('SKU-B', '00123A');
