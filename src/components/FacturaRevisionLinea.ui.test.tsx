@@ -255,3 +255,24 @@ describe('quantity and cost in the detail', () => {
     expect(screen.getByTestId(`${ID}-precioUnitario-valor`)).toBeTruthy();
   });
 });
+
+
+describe('honest candidate support', () => {
+  it('shows description/search leads and unknown comparisons without claiming identity', () => {
+    const match = emparejar(lineaExtraida(), CATALOGO_BATERIA, { hybridRanks: rangos() });
+    draw(props(match));
+    expect(textos(tarjeta('7453118025275'))).toContain('Pista por descripción');
+    expect(textos(tarjeta('CV-BAT-4AH'))).toContain('Pista de búsqueda');
+    expect(screen.getAllByText(/^No comparado: /).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Recomendado')).toBeNull();
+    expect(screen.queryByText('Identidad respaldada')).toBeNull();
+  });
+
+  it('shows a candidate conflict and never recommends it even if status says suggested', () => {
+    const match = emparejar(lineaExtraida({ codigoProveedor: 'A1', descripcion: 'Adhesivo blanco', unidad: 'UND' }), [producto('A1', 'Adhesivo blanco')]);
+    draw(props({ ...match, status: 'suggested', conflicts: [{ code: 'alias_vs_code', codigosInternos: ['A1'] }] }));
+    expect(textos(tarjeta('A1'))).toContain('Datos en conflicto');
+    expect(screen.queryByText('Recomendado')).toBeNull();
+    fireEvent.press(screen.getByTestId(`${ID}-candidato-A1`));
+  });
+});

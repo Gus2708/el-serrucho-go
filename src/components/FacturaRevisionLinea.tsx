@@ -5,7 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { scaleFont } from '../theme/responsive';
 import { useTheme } from '../theme/ThemeContext';
 import type { ExtraidoDescuento } from '../lib/facturaExtractionContract';
-import type { EvidenceSource, LineMatch, MatchCandidate } from '../lib/facturaMatching';
+import { describeCandidateSupport, isAbsentIdentifier, type CandidateSupport, type EvidenceSource, type LineMatch, type MatchCandidate } from '../lib/facturaMatching';
 import { precioVentaValido, resolverPrecioVenta } from '../lib/facturaRevision';
 import type { CalculoLinea, Edicion, EstadoCodigoBarras, LineaCampoEscalar, LineaEfectiva, TipoDocumento } from '../lib/facturaRevision';
 import { ETIQUETA_ESTADO_LINEA, type EstadoLinea } from '../lib/facturaRevisionPasos';
@@ -117,13 +117,31 @@ function etiquetasEvidencia(candidato: MatchCandidate): string[] {
 
 const tieneEvidenciaDeCodigo = (candidato: MatchCandidate): boolean => candidato.evidence.some(e => e.source !== 'descripcion');
 
-function TarjetaCandidato(props: { id: string; candidato: MatchCandidate; recomendado: boolean; elegido: boolean; onElegir: () => void }): React.JSX.Element {
+const SUPPORT_LABELS: Record<CandidateSupport['support'], string> = {
+  codigo_coincidente: 'Código coincidente',
+  en_conflicto: 'Datos en conflicto',
+  pista_descripcion: 'Pista por descripción',
+  pista_busqueda: 'Pista de búsqueda',
+};
+
+const ATTRIBUTE_LABELS: Readonly<Record<string, string>> = {
+  size: 'tamaño', voltage: 'voltaje', power: 'potencia', gauge: 'calibre',
+  material: 'material', presentation: 'presentación', model: 'modelo',
+  weight: 'peso', torque: 'torque', amperage: 'amperaje',
+  amperage_configuration: 'configuración de amperaje', unit: 'unidad',
+};
+
+function TarjetaCandidato(props: { id: string; candidato: MatchCandidate; support: CandidateSupport; recomendado: boolean; elegido: boolean; onElegir: () => void }): React.JSX.Element {
   const { colors } = useTheme();
-  const { id, candidato, recomendado, elegido, onElegir } = props;
+  const { id, candidato, support, recomendado, elegido, onElegir } = props;
   return (
     <View testID={`${id}-tarjeta-${candidato.codigoInterno}`} style={[styles.candidato, { borderColor: elegido ? colors.primary : colors.border, backgroundColor: colors.surfaceAlt }]}>
       <Texto>{candidato.descripcion}</Texto>
       <Texto small tone="muted">{`Código ${candidato.codigoInterno}`}</Texto>
+      <Texto small tone={support.support === 'en_conflicto' ? 'danger' : 'muted'}>{SUPPORT_LABELS[support.support]}</Texto>
+      {support.unknowns.length > 0 ? (
+        <Texto small tone="muted">{`No comparado: ${support.unknowns.map(kind => ATTRIBUTE_LABELS[kind] ?? kind).join(', ')}`}</Texto>
+      ) : null}
       <View style={styles.fila}>
         {recomendado ? <Texto small tone="primary">Recomendado</Texto> : null}
         {etiquetasEvidencia(candidato).map(etiqueta => (
@@ -236,17 +254,21 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
         ) : null}
         {match && match.candidates.length > 0 ? (
           <>
-            {match.candidates.map((candidato, i) => (
-              <TarjetaCandidato
-                key={candidato.codigoInterno}
-                id={id}
-                candidato={candidato}
-                recomendado={i === 0 && match.status === 'suggested'}
-                elegido={efectiva.asociacion.codigoInterno === candidato.codigoInterno}
-                onElegir={() => onElegirCandidato(candidato.codigoInterno)}
-              />
-            ))}
-            {codigoImpreso !== '' && !match.candidates.some(tieneEvidenciaDeCodigo) ? (
+            {match.candidates.map((candidato, i) => {
+              const support = describeCandidateSupport(candidato, match);
+              return (
+                <TarjetaCandidato
+                  key={candidato.codigoInterno}
+                  id={id}
+                  candidato={candidato}
+                  support={support}
+                  recomendado={i === 0 && match.status === 'suggested' && support.identifiers.length > 0 && support.support !== 'en_conflicto' && support.unknowns.length === 0}
+                  elegido={efectiva.asociacion.codigoInterno === candidato.codigoInterno}
+                  onElegir={() => onElegirCandidato(candidato.codigoInterno)}
+                />
+              );
+            })}
+            {!isAbsentIdentifier(codigoImpreso) && !match.candidates.some(tieneEvidenciaDeCodigo) ? (
               <Texto testID={`${id}-codigo-sin-coincidencia`} small tone="muted">{`Entre estos candidatos, ninguno tiene el código impreso ${codigoImpreso}.`}</Texto>
             ) : null}
           </>
