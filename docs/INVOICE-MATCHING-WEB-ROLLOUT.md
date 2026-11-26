@@ -4,6 +4,23 @@ Version **1.2.9** is locally verified for web publication with the integrated
 purchase updates from master. This is a readiness record, not a claim that
 production deployment or product identification is perfect.
 
+## Observed publication (2026-11-26)
+
+The integrated source was pushed to master at
+`aad332add7c2f9cccce2a1e0a06e54204150435d` without force.
+[CI run 45845185326](https://github.com/Gus2708/el-serrucho-go/actions/runs/45845185326)
+passed typecheck, unit, UI and SQL checks for that exact SHA. Vercel's commit
+status and GitHub deployment `8088910659` also succeeded for the same SHA.
+
+Deployment metadata labels its environment Production but sets
+`production_environment=false`; this is not proof of canonical production routing.
+The returned deployment URL redirects unauthenticated requests to Vercel
+Authentication. No protected page was opened and no login or order request was
+made after that wall. Authenticated runtime remains unverified.
+
+This section records the delivered source snapshot. Any later documentation-only
+closeout does not change the source verification boundary above.
+
 ## Delivery boundary
 
 - Publish web source to `master`; preserve the existing master ancestry.
