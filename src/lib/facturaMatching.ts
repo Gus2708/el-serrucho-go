@@ -148,6 +148,26 @@ export interface LineMatch {
   readonly feedback?: ProductFeedback;
 }
 
+export interface CandidateSupport {
+  readonly identifiers: readonly Exclude<EvidenceSource, 'descripcion'>[];
+  readonly support: 'codigo_coincidente' | 'en_conflicto' | 'pista_descripcion' | 'pista_busqueda';
+  readonly unknowns: readonly string[];
+}
+
+/** Describes evidence, not proven physical identity or a probability. */
+export function describeCandidateSupport(candidate: MatchCandidate, match: LineMatch): CandidateSupport {
+  const identifiers = candidate.evidence.flatMap(e => e.source === 'descripcion' ? [] : [e.source]);
+  let support: CandidateSupport['support'] = 'pista_busqueda';
+  if (match.conflicts.some(conflict => conflict.codigosInternos.includes(candidate.codigoInterno))) {
+    support = 'en_conflicto';
+  } else if (identifiers.length > 0) {
+    support = 'codigo_coincidente';
+  } else if (candidate.evidence.some(e => e.source === 'descripcion')) {
+    support = 'pista_descripcion';
+  }
+  return { identifiers, support, unknowns: candidate.unknownAttributes };
+}
+
 export type MatchInvoiceLinesResult =
   | { readonly ok: true; readonly lines: readonly LineMatch[] }
   | {
@@ -192,14 +212,23 @@ const MATERIALS = new Set([
 ]);
 const PACKAGES = new Set(['caja', 'paquete', 'bolsa', 'docena', 'blister', 'rollo']);
 
-const ATTRIBUTE_KINDS = ['size', 'voltage', 'power', 'gauge', 'material', 'presentation', 'model'] as const;
+const ATTRIBUTE_KINDS = [
+  'size', 'voltage', 'power', 'gauge', 'material', 'presentation', 'model',
+  'weight', 'torque', 'amperage', 'amperage_configuration',
+] as const;
 type AttributeKind = (typeof ATTRIBUTE_KINDS)[number];
 type Attributes = Record<AttributeKind, Set<string>>;
 
-const SIZE = /(\d+(?:\.\d+)?(?: \d+\/\d+)?|\d+\/\d+) ?(mm|cm|m|pulgada)\b/g;
+// A unit may be glued to a second measurement ('7.5mx25mm'); mt and mts are meters.
+const SIZE = /(\d+(?:\.\d+)?(?: \d+\/\d+)?|\d+\/\d+) ?(mm|cm|mts|mt|m|pulgada)(?=x\d|\b)/g;
 // A bare 'v' is a generic voltage; 'vac' and 'vdc' are electrically distinct supplies.
 const VOLTAGE = /(\d+(?:\.\d+)?) ?(vac|vdc|v)\b/g;
 const POWER = /(\d+(?:\.\d+)?) ?(w|kw|hp)\b/g;
+// A separated 'a' is ambiguous in Spanish ranges; A.F and A/N are plumbing labels, not ampere units.
+const AMPERAGE = /\b(?:(\d+)\s*x\s*)?(\d+(?:\.\d+)?)(?:\s*(?:amperios?|amps?)\b|a\b(?!\s*[./]))/g;
+// Weight and torque are read only when explicit; a bare 'n' is never torque.
+const WEIGHT = /(\d+(?:\.\d+)?) ?(kgs?|lbs?)\b/g;
+const TORQUE = /(\d+(?:\.\d+)?) ?(?:n\.m|nm)\b/g;
 const GAUGE = /\bcal ?(\d+)\b|\b(\d+) ?cal\b/g;
 const MULTIPACK = /\bx(\d+)\b/g;
 // Recognize only explicit MX-number model tokens; other alphanumeric codes remain unclassified.
@@ -283,10 +312,23 @@ function compareText(a: string, b: string): number {
   return 0;
 }
 
+/** Only the literal trim/case-normalized sentinel is absent; real identifiers stay searchable. */
+export function isAbsentIdentifier(value: string | null | undefined): boolean {
+  const key = (value ?? '').trim().toUpperCase();
+  return key === '' || key === 'SIN_CODIGO';
+}
+
 // Matching key only: the printed code is never rewritten, and leading zeros/punctuation stay significant.
 function normalizeCode(value: string | null | undefined): string | null {
+  if (isAbsentIdentifier(value)) return null;
   const key = (value ?? '').normalize('NFKC').replace(/\s+/g, '').toUpperCase();
   return key === '' ? null : key;
+}
+
+// A leading '[CODE]' that repeats the printed code is matching noise; the printed fields themselves stay literal.
+function withoutPrintedCodePrefix(description: string, code: string | null): string {
+  const prefix = /^\s*\[([^\]]*)\]\s*/.exec(description);
+  return prefix !== null && code !== null && normalizeCode(prefix[1]) === code ? description.slice(prefix[0].length) : description;
 }
 
 function normalizeText(value: string): string {
@@ -327,12 +369,23 @@ function collect(text: string, pattern: RegExp, format: (match: RegExpMatchArray
   return new Set(Array.from(text.matchAll(pattern), format));
 }
 
+// Exact spelling equivalence only: '0.50' and '0.5' are the same number, fractions are left as printed.
+function canonicalDecimal(value: string): string {
+  return value.replace(/^(\d+)\.(\d*?)0*$/, (_, whole: string, fraction: string) => (fraction === '' ? whole : `${whole}.${fraction}`));
+}
+
 function extractAttributes(text: string): Attributes {
   const words = text.split(' ');
+  const currents = Array.from(text.matchAll(AMPERAGE));
   return {
-    size: collect(text, SIZE, (m) => `${m[1]}${m[2]}`),
-    voltage: collect(text, VOLTAGE, (m) => `${m[1]}${m[2]}`),
-    power: collect(text, POWER, (m) => `${m[1]}${m[2]}`),
+    size: collect(text, SIZE, (m) => `${canonicalDecimal(m[1])}${m[2].startsWith('mt') ? 'm' : m[2]}`),
+    voltage: collect(text, VOLTAGE, (m) => `${canonicalDecimal(m[1])}${m[2]}`),
+    power: collect(text, POWER, (m) => `${canonicalDecimal(m[1])}${m[2]}`),
+    weight: collect(text, WEIGHT, (m) => `${canonicalDecimal(m[1])}${m[2].startsWith('kg') ? 'kg' : 'lb'}`),
+    torque: collect(text, TORQUE, (m) => `${canonicalDecimal(m[1])}nm`),
+    amperage: new Set(currents.map((m) => `${canonicalDecimal(m[2])}a`)),
+    amperage_configuration: new Set(currents.filter((m) => m[1] !== undefined)
+      .map((m) => `${m[1]}x${canonicalDecimal(m[2])}a`)),
     gauge: collect(text, GAUGE, (m) => `cal${m[1] ?? m[2]}`),
     material: new Set(words.filter((w) => MATERIALS.has(w))),
     presentation: new Set([
@@ -365,8 +418,28 @@ function compareVoltage(a: ReadonlySet<string>, b: ReadonlySet<string>): Compari
   return compareSets(a, b) === 'same' ? 'same' : 'unknown';
 }
 
+// Weight units are never converted: only a unit stated on both sides is compared, otherwise there is nothing to compare.
+function compareWeight(a: ReadonlySet<string>, b: ReadonlySet<string>): Comparison {
+  const unitOf = (value: string) => value.replace(/^[\d.]+/, '');
+  const inUnit = (set: ReadonlySet<string>, unit: string) => new Set(Array.from(set).filter((value) => unitOf(value) === unit));
+  const sharedUnits = Array.from(new Set(Array.from(a, unitOf))).filter((unit) => inUnit(b, unit).size > 0);
+  const results = sharedUnits.map((unit) => compareSets(inUnit(a, unit), inUnit(b, unit)));
+  if (results.includes('incompatible')) return 'incompatible';
+  return results.every((result) => result === 'same') ? 'same' : 'unknown';
+}
+
 function compareAttribute(kind: AttributeKind, a: ReadonlySet<string>, b: ReadonlySet<string>): Comparison {
-  return kind === 'voltage' ? compareVoltage(a, b) : compareSets(a, b);
+  switch (kind) {
+    case 'voltage':
+      return compareVoltage(a, b);
+    case 'weight':
+      return compareWeight(a, b);
+    case 'torque':
+      // Stated on one side only stays silent, as before this kind existed.
+      return a.size === 0 || b.size === 0 ? 'same' : compareSets(a, b);
+    default:
+      return compareSets(a, b);
+  }
 }
 
 function unitKey(unit: string | null | undefined): string | null {
@@ -479,6 +552,7 @@ function findConflicts(
   aliasConflict: MatchConflict | null,
   incompatibleCodeIds: readonly string[],
   hasDescription: boolean,
+  minSimilarity: number,
 ): MatchConflict[] {
   const conflicts: MatchConflict[] = aliasConflict ? [aliasConflict] : [];
   const coded = candidates.filter(hasCodeEvidence);
@@ -503,6 +577,15 @@ function findConflicts(
   const outscored = descriptionOnly.some((c) => (c.similarity ?? -1) > bestCoded);
   if (hasDescription && coded.length > 0 && outscored) {
     conflicts.push({ code: 'code_description_conflict', codigosInternos: sortedIds([...coded, ...descriptionOnly]) });
+  } else if (hasDescription) {
+    // A catalog code that the printed description does not corroborate may be an unrelated SKU that shares the code.
+    // Saved supplier aliases are earlier human decisions and are not second-guessed here.
+    const uncorroborated = coded.filter(
+      (c) => hasSource(c, false) && c.similarity !== null && c.similarity < minSimilarity,
+    );
+    if (uncorroborated.length > 0) {
+      conflicts.push({ code: 'code_description_conflict', codigosInternos: sortedIds(uncorroborated) });
+    }
   }
   return conflicts;
 }
@@ -529,7 +612,7 @@ function matchLine(line: ExtraidaLinea, index: number, ctx: MatchContext): LineM
     return emptyMatch(base, ['text_too_long']);
   }
   const code = normalizeCode(line.codigoProveedor);
-  const text = normalizeText(line.descripcion ?? '');
+  const text = normalizeText(withoutPrintedCodePrefix(line.descripcion ?? '', code));
   if (code === null && text === '') return emptyMatch(base, ['no_candidates', 'no_evidence']);
 
   const lineUnit = unitKey(line.unidad);
@@ -587,7 +670,7 @@ function matchLine(line: ExtraidaLinea, index: number, ctx: MatchContext): LineM
   candidates.sort((a, b) => compareCandidates(a, b, hybrid, remembered));
   excluded.sort((a, b) => compareText(a.codigoInterno, b.codigoInterno));
   // Conflicts and status read every candidate, so the per-line cap can never hide them.
-  const conflicts = findConflicts(candidates, aliases.conflict, incompatibleCodeIds, text !== '');
+  const conflicts = findConflicts(candidates, aliases.conflict, incompatibleCodeIds, text !== '', bounds.minSimilarity);
   const kept = candidates.slice(0, bounds.maxCandidatesPerLine);
   const reasons = new Set(aliases.reasons);
   if (conflicts.length === 0 && candidates.length === 0) reasons.add('no_candidates');

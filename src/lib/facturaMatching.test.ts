@@ -2,6 +2,8 @@ import type { ExtraidaLinea } from './facturaExtractionContract';
 import {
   MATCHING_NORMALIZATION_VERSION,
   matchInvoiceLines,
+  isAbsentIdentifier,
+  describeCandidateSupport,
   type LineMatch,
   type MatchInvoiceLinesInput,
   type SupplierAlias,
@@ -704,7 +706,8 @@ describe('matchInvoiceLines: hybrid retrieval ranks', () => {
   });
 
   it('does not raise a description conflict or a suggestion from retrieval-only evidence', () => {
-    const catalog = [prod('P1', 'Zzzz', { codigo_barras: 'S-1' }), prod('P2', 'Tornillo')];
+    // P1 keeps a corroborating (but not identical) description: an unrelated coded SKU is now its own conflict.
+    const catalog = [prod('P1', 'Tornillo hexagonal 1/2', { codigo_barras: 'S-1' }), prod('P2', 'Tornillo')];
     const lines = [line(1, { codigoProveedor: 'S-1', descripcion: 'Tornillo hexagonal 1/2 pulgada', unidad: 'UND' })];
     const legacy = run(lines, catalog)[0];
     const ranked = run(lines, catalog, {
@@ -776,5 +779,293 @@ describe('matchInvoiceLines: audited battery line against the charger catalog ro
     });
     expect(match.candidates.every((c) => c.evidence.every((e) => e.source === 'descripcion'))).toBe(true);
     expect(match.status).not.toBe('suggested');
+  });
+});
+
+describe('matchInvoiceLines: exact explicit measurements', () => {
+  function single(printed: string, catalogText: string, over: Partial<ExtraidaLinea> = {}) {
+    const [result] = run([line(1, { descripcion: printed, unidad: 'UND', ...over })], [prod('P1', catalogText)]);
+    return result;
+  }
+
+  it.each([
+    ['size', 'Nylon de pesca 0.5mm', 'Nylon de pesca 0.50mm'],
+    ['size', 'Alambre 1.0m', 'Alambre 1m'],
+    ['voltage', 'Fuente 12.0v', 'Fuente 12v'],
+    ['power', 'Taladro 2.50w', 'Taladro 2.5w'],
+  ])('keeps equivalent decimal spellings of a %s compatible', (_kind, printed, catalogText) => {
+    const result = single(printed, catalogText);
+    expect(result.excluded).toEqual([]);
+    expect(result.candidates.map((c) => c.codigoInterno)).toEqual(['P1']);
+    expect(result.candidates[0].unknownAttributes).toEqual([]);
+  });
+
+  it('still excludes a different decimal measurement', () => {
+    const result = single('Nylon de pesca 0.5mm', 'Nylon de pesca 0.05mm');
+    expect(result.candidates).toEqual([]);
+    expect(result.excluded).toEqual([{ codigoInterno: 'P1', reasons: ['incompatible:size'] }]);
+  });
+
+  it('reads a length that is fused to a second measurement', () => {
+    const different = single('Cinta metrica 7.5Mx25mm', 'Cinta metrica 5MX25MM');
+    expect(different.candidates).toEqual([]);
+    expect(different.excluded).toEqual([{ codigoInterno: 'P1', reasons: ['incompatible:size'] }]);
+
+    const same = single('Cinta metrica 7.5Mx25mm', 'Cinta metrica 7.5MTSX25MM');
+    expect(same.excluded).toEqual([]);
+    expect(same.candidates[0].unknownAttributes).toEqual([]);
+  });
+
+  it('reads mt and mts glued to a number as meters', () => {
+    const different = single('Tubo 3mts', 'Tubo 6m');
+    expect(different.excluded).toEqual([{ codigoInterno: 'P1', reasons: ['incompatible:size'] }]);
+    expect(single('Tubo 3mts', 'Tubo 3 m').candidates[0].unknownAttributes).toEqual([]);
+  });
+
+  it('still reads bare dimensions as unknown when only one operand has a unit', () => {
+    const result = single('Tubo 4 X 3MTS', 'Tubo 6 X 3MTS');
+    expect(result.excluded).toEqual([]);
+    expect(result.candidates[0].unknownAttributes).toEqual([]);
+  });
+
+  it.each([
+    ['28.66lb', '20lb'],
+    ['13kg-28.66lb', '20lb'],
+    ['13kg', '14kg'],
+  ])('excludes a different weight in the same unit (%s vs %s)', (printed, catalogText) => {
+    const result = single(`Nylon de pesca ${printed}`, `Nylon de pesca ${catalogText}`);
+    expect(result.candidates).toEqual([]);
+    expect(result.excluded).toEqual([{ codigoInterno: 'P1', reasons: ['incompatible:weight'] }]);
+  });
+
+  it.each([
+    ['13kg', '20lb'],
+    ['14 kg', 'sin peso'],
+    ['14 kg', '14KG'],
+  ])('never converts or guesses weight units (%s vs %s)', (printed, catalogText) => {
+    const result = single(`Nylon de pesca ${printed}`, `Nylon de pesca ${catalogText}`);
+    expect(result.excluded).toEqual([]);
+    expect(result.candidates[0].unknownAttributes).toEqual([]);
+  });
+
+  it('excludes a different explicit torque and keeps the same one', () => {
+    const different = single('Taladro 20v 55n.m', 'Taladro 20v 60nm');
+    expect(different.excluded).toEqual([{ codigoInterno: 'P1', reasons: ['incompatible:torque'] }]);
+    const same = single('Taladro 20v 55n.m', 'Taladro 20v 55NM');
+    expect(same.excluded).toEqual([]);
+    expect(same.candidates[0].unknownAttributes).toEqual([]);
+  });
+
+  it('does not read a bare N as torque', () => {
+    const result = single('Taladro 20v 55n.m', 'Taladro 20v 60N super');
+    expect(result.excluded).toEqual([]);
+    expect(result.candidates.map((c) => c.codigoInterno)).toEqual(['P1']);
+    expect(result.candidates[0].unknownAttributes).toEqual([]);
+  });
+
+  it('surfaces an exact-code conflict for a different same-unit weight', () => {
+    const [result] = run(
+      [line(1, { codigoProveedor: 'N-1', descripcion: 'Nylon de pesca 28.66lb', unidad: 'UND' })],
+      [prod('P1', 'Nylon de pesca 20lb', { codigo_barras: 'N-1' })],
+    );
+    expect(result.status).toBe('conflict');
+    expect(result.conflicts).toEqual([{ code: 'code_attribute_incompatible', codigosInternos: ['P1'] }]);
+  });
+});
+
+describe('matchInvoiceLines: exact code without description support', () => {
+  const UNRELATED = prod('P1', 'Breaker thqc 1 x 30 voltage', { codigo_barras: '00626' });
+
+  it('flags a code that only collides with an unrelated description and keeps the candidate', () => {
+    const [result] = run(
+      [line(1, { codigoProveedor: '00626', descripcion: 'Cajera de elect 2x4 plastica implasven', unidad: 'UND' })],
+      [UNRELATED],
+    );
+    expect(result.status).toBe('conflict');
+    expect(result.conflicts).toEqual([{ code: 'code_description_conflict', codigosInternos: ['P1'] }]);
+    expect(result.candidates.map((c) => c.codigoInterno)).toEqual(['P1']);
+    expect(result.candidates[0].evidence.map((e) => e.source)).toEqual(['codigo_barras']);
+    expect(result.candidates[0].similarity).toBeLessThan(0.3);
+  });
+
+  it('raises one description conflict, not two, when another SKU also outscores the code', () => {
+    const [result] = run(
+      [line(1, { codigoProveedor: '00626', descripcion: 'Cajera de elect 2x4 plastica', unidad: 'UND' })],
+      [UNRELATED, prod('P2', 'Cajera de elect 2x4 plastica')],
+    );
+    expect(result.conflicts).toEqual([{ code: 'code_description_conflict', codigosInternos: ['P1', 'P2'] }]);
+  });
+
+  it('keeps an exact code with a corroborating description unflagged', () => {
+    const [result] = run(
+      [line(1, { codigoProveedor: '00626', descripcion: 'Breaker thqc 1 x 30', unidad: 'UND' })],
+      [UNRELATED],
+    );
+    expect(result.conflicts).toEqual([]);
+    expect(result.status).toBe('suggested');
+  });
+
+  it('keeps an exact code without a description at review with no conflict', () => {
+    const [result] = run([line(1, { codigoProveedor: '00626', unidad: 'UND' })], [UNRELATED]);
+    expect(result.conflicts).toEqual([]);
+    expect(result.status).toBe('review');
+  });
+
+  it('does not second-guess a saved supplier alias', () => {
+    const [result] = run(
+      [line(1, { codigoProveedor: 'S-77', descripcion: 'Pintura latex blanco galon', unidad: 'UND' })],
+      [prod('P1', SCREW)],
+      { aliases: [alias()] },
+    );
+    expect(result.candidates[0].evidence.map((e) => e.source)).toContain('alias');
+    expect(result.conflicts).toEqual([]);
+  });
+});
+
+describe('matchInvoiceLines: printed code repeated as a bracket prefix', () => {
+  const catalog = [prod('UID7118', 'Taladro de impacto 1/2 710W marca ingco')];
+  const similarityOf = (code: string, text: string) =>
+    run([line(1, { codigoProveedor: code, descripcion: text, unidad: 'UND' })], catalog)[0].candidates[0].similarity;
+
+  it('ignores a leading bracket that repeats the printed code', () => {
+    const plain = similarityOf('UID7118', 'Taladro de impacto 1/2 710W');
+    expect(similarityOf('UID7118', '[UID7118] Taladro de impacto 1/2 710W')).toBe(plain);
+    expect(similarityOf('UID7118', '[ uid7118 ] Taladro de impacto 1/2 710W')).toBe(plain);
+  });
+
+  it('keeps the printed code and description literal in the result', () => {
+    const [result] = run([line(1, { codigoProveedor: 'UID7118', descripcion: '[UID7118] Taladro', unidad: 'UND' })], catalog);
+    expect(result.codigoProveedor).toBe('UID7118');
+  });
+
+  it('does not strip a bracket that is not the printed code', () => {
+    const stripped = similarityOf('UID7118', 'Taladro de impacto 1/2 710W');
+    expect(similarityOf('UID7118', '[HWSP101] Taladro de impacto 1/2 710W')).toBeLessThan(stripped as number);
+  });
+});
+
+describe('matchInvoiceLines: explicit electrical current configurations', () => {
+  it('rejects 2X100AMP for a printed 3X100AMP even when both rank sources prefer it', () => {
+    const rows = [
+      prod('01536', 'CUCHILLA ELECTRICA 2 PASE 2X100AMP'),
+      prod('01538', 'CUCHILLA ELECTRICA 2 PASE 3X100 AMP EXXEL'),
+    ];
+    const [result] = run(
+      [line(1, { descripcion: 'CUCHILLA ELECTRICA 2 PASE 3X100 AMP EXXEL' })],
+      rows,
+      { hybridRanks: [{ lineIndex: 0,
+        lexical: [{ codigoInterno: '01536', rank: 1 }, { codigoInterno: '01538', rank: 2 }],
+        semantic: [{ codigoInterno: '01536', rank: 1 }, { codigoInterno: '01538', rank: 2 }],
+      }] },
+    );
+    expect(result.candidates.map(candidate => candidate.codigoInterno)).toEqual(['01538']);
+    expect(result.excluded).toEqual([{ codigoInterno: '01536', reasons: ['incompatible:amperage_configuration'] }]);
+    expect(result.status).not.toBe('suggested');
+  });
+
+  it.each([['100A', '100 AMP'], ['0.50 amperios', '0.5amps'], ['3x100A', '3 X 100 AMP']])(
+    'keeps explicit equivalent electrical spellings (%s / %s)', (printed, current) => {
+      const [result] = run([line(1, { descripcion: `Interruptor electrico ${printed}` })],
+        [prod('P1', `Interruptor electrico ${current}`)]);
+      expect(result.excluded).toEqual([]);
+      expect(result.candidates.map(candidate => candidate.codigoInterno)).toEqual(['P1']);
+    },
+  );
+
+  it('rejects differing explicitly stated ampere ratings even for a direct code', () => {
+    const [result] = run([line(1, { codigoProveedor: 'P1', descripcion: 'Interruptor electrico 125AMP' })],
+      [prod('P1', 'Interruptor electrico 100A')]);
+    expect(result.candidates).toEqual([]);
+    expect(result.excluded).toEqual([{ codigoInterno: 'P1', reasons: ['incompatible:amperage'] }]);
+    expect(result.conflicts).toContainEqual({ code: 'code_attribute_incompatible', codigosInternos: ['P1'] });
+  });
+
+  it('does not infer a missing configuration or an ampere rating from a model token', () => {
+    const [unknown] = run([line(1, { descripcion: 'Interruptor electrico 3X100AMP' })],
+      [prod('P1', 'Interruptor electrico 100A')]);
+    expect(unknown.excluded).toEqual([]);
+    expect(unknown.candidates[0].unknownAttributes).toContain('amperage_configuration');
+    const [model] = run([line(1, { descripcion: 'Interruptor modelo M100A' })],
+      [prod('P1', 'Interruptor modelo M125A')]);
+    expect(model.excluded).toEqual([]);
+  });
+});
+
+describe('matchInvoiceLines: amperage does not interpret plumbing prepositions', () => {
+  it('keeps the real elbow when A/N appears beside different positionally printed numbers', () => {
+    const [result] = run([line(1, { descripcion: 'CODO 3 A/N 45' })],
+      [prod('01432', 'CODO 3 de 45 A/N')]);
+    expect(result.candidates.map(candidate => candidate.codigoInterno)).toEqual(['01432']);
+    expect(result.excluded).toEqual([]);
+    expect(result.candidates[0].unknownAttributes).not.toContain('amperage');
+  });
+
+  it('preserves a corroborated exact bushing code without inventing amperage from a range', () => {
+    const [result] = run([line(1, { codigoProveedor: '00753',
+      descripcion: 'BUSHING GALVANIZADO 1 X 1/2 PH-M12', unidad: 'UND' })],
+      [prod('00753', 'BUSHING GALVANIZADO 1 A 1/2 PH-M12', { unidad: 'UND' })]);
+    expect(result.candidates.map(candidate => candidate.codigoInterno)).toEqual(['00753']);
+    expect(result.candidates[0].unknownAttributes).toEqual([]);
+    expect(result.excluded).toEqual([]);
+    expect(result.status).toBe('suggested');
+  });
+
+  it.each(['1/2 A.F', '1/2A.F', '1/2A .F', '3A/N', '3A /N', '3 A/N', '1 A 1/2', '32 A 55'])(
+    'does not parse the non-electrical spelling %s as amperes', (label) => {
+      const [result] = run([line(1, { descripcion: `Pieza de plomeria ${label}` })],
+        [prod('P1', 'Pieza de plomeria')]);
+      expect(result.excluded).toEqual([]);
+      expect(result.candidates[0].unknownAttributes).not.toContain('amperage');
+      expect(result.candidates[0].unknownAttributes).not.toContain('amperage_configuration');
+    },
+  );
+
+  it('keeps a separated A ambiguous instead of guessing between a preposition and an ampere unit', () => {
+    const [result] = run([line(1, { descripcion: 'Pieza 100 A' })],
+      [prod('P1', 'Pieza 125 A')]);
+    expect(result.excluded).toEqual([]);
+    expect(result.candidates[0].unknownAttributes).not.toContain('amperage');
+  });
+});
+
+
+describe('absent identifiers and candidate support', () => {
+  it('ignores the exact sentinel in printed codes, catalog barcodes and aliases without dropping products', () => {
+    const catalog = ['A', 'B', 'C'].map(id => prod(id, 'Adhesivo blanco', { codigo_barras: 'SIN_CODIGO' }));
+    const lines = [line(1, { codigoProveedor: ' sin_codigo ', descripcion: 'Adhesivo blanco', unidad: 'UND' })];
+    const aliases = [alias({ keyValue: 'SIN_CODIGO', codigoInterno: 'A' })];
+    const before = JSON.stringify({ lines, catalog, aliases });
+    const result = run(lines, catalog, { aliases })[0];
+    expect(result.candidates).toHaveLength(3);
+    expect(result.candidates.every(c => c.evidence.every(e => e.source === 'descripcion'))).toBe(true);
+    expect(result.conflicts).toEqual([]);
+    expect(result.status).toBe('review');
+    expect(JSON.stringify({ lines, catalog, aliases })).toBe(before);
+    expect(run([line(1, { codigoProveedor: 'A' })], catalog)[0].candidates[0].evidence).toContainEqual({ source: 'codigo_interno', similarity: null });
+  });
+
+  it.each(['A-SINK1919', 'A-SINK3319', 'A-SINK3319-BK', 'SINCODIGO', 'SIN_ CODIGO', '001-A/2'])('keeps literal non-sentinel identifiers: %s', code => {
+    expect(isAbsentIdentifier(code)).toBe(false);
+    expect(run([line(1, { codigoProveedor: code })], [prod(code, 'Adhesivo')])[0].candidates[0].codigoInterno).toBe(code);
+  });
+
+  it.each([null, undefined, '', '  ', 'SIN_CODIGO', ' sin_codigo '])('recognizes only missing or exact trim/case sentinel values: %s', code => {
+    expect(isAbsentIdentifier(code)).toBe(true);
+  });
+
+  it('derives typed support, per-SKU conflicts and unknowns without changing the match', () => {
+    const match = run([line(1, { codigoProveedor: 'A', descripcion: 'Adhesivo blanco', unidad: 'UND' })], [prod('A', 'Adhesivo blanco')])[0];
+    const coded = match.candidates[0];
+    const fuzzy = { ...coded, evidence: [{ source: 'descripcion' as const, similarity: 0.5 }], unknownAttributes: ['size', 'unit'] };
+    const retrieved = { ...fuzzy, evidence: [] };
+    const conflicted = { ...match, conflicts: [{ code: 'alias_vs_code' as const, codigosInternos: ['A'] }] };
+    const before = JSON.stringify({ coded, fuzzy, retrieved, conflicted });
+    expect(describeCandidateSupport(coded, match)).toEqual({ identifiers: ['codigo_interno'], support: 'codigo_coincidente', unknowns: [] });
+    expect(describeCandidateSupport(fuzzy, match)).toEqual({ identifiers: [], support: 'pista_descripcion', unknowns: ['size', 'unit'] });
+    expect(describeCandidateSupport(retrieved, match).support).toBe('pista_busqueda');
+    expect(describeCandidateSupport(coded, conflicted).support).toBe('en_conflicto');
+    expect(describeCandidateSupport({ ...coded, codigoInterno: 'B' }, conflicted).support).toBe('codigo_coincidente');
+    expect(describeCandidateSupport({ ...coded, evidence: [{ source: 'alias', similarity: null }] }, match).identifiers).toEqual(['alias']);
+    expect(JSON.stringify({ coded, fuzzy, retrieved, conflicted })).toBe(before);
   });
 });
