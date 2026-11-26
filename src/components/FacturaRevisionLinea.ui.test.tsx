@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { StyleSheet } from 'react-native';
 import { fireEvent, render, screen, within } from '@testing-library/react-native';
 import FacturaRevisionLinea, { type FacturaRevisionLineaProps } from './FacturaRevisionLinea';
 import { matchInvoiceLines, type HybridLineRanks, type LineMatch, type SupplierAlias, MATCHING_NORMALIZATION_VERSION } from '../lib/facturaMatching';
@@ -6,6 +7,7 @@ import type { ExtraidaLinea } from '../lib/facturaExtractionContract';
 import type { LineaEfectiva } from '../lib/facturaRevision';
 import type { Producto } from '../lib/producto';
 import { ThemeProvider } from '../theme/ThemeContext';
+import { elSerrucho } from '../theme/brands/el-serrucho';
 
 jest.mock('./BarcodeScannerModal', () => ({ BarcodeScannerModal: () => null }));
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -105,12 +107,36 @@ function textos(testID: string): string[] {
 const tarjeta = (codigo: string) => `${ID}-tarjeta-${codigo}`;
 
 describe('candidate cards', () => {
+  it('keeps manual identity and its motive explicit, with the unchanged association payload', () => {
+    const p = props(undefined);
+    draw(p);
+    fireEvent.press(screen.getByTestId(`${ID}-manual-abrir`));
+    expect(screen.getByTestId(`${ID}-manual-codigo`).props.accessibilityLabel).toBe('Código del producto');
+    fireEvent.changeText(screen.getByTestId(`${ID}-manual-codigo`), '00123');
+    expect(screen.getByTestId(`${ID}-manual-aplicar`).props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(screen.getByTestId(`${ID}-manual-motivo-sugerido`));
+    expect(p.onEditar).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByTestId(`${ID}-manual-aplicar`));
+    expect(p.onEditar).toHaveBeenCalledWith({ tipo: 'asociacion', lineaId: 'linea-7', asociacion: { tipo: 'confirmado', codigoInterno: '00123', evidencia: 'manual', motivo: 'La sugerencia era otro producto' } });
+  });
+
+  it('does not invent a new-product confirmation when opening the choice or selecting a motive', () => {
+    const p = props(undefined);
+    draw(p);
+    fireEvent.press(screen.getByTestId(`${ID}-nuevo-abrir`));
+    expect(screen.getByTestId(`${ID}-nuevo-aplicar`).props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(screen.getByTestId(`${ID}-nuevo-motivo-sugerido`));
+    expect(p.onEditar).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByTestId(`${ID}-nuevo-aplicar`));
+    expect(p.onEditar).toHaveBeenCalledWith({ tipo: 'asociacion', lineaId: 'linea-7', asociacion: { tipo: 'producto_nuevo', codigoInterno: null, evidencia: 'manual', motivo: 'No existe en el inventario' } });
+  });
+
   it('lead with the description, keep the code secondary and offer a short Confirmar', () => {
     draw(props(emparejar(lineaExtraida(), CATALOGO_BATERIA, { hybridRanks: rangos() })));
     const orden = textos(tarjeta('7453118025275'));
     expect(orden[0]).toBe('BATERIA 20V LITIO 24H CARGA ZASC');
     expect(orden.findIndex(t => t.includes('7453118025275'))).toBeGreaterThan(0);
-    expect(textos(`${ID}-candidato-7453118025275`)).toEqual(['Confirmar']);
+    expect(textos(`${ID}-candidato-7453118025275`)).toEqual(['Sí, es este']);
   });
 
   it('keep the audited retrieval order of the real matcher', () => {
@@ -153,6 +179,30 @@ describe('candidate cards', () => {
     for (const codigo of ORDEN_AUDITORIA) {
       expect(textos(tarjeta(codigo)).join(' ')).not.toMatch(/\d\s*%|puntaje|score|confianza/i);
     }
+  });
+
+  it('uses neutral border and text on unselected candidate confirm button and gold only when selected', () => {
+    const match = emparejar(lineaExtraida(), CATALOGO_BATERIA, { hybridRanks: rangos() });
+    const view = draw(props(match));
+    const boton = screen.getByTestId(`${ID}-candidato-7453118025275`);
+    const unselectedStyle = StyleSheet.flatten(boton.props.style);
+    const unselectedTextStyle = StyleSheet.flatten(within(boton).getByText('Sí, es este').props.style);
+
+    expect(unselectedStyle.borderColor).toBe(elSerrucho.colors.border);
+    expect(unselectedTextStyle.color).toBe(elSerrucho.colors.text);
+
+    const seleccionada = {
+      ...efectiva(),
+      asociacion: { tipo: 'confirmado' as const, codigoInterno: '7453118025275', evidencia: 'sugerencia' as const, motivo: null },
+    };
+    view.rerender(<ThemeProvider><FacturaRevisionLinea {...props(match, { efectiva: seleccionada })} /></ThemeProvider>);
+
+    const selectedBtn = screen.getByTestId(`${ID}-candidato-7453118025275`);
+    const selectedStyle = StyleSheet.flatten(selectedBtn.props.style);
+    const selectedTextStyle = StyleSheet.flatten(within(selectedBtn).getByText('Sí, es este').props.style);
+    expect(selectedStyle.borderColor).toBe(elSerrucho.colors.primary);
+    expect(selectedStyle.backgroundColor).toBe(elSerrucho.colors.primaryFaded);
+    expect(selectedTextStyle.color).toBe(elSerrucho.colors.primary);
   });
 });
 
@@ -215,7 +265,7 @@ describe('partial catalog without candidates', () => {
     draw(props(vacio(), { catalogoParcial: true }));
     const texto = [screen.getByTestId(`${ID}-sin-candidatos`).props.children].flat().join('');
     expect(texto).toMatch(/no prueba que el producto no exista/);
-    expect(texto).toMatch(/Busca por SKU antes de marcarlo como nuevo/);
+    expect(texto).toMatch(/Búscalo por su código antes de marcarlo como nuevo/);
   });
 
   it('opens the manual SKU panel from the warning action', () => {
@@ -258,6 +308,13 @@ describe('quantity and cost in the detail', () => {
 
 
 describe('honest candidate support', () => {
+  it('explains missing suggestions in plain language without treating a partial search as absence', () => {
+    const match = emparejar(lineaExtraida(), []);
+    draw(props(match, { catalogoParcial: true, tipoDocumento: 'factura' }));
+    expect(textos(`${ID}-sin-candidatos`).join(' ')).toBe('No se revisó todo el inventario: no encontrarlo aquí no prueba que el producto no exista. Búscalo por su código antes de marcarlo como nuevo.');
+    expect(screen.getByText('Sin costo neto calculado para este producto: no hay precio sugerido.')).toBeTruthy();
+  });
+
   it('shows description/search leads and unknown comparisons without claiming identity', () => {
     const match = emparejar(lineaExtraida(), CATALOGO_BATERIA, { hybridRanks: rangos() });
     draw(props(match));

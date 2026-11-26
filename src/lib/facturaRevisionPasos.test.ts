@@ -174,14 +174,14 @@ describe('estadoLinea: what the person must do next on one line', () => {
 
   it('labels every state in neutral Spanish', () => {
     expect(ETIQUETA_ESTADO_LINEA).toEqual({
-      elegir_producto: 'Elegir producto',
+      elegir_producto: 'Elige el producto',
       falta_iva: 'Falta IVA',
-      faltan_unidades: 'Faltan unidades',
-      falta_codigo: 'Nuevo: falta código',
+      faltan_unidades: 'Faltan unidades por paquete',
+      falta_codigo: 'Nuevo: escanea el código',
       verificando_codigo: 'Verificando código',
-      codigo_sin_verificar: 'Código sin verificar',
+      codigo_sin_verificar: 'No se pudo verificar el código',
       codigo_en_uso: 'Código ya usado',
-      revisar: 'Revisar datos',
+      revisar: 'Revisa los datos',
       listo: 'Listo',
     });
   });
@@ -218,6 +218,7 @@ describe('accionPrincipal: one primary action per state, with the reason when it
     etapa: 'leer',
     carga: 'listo',
     hayContenido: false,
+    porRevisar: 0,
     hayExtraccionUsable: false,
     intentoFallido: false,
     ocupado: null,
@@ -238,20 +239,20 @@ describe('accionPrincipal: one primary action per state, with the reason when it
 
   describe('leer', () => {
     it('offers the explicit read when nothing was read yet', () => {
-      expect(accionPrincipal(base)).toEqual({ id: 'leer', etiqueta: 'Leer factura', deshabilitada: false, razon: null });
+      expect(accionPrincipal(base)).toEqual({ id: 'leer', etiqueta: 'Buscar productos', deshabilitada: false, razon: null });
     });
 
     it('says why the read is unavailable', () => {
       expect(accionPrincipal(con({ puedeExtraer: false, razonNoExtraer: 'Guarda la factura antes de extraer datos.' }))).toEqual({
         id: 'leer',
-        etiqueta: 'Leer factura',
+        etiqueta: 'Buscar productos',
         deshabilitada: true,
         razon: 'Guarda la factura antes de extraer datos.',
       });
     });
 
     it('shows progress while reading and disables the button', () => {
-      expect(accionPrincipal(con({ ocupado: 'extrayendo', puedeExtraer: false }))).toEqual({ id: 'leer', etiqueta: 'Leyendo la factura…', deshabilitada: true, razon: null });
+      expect(accionPrincipal(con({ ocupado: 'extrayendo', puedeExtraer: false }))).toEqual({ id: 'leer', etiqueta: 'Buscando productos…', deshabilitada: true, razon: null });
     });
 
     it('offers an explicit retry after a failed read', () => {
@@ -259,11 +260,11 @@ describe('accionPrincipal: one primary action per state, with the reason when it
     });
 
     it('starts the review from a usable extraction only on an explicit press', () => {
-      expect(accionPrincipal(con({ hayExtraccionUsable: true }))).toEqual({ id: 'revisar_leido', etiqueta: 'Revisar lo leído', deshabilitada: false, razon: null });
+      expect(accionPrincipal(con({ hayExtraccionUsable: true }))).toEqual({ id: 'revisar_leido', etiqueta: 'Ver productos encontrados', deshabilitada: false, razon: null });
     });
 
     it('moves on to the products once there is content', () => {
-      expect(accionPrincipal(con({ hayContenido: true, hayExtraccionUsable: true }))).toEqual({ id: 'continuar_productos', etiqueta: 'Continuar a productos', deshabilitada: false, razon: null });
+      expect(accionPrincipal(con({ hayContenido: true, hayExtraccionUsable: true }))).toEqual({ id: 'continuar_compra', etiqueta: 'Seguir a la compra', deshabilitada: false, razon: null });
     });
 
     it.each(['cargando', 'no_disponible', 'error', 'sin_sesion'] as const)('offers no footer action while the load state is %s', carga => {
@@ -273,11 +274,11 @@ describe('accionPrincipal: one primary action per state, with the reason when it
 
   describe('productos', () => {
     it('continues to the purchase step', () => {
-      expect(accionPrincipal(con({ etapa: 'productos', hayContenido: true }))).toEqual({ id: 'continuar_compra', etiqueta: 'Continuar a compra', deshabilitada: false, razon: null });
+      expect(accionPrincipal(con({ etapa: 'productos', hayContenido: true }))).toEqual({ id: 'continuar_compra', etiqueta: 'Seguir a la compra', deshabilitada: false, razon: null });
     });
 
     it('sends the person back to reading when there is no content yet', () => {
-      expect(accionPrincipal(con({ etapa: 'productos' }))).toEqual({ id: 'ir_leer', etiqueta: 'Ir a Leer', deshabilitada: false, razon: null });
+      expect(accionPrincipal(con({ etapa: 'productos' }))).toEqual({ id: 'leer', etiqueta: 'Buscar productos', deshabilitada: false, razon: null });
       expect(accionPrincipal(con({ etapa: 'compra' }))).toMatchObject({ id: 'ir_leer' });
     });
   });
@@ -286,7 +287,7 @@ describe('accionPrincipal: one primary action per state, with the reason when it
     const compra = (over: Partial<SituacionRevision>): SituacionRevision => con({ etapa: 'compra', hayContenido: true, ...over });
 
     it('saves first when there are unsaved changes', () => {
-      expect(accionPrincipal(compra({ sucio: true, puedeGuardar: true }))).toEqual({ id: 'guardar', etiqueta: 'Guardar revisión', deshabilitada: false, razon: null });
+      expect(accionPrincipal(compra({ sucio: true, puedeGuardar: true }))).toEqual({ id: 'guardar', etiqueta: 'Guardar cambios', deshabilitada: false, razon: null });
     });
 
     it('explains an invalid selling price that blocks saving', () => {
@@ -306,15 +307,15 @@ describe('accionPrincipal: one primary action per state, with the reason when it
     });
 
     it('approves the saved review when it has no blockers', () => {
-      expect(accionPrincipal(compra({ puedeAprobar: true, sinBloqueos: true }))).toEqual({ id: 'aprobar', etiqueta: 'Aprobar revisión', deshabilitada: false, razon: null });
+      expect(accionPrincipal(compra({ puedeAprobar: true, sinBloqueos: true }))).toEqual({ id: 'aprobar', etiqueta: 'Confirmar revisión', deshabilitada: false, razon: null });
     });
 
     it('never approves while an invalid selling price is still typed, even when the saved review could be approved', () => {
       expect(accionPrincipal(compra({ puedeAprobar: true, sinBloqueos: true, hayBorradorPrecio: true }))).toEqual({
         id: 'aprobar',
-        etiqueta: 'Aprobar revisión',
+        etiqueta: 'Confirmar revisión',
         deshabilitada: true,
-        razon: 'Corrige o borra el precio de venta no válido para aprobar.',
+        razon: 'Corrige o borra el precio de venta no válido para confirmar.',
       });
     });
 
@@ -322,7 +323,7 @@ describe('accionPrincipal: one primary action per state, with the reason when it
       expect(accionPrincipal(compra({ sinBloqueos: false }))).toMatchObject({
         id: 'aprobar',
         deshabilitada: true,
-        razon: 'Resuelve los bloqueos para aprobar.',
+        razon: 'Completa los datos que faltan para confirmar.',
       });
     });
 
@@ -330,25 +331,25 @@ describe('accionPrincipal: one primary action per state, with the reason when it
       expect(accionPrincipal(compra({ sinBloqueos: true, editorDirty: true }))).toMatchObject({
         id: 'aprobar',
         deshabilitada: true,
-        razon: 'Guarda los cambios de la factura antes de aprobar.',
+        razon: 'Guarda los cambios de la factura antes de confirmar.',
       });
     });
 
     it('prepares the purchase draft once the approval is valid', () => {
-      expect(accionPrincipal(compra({ aprobada: true, sinBloqueos: true, puedeMaterializar: true }))).toEqual({ id: 'preparar', etiqueta: 'Preparar borrador de compra', deshabilitada: false, razon: null });
+      expect(accionPrincipal(compra({ aprobada: true, sinBloqueos: true, puedeMaterializar: true }))).toEqual({ id: 'preparar', etiqueta: 'Crear borrador de compra', deshabilitada: false, razon: null });
     });
 
     it('keeps preparing disabled, with the reason, when the approval is no longer valid', () => {
       expect(accionPrincipal(compra({ aprobada: true, sinBloqueos: true, puedeMaterializar: false }))).toMatchObject({
         id: 'preparar',
         deshabilitada: true,
-        razon: 'La aprobación no está vigente para esta versión de la factura.',
+        razon: 'Cambiaste la factura: guarda los cambios y confirma de nuevo.',
       });
     });
 
     it('shows progress while saving, approving and preparing', () => {
       expect(accionPrincipal(compra({ sucio: true, ocupado: 'guardando' }))).toEqual({ id: 'guardar', etiqueta: 'Guardando…', deshabilitada: true, razon: null });
-      expect(accionPrincipal(compra({ ocupado: 'aprobando' }))).toEqual({ id: 'aprobar', etiqueta: 'Aprobando…', deshabilitada: true, razon: null });
+      expect(accionPrincipal(compra({ ocupado: 'aprobando' }))).toEqual({ id: 'aprobar', etiqueta: 'Confirmando…', deshabilitada: true, razon: null });
       expect(accionPrincipal(compra({ aprobada: true, materializando: true }))).toEqual({ id: 'preparar', etiqueta: 'Preparando borrador…', deshabilitada: true, razon: null });
     });
   });
@@ -434,5 +435,16 @@ describe('batch targets and edits', () => {
     const [primera, segunda] = corregida.lineas.map(l => l.lineaId);
     expect(lineasConBloqueo(calculo.bloqueos, 'iva_tasa_desconocida', [primera, segunda])).toEqual([segunda]);
     expect(lineasConBloqueo(calculo.bloqueos, 'conversion_no_confirmada', [primera, segunda])).toEqual([primera]);
+  });
+});
+
+ describe('work-leading products', () => {
+  const state = { carga: 'listo', etapa: 'productos', hayContenido: true, porRevisar: 5 } as SituacionRevision;
+  it('opens pending work before leaving products', () => {
+    expect(accionPrincipal(state)).toMatchObject({ id: 'siguiente_producto', etiqueta: 'Revisar siguiente (5 faltan)' });
+    expect(accionPrincipal({ ...state, porRevisar: 0 })).toMatchObject({ id: 'continuar_compra', etiqueta: 'Seguir a la compra' });
+  });
+  it('treats legacy leer as the same products body', () => {
+    expect(accionPrincipal({ ...state, etapa: 'leer' })).toEqual(accionPrincipal(state));
   });
 });

@@ -45,14 +45,38 @@ interface BotonProps {
   disabled?: boolean;
   selected?: boolean;
   danger?: boolean;
-  /** The one gold action of a stage; everything else stays outlined. */
+  /** The one gold action of a stage; everything else stays neutral unless selected or destructive. */
   primary?: boolean;
+}
+
+interface ColoresBoton {
+  borderColor: string;
+  backgroundColor: string;
+  textColor: string;
+}
+
+function resolverColoresBoton(
+  params: { disabled: boolean; primary: boolean; selected: boolean; danger: boolean },
+  colors: ReturnType<typeof useTheme>['colors'],
+): ColoresBoton {
+  if (params.disabled) {
+    return { borderColor: colors.border, backgroundColor: colors.surfaceAlt, textColor: colors.textMuted };
+  }
+  if (params.primary) {
+    return { borderColor: colors.primary, backgroundColor: colors.primary, textColor: colors.onPrimary };
+  }
+  if (params.selected) {
+    return { borderColor: colors.primary, backgroundColor: colors.primaryFaded, textColor: colors.primary };
+  }
+  if (params.danger) {
+    return { borderColor: colors.danger, backgroundColor: colors.surface, textColor: colors.danger };
+  }
+  return { borderColor: colors.border, backgroundColor: colors.surface, textColor: colors.text };
 }
 
 export function Boton({ testID, label, onPress, disabled = false, selected = false, danger = false, primary = false }: BotonProps): React.JSX.Element {
   const { colors } = useTheme();
-  const tone = danger ? colors.danger : colors.primary;
-  const filled = primary && !disabled;
+  const palette = resolverColoresBoton({ disabled, primary, selected, danger }, colors);
   return (
     <Pressable
       testID={testID}
@@ -64,20 +88,31 @@ export function Boton({ testID, label, onPress, disabled = false, selected = fal
       style={({ pressed }) => [
         styles.boton,
         {
-          borderColor: disabled ? colors.border : tone,
-          backgroundColor: filled ? colors.primary : selected ? colors.primaryFaded : colors.surface,
-          opacity: disabled ? 0.45 : pressed ? 0.7 : 1,
+          borderColor: palette.borderColor,
+          backgroundColor: palette.backgroundColor,
+          opacity: !disabled && pressed ? 0.7 : 1,
         },
       ]}
     >
-      <Text style={[styles.botonTexto, { color: disabled ? colors.textMuted : filled ? colors.onPrimary : tone }]}>{label}</Text>
+      <Text style={[styles.botonTexto, { color: palette.textColor }]}>{label}</Text>
     </Pressable>
   );
 }
 
+interface BotonDespliegueProps {
+  testID: string;
+  label: string;
+  abierto: boolean;
+  onPress: () => void;
+  /** Draws a full-width bordered neutral trigger when the disclosure stands on its own row. */
+  bordered?: boolean;
+}
+
 /** Text button that opens or closes a disclosure; the open state is exposed to assistive technology. */
-export function BotonDespliegue({ testID, label, abierto, onPress }: { testID: string; label: string; abierto: boolean; onPress: () => void }): React.JSX.Element {
+export function BotonDespliegue({ testID, label, abierto, onPress, bordered = false }: BotonDespliegueProps): React.JSX.Element {
   const { colors } = useTheme();
+  const colorTexto = abierto ? colors.primary : colors.text;
+  const colorIcono = abierto ? colors.primary : colors.textMuted;
   return (
     <Pressable
       testID={testID}
@@ -85,10 +120,14 @@ export function BotonDespliegue({ testID, label, abierto, onPress }: { testID: s
       accessibilityLabel={label}
       accessibilityState={{ expanded: abierto }}
       onPress={onPress}
-      style={({ pressed }) => [styles.despliegue, { opacity: pressed ? 0.7 : 1 }]}
+      style={({ pressed }) => [
+        styles.despliegue,
+        bordered && [styles.despliegueBorde, { borderColor: abierto ? colors.primary : colors.border, backgroundColor: colors.surface }],
+        { opacity: pressed ? 0.7 : 1 },
+      ]}
     >
-      <Text style={[styles.botonTexto, { color: colors.primary }]}>{label}</Text>
-      <Feather name={abierto ? 'chevron-up' : 'chevron-down'} size={16} color={colors.primary} />
+      <Text style={[styles.botonTexto, bordered && styles.despliegueTextoIzq, { color: colorTexto }]}>{label}</Text>
+      <Feather name={abierto ? 'chevron-up' : 'chevron-down'} size={16} color={colorIcono} />
     </Pressable>
   );
 }
@@ -99,20 +138,20 @@ export function Entrada(props: {
   value: string;
   onChangeText: (text: string) => void;
   keyboardType?: 'default' | 'decimal-pad';
-  /** Replaces the label as the placeholder; `legible` draws it with the muted token so it stays readable. */
+  /** Replaces the label as the placeholder; always drawn with the muted token so it stays readable. */
   placeholder?: string;
   legible?: boolean;
   hint?: string;
 }): React.JSX.Element {
   const { colors } = useTheme();
-  const { testID, label, value, onChangeText, keyboardType = 'default', placeholder = label, legible = false, hint } = props;
+  const { testID, label, value, onChangeText, keyboardType = 'default', placeholder = label, hint } = props;
   return (
     <TextInput
       testID={testID}
       accessibilityLabel={label}
       accessibilityHint={hint}
       placeholder={placeholder}
-      placeholderTextColor={legible ? colors.textMuted : colors.textDim}
+      placeholderTextColor={colors.textMuted}
       value={value}
       onChangeText={onChangeText}
       keyboardType={keyboardType}
@@ -191,14 +230,19 @@ export function CampoCorregible(props: {
 /** Yes / No buttons for a three-state decision; no button selected means "not decided". */
 export function Triestado(props: { base: string; label: string; valor: boolean | null; onChange: (valor: boolean) => void }): React.JSX.Element {
   const { base, label, valor, onChange } = props;
+  let estado = 'Sin definir';
+  if (valor === true) estado = 'Sí';
+  else if (valor === false) estado = 'No';
   return (
-    <View style={styles.fila}>
-      <View style={styles.crece}>
+    <View style={styles.triestado}>
+      <View style={styles.triestadoEtiqueta}>
         <Texto>{label}</Texto>
-        <Texto small tone={valor === null ? 'warning' : 'muted'}>{valor === null ? 'Sin definir' : valor ? 'Sí' : 'No'}</Texto>
+        <Texto small tone={valor === null ? 'warning' : 'muted'}>{estado}</Texto>
       </View>
-      <Boton testID={`${base}-si`} label="Sí" selected={valor === true} onPress={() => onChange(true)} />
-      <Boton testID={`${base}-no`} label="No" selected={valor === false} onPress={() => onChange(false)} />
+      <View style={styles.fila}>
+        <Boton testID={`${base}-si`} label="Sí" selected={valor === true} onPress={() => onChange(true)} />
+        <Boton testID={`${base}-no`} label="No" selected={valor === false} onPress={() => onChange(false)} />
+      </View>
     </View>
   );
 }
@@ -362,8 +406,8 @@ const CAMPOS_ADICIONALES: ReadonlyArray<CampoCabecera> = [
 ];
 
 const PREGUNTAS_COMPRA: ReadonlyArray<{ campo: DecisionCabecera; label: string; ayuda: string }> = [
-  { campo: 'documentoCompletoConfirmado', label: '¿El documento está completo?', ayuda: 'Todas las páginas y todos los renglones.' },
-  { campo: 'recepcionCompleta', label: '¿Recibiste toda la mercancía?', ayuda: 'Confirma la recepción completa antes de aprobar.' },
+  { campo: 'documentoCompletoConfirmado', label: '¿Tienes todas las hojas de la factura?', ayuda: 'Confirma que no falta ninguna hoja ni producto.' },
+  { campo: 'recepcionCompleta', label: '¿Recibiste toda la mercancía?', ayuda: 'Confirma que recibiste toda la mercancía antes de continuar.' },
 ];
 
 const TIPOS_DOCUMENTO: ReadonlyArray<{ valor: TipoDocumento | null; testID: string; label: string }> = [
@@ -435,7 +479,19 @@ export function ResumenCabecera(props: { efectiva: FacturaEfectiva; calculo: Cal
 
 /** The two answers the calculation cannot guess: the document type and whether prices already include VAT. */
 export function PreguntasDocumento(props: { tipoDocumento: TipoDocumento | null; precioIncluyeIva: boolean | null; onEditar: OnEditar }): React.JSX.Element {
+  const { colors } = useTheme();
   const { tipoDocumento, precioIncluyeIva, onEditar } = props;
+  const [cambiar, setCambiar] = useState(false);
+  if (tipoDocumento !== null && precioIncluyeIva !== null && !cambiar) {
+    return (
+      <View testID="revision-preguntas-resumen" style={[styles.resumenInline, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+        <View style={styles.resumenTexto}>
+          <Texto>{`${tipoDocumento === 'factura' ? 'Factura' : 'Nota de entrega'} · precios ${precioIncluyeIva ? 'con' : 'sin'} IVA`}</Texto>
+        </View>
+        <Boton testID="revision-preguntas-cambiar" label="Cambiar" onPress={() => setCambiar(true)} />
+      </View>
+    );
+  }
   return (
     <View style={styles.seccion}>
       <Texto tone="primary">¿Es factura o nota de entrega?</Texto>
@@ -450,6 +506,7 @@ export function PreguntasDocumento(props: { tipoDocumento: TipoDocumento | null;
       </Texto>
       <Texto tone="primary">¿Los precios incluyen IVA?</Texto>
       <Triestado base="revision-decision-precioIncluyeIva" label="Los precios del documento" valor={precioIncluyeIva} onChange={valor => onEditar({ tipo: 'decision_cabecera', campo: 'precioIncluyeIva', valor })} />
+      {cambiar && tipoDocumento !== null && precioIncluyeIva !== null ? <Boton testID="revision-preguntas-listo" label="Listo" onPress={() => setCambiar(false)} /> : null}
     </View>
   );
 }
@@ -505,22 +562,32 @@ export default function FacturaRevisionCabecera(props: {
   onEditar: OnEditar;
 }): React.JSX.Element {
   const { efectiva, decisiones, tipoDocumento, calculo, onEditar } = props;
+  const [detalles, setDetalles] = useState(false);
   return (
-    <View style={styles.seccion}>
-      <ResumenCabecera efectiva={efectiva} calculo={calculo} onEditar={onEditar} />
+    <View style={styles.cabeceraCompacta}>
       <PreguntasDocumento tipoDocumento={tipoDocumento} precioIncluyeIva={decisiones.precioIncluyeIva} onEditar={onEditar} />
+      {calculo.moneda !== 'USD' ? <Texto tone="warning">La moneda no es USD o falta definirla. Corrige la moneda en Más detalles.</Texto> : null}
+      <BotonDespliegue testID="revision-cab-detalles" label="Más detalles" abierto={detalles} onPress={() => setDetalles(actual => !actual)} />
+      {detalles ? <ResumenCabecera efectiva={efectiva} calculo={calculo} onEditar={onEditar} /> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   seccion: { gap: 10 },
+  cabeceraCompacta: { gap: 6 },
+  resumenInline: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderWidth: 0.5, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 },
+  resumenTexto: { flexGrow: 1, flexShrink: 1, minWidth: 150 },
   tarjeta: { borderWidth: 0.5, borderRadius: 12, padding: 12, gap: 10 },
   filaDatoCaja: { gap: 6 },
   despliegue: { minHeight: 44, minWidth: 44, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, alignSelf: 'flex-start' },
+  despliegueBorde: { alignSelf: 'stretch', justifyContent: 'space-between', borderWidth: 0.5, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  despliegueTextoIzq: { textAlign: 'left' },
   campo: { borderWidth: 0.5, borderRadius: 10, padding: 10, gap: 6 },
   filaCaja: { borderWidth: 0.5, borderRadius: 8, padding: 8, gap: 6 },
   fila: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+  triestado: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12 },
+  triestadoEtiqueta: { minWidth: 140, flexShrink: 1 },
   crece: { flexGrow: 1, flexShrink: 1, flexBasis: 160 },
   boton: { minHeight: 44, minWidth: 44, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, alignItems: 'center', justifyContent: 'center' },
   botonTexto: { fontSize: scaleFont(12), fontFamily: 'JetBrainsMono_700Bold', flexShrink: 1, textAlign: 'center' },

@@ -16,14 +16,14 @@ export type EstadoLinea =
   | 'listo';
 
 export const ETIQUETA_ESTADO_LINEA: Readonly<Record<EstadoLinea, string>> = {
-  elegir_producto: 'Elegir producto',
+  elegir_producto: 'Elige el producto',
   falta_iva: 'Falta IVA',
-  faltan_unidades: 'Faltan unidades',
-  falta_codigo: 'Nuevo: falta código',
+  faltan_unidades: 'Faltan unidades por paquete',
+  falta_codigo: 'Nuevo: escanea el código',
   verificando_codigo: 'Verificando código',
-  codigo_sin_verificar: 'Código sin verificar',
+  codigo_sin_verificar: 'No se pudo verificar el código',
   codigo_en_uso: 'Código ya usado',
-  revisar: 'Revisar datos',
+  revisar: 'Revisa los datos',
   listo: 'Listo',
 };
 
@@ -80,7 +80,7 @@ export function siguientePorRevisar(estados: ReadonlyArray<{ lineaId: string; es
   return null;
 }
 
-export type AccionPrincipalId = 'leer' | 'revisar_leido' | 'continuar_productos' | 'continuar_compra' | 'ir_leer' | 'guardar' | 'aprobar' | 'preparar';
+export type AccionPrincipalId = 'siguiente_producto' | 'leer' | 'revisar_leido' | 'continuar_productos' | 'continuar_compra' | 'ir_leer' | 'guardar' | 'aprobar' | 'preparar';
 
 export interface AccionPrincipal {
   readonly id: AccionPrincipalId;
@@ -95,6 +95,7 @@ export interface SituacionRevision {
   readonly etapa: EtapaRevision;
   readonly carga: 'cargando' | 'listo' | 'no_disponible' | 'error' | 'sin_sesion';
   readonly hayContenido: boolean;
+  readonly porRevisar?: number;
   readonly hayExtraccionUsable: boolean;
   readonly intentoFallido: boolean;
   readonly ocupado: 'guardando' | 'aprobando' | 'extrayendo' | null;
@@ -120,36 +121,41 @@ function accion(id: AccionPrincipalId, etiqueta: string, deshabilitada = false, 
 function accionCompra(s: SituacionRevision): AccionPrincipal {
   if (s.materializando) return accion('preparar', 'Preparando borrador…', true);
   if (s.ocupado === 'guardando') return accion('guardar', 'Guardando…', true);
-  if (s.ocupado === 'aprobando') return accion('aprobar', 'Aprobando…', true);
+  if (s.ocupado === 'aprobando') return accion('aprobar', 'Confirmando…', true);
   if (s.sucio) {
-    if (s.conflicto) return accion('guardar', 'Guardar revisión', true, 'Hay una versión más reciente en el servidor: recárgala para continuar.');
-    if (s.hayBorradorPrecio) return accion('guardar', 'Guardar revisión', true, 'Corrige o borra el precio de venta no válido para guardar.');
-    return accion('guardar', 'Guardar revisión', !s.puedeGuardar, s.puedeGuardar ? null : 'Ahora no se puede guardar: espera a que termine la operación en curso o revisa la sesión.');
+    if (s.conflicto) return accion('guardar', 'Guardar cambios', true, 'Hay una versión más reciente en el servidor: recárgala para continuar.');
+    if (s.hayBorradorPrecio) return accion('guardar', 'Guardar cambios', true, 'Corrige o borra el precio de venta no válido para guardar.');
+    return accion('guardar', 'Guardar cambios', !s.puedeGuardar, s.puedeGuardar ? null : 'Ahora no se puede guardar: espera a que termine la operación en curso o revisa la sesión.');
   }
   if (!s.aprobada) {
-    if (s.hayBorradorPrecio) return accion('aprobar', 'Aprobar revisión', true, 'Corrige o borra el precio de venta no válido para aprobar.');
-    if (s.puedeAprobar) return accion('aprobar', 'Aprobar revisión');
-    if (s.conflicto) return accion('aprobar', 'Aprobar revisión', true, 'Hay una versión más reciente en el servidor: recárgala para continuar.');
-    if (!s.sinBloqueos) return accion('aprobar', 'Aprobar revisión', true, 'Resuelve los bloqueos para aprobar.');
-    if (s.editorDirty) return accion('aprobar', 'Aprobar revisión', true, 'Guarda los cambios de la factura antes de aprobar.');
-    return accion('aprobar', 'Aprobar revisión', true, 'Ahora no se puede aprobar: guarda la revisión o revisa la sesión.');
+    if (s.hayBorradorPrecio) return accion('aprobar', 'Confirmar revisión', true, 'Corrige o borra el precio de venta no válido para confirmar.');
+    if (s.puedeAprobar) return accion('aprobar', 'Confirmar revisión');
+    if (s.conflicto) return accion('aprobar', 'Confirmar revisión', true, 'Hay una versión más reciente en el servidor: recárgala para continuar.');
+    if (!s.sinBloqueos) return accion('aprobar', 'Confirmar revisión', true, 'Completa los datos que faltan para confirmar.');
+    if (s.editorDirty) return accion('aprobar', 'Confirmar revisión', true, 'Guarda los cambios de la factura antes de confirmar.');
+    return accion('aprobar', 'Confirmar revisión', true, 'Ahora no se puede confirmar: guarda los cambios o revisa la sesión.');
   }
-  if (s.puedeMaterializar) return accion('preparar', 'Preparar borrador de compra');
-  if (s.editorDirty) return accion('preparar', 'Preparar borrador de compra', true, 'Guarda los cambios de la factura antes de preparar la compra.');
-  return accion('preparar', 'Preparar borrador de compra', true, 'La aprobación no está vigente para esta versión de la factura.');
+  if (s.puedeMaterializar) return accion('preparar', 'Crear borrador de compra');
+  if (s.editorDirty) return accion('preparar', 'Crear borrador de compra', true, 'Guarda los cambios de la factura antes de preparar la compra.');
+  return accion('preparar', 'Crear borrador de compra', true, 'Cambiaste la factura: guarda los cambios y confirma de nuevo.');
 }
 
 /** The single next step of the current stage. Null when the screen shows its own recovery control instead. */
 export function accionPrincipal(s: SituacionRevision): AccionPrincipal | null {
   if (s.carga !== 'listo') return null;
-  if (s.etapa === 'leer') {
-    if (s.ocupado === 'extrayendo') return accion('leer', 'Leyendo la factura…', true);
-    if (s.hayContenido) return accion('continuar_productos', 'Continuar a productos');
-    if (s.hayExtraccionUsable) return accion('revisar_leido', 'Revisar lo leído');
-    return accion('leer', s.intentoFallido ? 'Intentar de nuevo' : 'Leer factura', !s.puedeExtraer, s.puedeExtraer ? null : s.razonNoExtraer);
+  if (s.etapa === 'leer' || s.etapa === 'productos') {
+    if (s.ocupado === 'extrayendo') return accion('leer', 'Buscando productos…', true);
+    if (s.hayContenido) {
+      const pendientes = s.porRevisar ?? 0;
+      return pendientes > 0
+        ? accion('siguiente_producto', `Revisar siguiente (${pendientes} faltan)`)
+        : accion('continuar_compra', 'Seguir a la compra');
+    }
+    if (s.hayExtraccionUsable) return accion('revisar_leido', 'Ver productos encontrados');
+    return accion('leer', s.intentoFallido ? 'Intentar de nuevo' : 'Buscar productos', !s.puedeExtraer, s.puedeExtraer ? null : s.razonNoExtraer);
   }
-  if (!s.hayContenido) return accion('ir_leer', 'Ir a Leer');
-  return s.etapa === 'productos' ? accion('continuar_compra', 'Continuar a compra') : accionCompra(s);
+  if (!s.hayContenido) return accion('ir_leer', 'Ir a Productos');
+  return accionCompra(s);
 }
 
 export interface GrupoBloqueosLinea {

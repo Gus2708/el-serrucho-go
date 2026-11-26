@@ -19,7 +19,7 @@ const CAMPOS: ReadonlyArray<{ campo: LineaCampoEscalar; label: string; decimal?:
   { campo: 'cantidad', label: 'Cantidad del documento', decimal: true },
   { campo: 'unidad', label: 'Unidad del documento' },
   { campo: 'precioUnitario', label: 'Costo unitario (USD)', decimal: true, monetario: true },
-  { campo: 'total', label: 'Total impreso del renglón (USD)', decimal: true, monetario: true },
+  { campo: 'total', label: 'Total impreso del producto (USD)', decimal: true, monetario: true },
 ];
 
 const CAMPO_IVA = { campo: 'tasaIva' as const, label: 'IVA (%)' };
@@ -156,9 +156,16 @@ function TarjetaCandidato(props: { id: string; candidato: MatchCandidate; suppor
         accessibilityLabel={`Confirmar ${candidato.descripcion}, código ${candidato.codigoInterno}`}
         accessibilityState={{ selected: elegido }}
         onPress={onElegir}
-        style={({ pressed }) => [styles.confirmar, { borderColor: colors.primary, backgroundColor: elegido ? colors.primaryFaded : colors.surface, opacity: pressed ? 0.7 : 1 }]}
+        style={({ pressed }) => [
+          styles.confirmar,
+          {
+            borderColor: elegido ? colors.primary : colors.border,
+            backgroundColor: elegido ? colors.primaryFaded : colors.surface,
+            opacity: pressed ? 0.7 : 1,
+          },
+        ]}
       >
-        <Text style={[styles.chipTexto, { color: colors.primary }]}>Confirmar</Text>
+        <Text style={[styles.chipTexto, { color: elegido ? colors.primary : colors.text }]}>Sí, es este</Text>
       </Pressable>
     </View>
   );
@@ -224,7 +231,7 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
     if (aplicado?.origen === 'usuario') return { texto: `Se usará tu precio: ${formatoUsdExacto(aplicado.valor)}`, tono: 'muted' };
     if (aplicado) return { texto: `Se usará el precio sugerido: ${formatoUsdExacto(aplicado.valor)}. Escribe un precio para cambiarlo.`, tono: 'muted' };
     if (tipoDocumento === null) return { texto: 'Elige el tipo de documento (factura o nota de entrega) para ver un precio sugerido.', tono: 'warning' };
-    return { texto: 'Sin costo neto calculado para este renglón: no hay precio sugerido.', tono: 'warning' };
+    return { texto: 'Sin costo neto calculado para este producto: no hay precio sugerido.', tono: 'warning' };
   }
   const estadoDelPrecio = estadoPrecio();
 
@@ -244,7 +251,7 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
   function renderProducto(): React.JSX.Element {
     return (
       <Seccion titulo="¿Qué producto es?">
-        <Texto small tone="muted">Decisión humana, distinta de la lectura de la factura.</Texto>
+        <Texto small tone="muted">Elige el producto del inventario o indica que no está.</Texto>
         {match?.feedback ? (
           <Texto testID={`${id}-feedback`} small tone="warning">
             {match.feedback.decision === 'producto_nuevo'
@@ -274,22 +281,23 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
           </>
         ) : match ? (
           <>
-            <Texto testID={`${id}-sin-candidatos`} small tone="warning">{catalogoParcial ? 'Sin candidatos en una lectura parcial: no prueba que el producto no exista. Busca por SKU antes de marcarlo como nuevo.' : 'Sin candidatos en la lectura acotada del catálogo. Sigue sin decidir.'}</Texto>
-            {catalogoParcial ? <Boton testID={`${id}-sin-candidatos-sku`} label="Buscar por SKU" onPress={() => setPanelProducto('manual')} /> : null}
+              <Texto testID={`${id}-sin-candidatos`} small tone="warning">{catalogoParcial ? 'No se revisó todo el inventario: no encontrarlo aquí no prueba que el producto no exista. Búscalo por su código antes de marcarlo como nuevo.' : 'No se encontraron productos en esta búsqueda. Falta que elijas uno o indiques que es nuevo.'}</Texto>
+            {catalogoParcial ? <Boton testID={`${id}-sin-candidatos-sku`} label="Es otro producto" onPress={() => setPanelProducto('manual')} /> : null}
           </>
         ) : null}
         {match && match.conflicts.length > 0 ? <Texto small tone="danger">Hay señales en conflicto entre código y descripción: revisa con cuidado.</Texto> : null}
         <View style={styles.fila}>
-          <BotonDespliegue testID={`${id}-manual-abrir`} label="Buscar por SKU" abierto={panelProducto === 'manual'} onPress={() => alternarPanel('manual')} />
-          <BotonDespliegue testID={`${id}-nuevo-abrir`} label="Es un producto nuevo" abierto={panelProducto === 'nuevo'} onPress={() => alternarPanel('nuevo')} />
+          <BotonDespliegue testID={`${id}-manual-abrir`} label="Es otro producto" abierto={panelProducto === 'manual'} onPress={() => alternarPanel('manual')} />
+          <BotonDespliegue testID={`${id}-nuevo-abrir`} label="No está en el inventario" abierto={panelProducto === 'nuevo'} onPress={() => alternarPanel('nuevo')} />
         </View>
         {panelProducto === 'manual' ? (
           <View style={styles.panel}>
-            <Entrada testID={`${id}-manual-codigo`} label="Código interno (SKU) manual" value={manualCodigo} onChangeText={setManualCodigo} />
-            <Entrada testID={`${id}-manual-motivo`} label="Motivo de la asociación manual" value={manualMotivo} onChangeText={setManualMotivo} />
+            <Entrada testID={`${id}-manual-codigo`} label="Código del producto" value={manualCodigo} onChangeText={setManualCodigo} />
+            <Boton testID={`${id}-manual-motivo-sugerido`} label="La sugerencia era otro producto" onPress={() => setManualMotivo('La sugerencia era otro producto')} />
+            <Entrada testID={`${id}-manual-motivo`} label="Por qué elegiste este producto" value={manualMotivo} onChangeText={setManualMotivo} />
             <Boton
               testID={`${id}-manual-aplicar`}
-              label="Asociar manualmente"
+              label="Usar este producto"
               disabled={manualCodigo.trim() === '' || manualMotivo.trim() === ''}
               onPress={() => {
                 onEditar({ tipo: 'asociacion', lineaId, asociacion: { tipo: 'confirmado', codigoInterno: manualCodigo.trim(), evidencia: 'manual', motivo: manualMotivo.trim() } });
@@ -301,10 +309,12 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
         ) : null}
         {panelProducto === 'nuevo' ? (
           <View style={styles.panel}>
+            <Texto small tone="muted">No se crea el producto ahora.</Texto>
+            <Boton testID={`${id}-nuevo-motivo-sugerido`} label="No existe en el inventario" onPress={() => setNuevoMotivo('No existe en el inventario')} />
             <Entrada testID={`${id}-nuevo-motivo`} label="Motivo: es un producto nuevo" value={nuevoMotivo} onChangeText={setNuevoMotivo} />
             <Boton
               testID={`${id}-nuevo-aplicar`}
-              label="Marcar como producto nuevo (no se crea)"
+              label="Marcar como nuevo"
               disabled={nuevoMotivo.trim() === ''}
               onPress={() => {
                 onEditar({ tipo: 'asociacion', lineaId, asociacion: { tipo: 'producto_nuevo', codigoInterno: null, evidencia: 'manual', motivo: nuevoMotivo.trim() } });
@@ -315,8 +325,8 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
         ) : null}
         {efectiva.asociacion.tipo !== 'pendiente' ? (
           <>
-            <Boton testID={`${id}-pendiente`} label="Cambiar producto" danger onPress={() => onEditar({ tipo: 'asociacion', lineaId, asociacion: { tipo: 'pendiente', codigoInterno: null, evidencia: null, motivo: null } })} />
-            <Texto small tone="muted">Deja el renglón sin decidir para elegir otro producto.</Texto>
+            <Boton testID={`${id}-pendiente`} label="Deshacer elección" danger onPress={() => onEditar({ tipo: 'asociacion', lineaId, asociacion: { tipo: 'pendiente', codigoInterno: null, evidencia: null, motivo: null } })} />
+            <Texto small tone="muted">Borra esta elección para que puedas elegir otro producto.</Texto>
           </>
         ) : null}
       </Seccion>
@@ -325,7 +335,7 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
 
   function renderIva(): React.JSX.Element {
     return (
-      <Seccion titulo="IVA de este renglón (obligatorio)">
+      <Seccion titulo="IVA de este producto (obligatorio)">
         <Texto testID={`revision-iva-${llave}-estado`} tone={iva.corregido && iva.valor !== null ? 'text' : 'warning'}>
           {iva.corregido && iva.valor !== null ? `Indicado: ${iva.valor} %` : 'Sin definir'}
         </Texto>
@@ -352,23 +362,23 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
 
   function renderUnidades(): React.JSX.Element {
     return (
-      <Seccion titulo="Unidades de inventario por unidad del documento">
+      <Seccion titulo="Unidades por cada una de la factura">
         <Texto testID={`revision-factor-${llave}-estado`} tone={efectiva.factorConversion === null ? 'warning' : 'text'}>
           {efectiva.factorConversion === null ? 'Sin confirmar' : `Confirmado: ${efectiva.factorConversion}`}
         </Texto>
         <View style={styles.fila}>
           <Boton
             testID={`revision-factor-${llave}-uno`}
-            label="1 por 1"
+            label="1"
             selected={efectiva.factorConversion === '1'}
             onPress={() => onEditar({ tipo: 'factor_conversion', lineaId, valor: '1' })}
           />
-          <BotonDespliegue testID={`revision-factor-${llave}-otro`} label="Otro factor…" abierto={otroFactor} onPress={() => setOtroFactor(actual => !actual)} />
+          <BotonDespliegue testID={`revision-factor-${llave}-otro`} label="Otra…" abierto={otroFactor} onPress={() => setOtroFactor(actual => !actual)} />
         </View>
         {otroFactor ? (
           <View style={styles.panel}>
-            <Entrada testID={`${id}-factor-valor`} label="Factor de conversión" value={factor} keyboardType="decimal-pad" onChangeText={setFactor} />
-            <Boton testID={`${id}-factor-aplicar`} label="Confirmar factor" disabled={factor.trim() === ''} onPress={() => { onEditar({ tipo: 'factor_conversion', lineaId, valor: factor.trim() }); setFactor(''); }} />
+            <Entrada testID={`${id}-factor-valor`} label="Unidades que trae cada una" value={factor} keyboardType="decimal-pad" onChangeText={setFactor} />
+            <Boton testID={`${id}-factor-aplicar`} label="Guardar" disabled={factor.trim() === ''} onPress={() => { onEditar({ tipo: 'factor_conversion', lineaId, valor: factor.trim() }); setFactor(''); }} />
           </View>
         ) : null}
       </Seccion>
@@ -378,7 +388,7 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
   function renderPrecioVenta(): React.JSX.Element {
     return (
       <Seccion titulo="Precio de venta">
-        <Texto small tone="muted">{etiquetaMonto('Precio de venta del renglón (USD)', esUsd)}</Texto>
+        <Texto small tone="muted">{etiquetaMonto('Precio de venta del producto (USD)', esUsd)}</Texto>
         {oculto ? (
           <Texto testID={`${id}-pvp-oculto`} small tone="warning">{oculto}</Texto>
         ) : (
@@ -420,7 +430,7 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
         <FilasLista
           base={`${id}-descuentos`}
           tipo="descuentos"
-          titulo="Descuentos del renglón (en orden)"
+          titulo="Descuentos del producto (en orden)"
           oculto={oculto}
           efectivo={efectiva.descuentos}
           onAplicar={(valor, motivo) => onEditar({ tipo: 'linea_descuentos', lineaId, valor: valor as ExtraidoDescuento[], motivo })}
@@ -439,13 +449,13 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
             />
             {efectiva.usarCodigoFactura ? (
               <Texto testID={`${id}-barras-estado`} small tone={estadoBarras === 'unico_verificado' || estadoBarras === 'ya_asignado_a_este_producto' ? 'success' : 'warning'}>
-                {efectiva.asociacion.tipo === 'pendiente' ? 'Decide primero la asociación del renglón.' : ESTADO_BARRAS[estadoBarras ?? 'no_verificable']}
+                {efectiva.asociacion.tipo === 'pendiente' ? 'Elige primero el producto del inventario.' : ESTADO_BARRAS[estadoBarras ?? 'no_verificable']}
               </Texto>
             ) : null}
           </View>
         ) : null}
 
-        {esManual ? <Boton testID={`${id}-quitar`} label="Quitar renglón manual" danger onPress={() => onEditar({ tipo: 'quitar_linea_manual', lineaId })} /> : null}
+        {esManual ? <Boton testID={`${id}-quitar`} label="Quitar producto agregado a mano" danger onPress={() => onEditar({ tipo: 'quitar_linea_manual', lineaId })} /> : null}
       </View>
     );
   }
@@ -482,7 +492,7 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
           : null}
         <BotonDespliegue testID={`${id}-mas`} label="Más opciones" abierto={mas} onPress={() => setMas(actual => !actual)} />
         {mas ? renderMasOpciones() : null}
-        <Boton testID={`${id}-siguiente`} label="Listo, siguiente renglón" onPress={onSiguiente} />
+        <Boton testID={`${id}-siguiente`} label="Siguiente producto" onPress={onSiguiente} />
       </View>
     );
   }

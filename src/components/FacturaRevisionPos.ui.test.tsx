@@ -78,7 +78,7 @@ function viewProps(repo: Mocks, leerExistencias: LeerExistencias | undefined, ov
 // ── Navigating the guided review ────────────────────────────────────────────
 // The review shows one stage at a time, one open line and collapsed disclosures. These helpers only open the stage, line
 // or disclosure that holds a control (through the real buttons); every assertion still goes through the control itself.
-const ETAPAS: readonly EtapaRevision[] = ['leer', 'productos', 'compra'];
+const ETAPAS: readonly EtapaRevision[] = ['productos', 'compra'];
 const CAMPOS_CABECERA_EXTRA = ['numeroControl', 'subtotal', 'total'];
 const CAMPOS_LINEA_CORREGIBLES = /^(codigoProveedor|descripcion|cantidad|unidad|precioUnitario|total)-/;
 const EN_FILA_O_DETALLE_ABIERTO = /^(|decision|abrir|estado|codigo)$/;
@@ -112,11 +112,11 @@ function rutaDe(id: string): Ruta {
   const enCabecera = /^revision-cab-(\w+?)-(.*)$/.exec(id);
   if (enCabecera) {
     const campo = enCabecera[1];
-    return { etapa: 'leer', despliegues: [...(CAMPOS_CABECERA_EXTRA.includes(campo) ? ['revision-cab-mas'] : []), `revision-cab-${campo}-corregir`] };
+    return { etapa: 'leer', despliegues: ['revision-cab-detalles', ...(CAMPOS_CABECERA_EXTRA.includes(campo) ? ['revision-cab-mas'] : []), `revision-cab-${campo}-corregir`] };
   }
   if (/^revision-agregar-/.test(id)) return { etapa: 'productos', despliegues: ['revision-agregar-abrir'] };
   if (/^revision-(extraer|iniciar-.*|aplicar-.*|reemplazo-motivo|cabecera-.*)$/.test(id)) return { etapa: 'leer', despliegues: ['revision-detalles-tecnicos'] };
-  if (/^revision-(tipo-.*|decision-precioIncluyeIva-.*)$/.test(id)) return { etapa: 'leer', despliegues: [] };
+  if (/^revision-(tipo-.*|decision-precioIncluyeIva-.*)$/.test(id)) return { etapa: 'productos', despliegues: ['revision-preguntas-cambiar'] };
   if (/^revision-(diferencias|pos|impacto-.*)$/.test(id)) return { etapa: 'compra', despliegues: ['revision-detalles-tecnicos'] };
   if (/^revision-(totales|por-tasa|bloqueos|guardar|aprobar|materializar|motivo-guardado|pvp-pendiente|decision-.*)$/.test(id)) return { etapa: 'compra', despliegues: [] };
   return { etapa: null, despliegues: [] };
@@ -139,13 +139,14 @@ function abrirDespliegue(id: string): void {
 }
 
 function irAEtapa(destino: EtapaRevision): void {
+  if (destino === 'leer') destino = 'productos';
   for (let paso = 0; paso < ETAPAS.length; paso++) {
     const actual = ETAPAS.find(etapa => screen.queryByTestId(`revision-etapa-${etapa}`));
     if (!actual || actual === destino) return;
     const adelante = ETAPAS.indexOf(destino) > ETAPAS.indexOf(actual);
-    const boton = screen.queryByTestId(adelante ? 'revision-accion-principal' : 'revision-volver');
+    const boton = screen.queryByTestId(adelante ? 'revision-ir-compra' : 'revision-volver');
     // Forward, the primary action only navigates when it says so: elsewhere it would read, save or approve.
-    if (!boton || (adelante && !/^Continuar/.test(textoDe(boton)))) return;
+    if (!boton || (adelante && !/^Ir a Compra/.test(textoDe(boton)))) return;
     fireEvent.press(boton);
   }
 }
