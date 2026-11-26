@@ -1,4 +1,11 @@
-import { createFacturaRevisionRepository, RevisionRepositoryError, type ContextoBusquedaHibrida, type RevisionClient } from './facturaRevisionRepository';
+import {
+  createFacturaRevisionRepository,
+  FACTURA_ACTUAL_SUPPLIER_SCOPE,
+  RevisionRepositoryError,
+  type ContextoBusquedaHibrida,
+  type RevisionClient,
+} from './facturaRevisionRepository';
+import { MATCHING_NORMALIZATION_VERSION } from './facturaMatching';
 import { crearRevisionManual } from './facturaRevision';
 import type { ExtraidaLinea } from './facturaExtractionContract';
 
@@ -503,6 +510,30 @@ describe('bounded catalog reads', () => {
     expect(result).toEqual({ productos: [], parcial: false });
   });
 
+  it('never queries the SIN_CODIGO sentinel as a code, without marking it partial, and still searches its description', async () => {
+    const sentinel = producto('7590000000077', 'SIN_CODIGO');
+    const input = [
+      linea(1, { codigoProveedor: 'SIN_CODIGO', descripcion: 'Manguera jardin' }),
+      linea(2, { codigoProveedor: ' sin_codigo ', descripcion: null }),
+      linea(3, { codigoProveedor: 'SIN-CODIGO', descripcion: null }),
+    ];
+    const snapshot = JSON.stringify(input);
+    const { client, calls } = fakeClient({ tables: { productos_view: responderCatalogo([{ ...sentinel, descripcion: 'Manguera jardin' }]) } });
+
+    const result = await createFacturaRevisionRepository(client).buscarCandidatos(input);
+
+    expect(JSON.stringify(input)).toBe(snapshot);
+    expect(result.parcial).toBe(false);
+    expect(result.productos.map(p => p.codigo_interno)).toEqual(['7590000000077']);
+    const codeValues = calls.flatMap(call => [...stepsOf(call, 'in'), ...stepsOf(call, 'ilike')])
+      .filter(([, column]) => column === 'codigo_interno' || column === 'codigo_barras')
+      .flatMap(([, , values]) => (Array.isArray(values) ? values : [values]));
+    expect(codeValues.map(value => String(value).replace(/\\/g, '').trim().toUpperCase())).not.toContain('SIN_CODIGO');
+    // A real code that only resembles the sentinel stays searchable literally.
+    expect(codeValues).toContain('SIN-CODIGO');
+    expect(calls.some(call => stepsOf(call, 'ilike').some(([, column]) => column === 'descripcion'))).toBe(true);
+  });
+
   it('keeps hostile invoice text out of filter syntax', async () => {
     const hostil = 'x%,descripcion.eq.1),or(codigo_barras.neq.0';
     const { client, calls } = fakeClient({ tables: { productos_view: { data: [] } } });
@@ -764,6 +795,110 @@ describe('bounded catalog reads', () => {
       expect(mock.rpc).not.toHaveBeenCalled();
       expect(mock.invoke).not.toHaveBeenCalled();
     });
+    it('keeps the legacy output shape when the deployed RPC returns no aliases key', async () => {
+      const mock = fakeClient({ invoke, rpc: { data: { decisiones: [corrected] } }, tables: { productos_view: responderCatalogo(products) } });
+      const result = await lookup(mock.client);
+      expect(Object.keys(result)).toEqual(['productos', 'parcial', 'feedback']);
+      expect(result.parcial).toBe(false);
+    });
+
+    describe('supplier aliases', () => {
+      const skuA = { ...producto('SKU-A'), descripcion: 'Tubo PVC 1/2', existencia: -2 };
+      const printed = (over: Partial<ExtraidaLinea> = {}) => linea(7, { codigoProveedor: '00123', descripcion: 'Tubo cambiado', unidad: 'UND', ...over });
+      const aliasLookup = (aliases: unknown, lineas: ExtraidaLinea[] = [printed()], rows = [skuA, producto('COD1')], extra: Record<string, unknown> = {}) => {
+        const mock = fakeClient({ invoke, rpc: { data: { decisiones: [], aliases, ...extra } }, tables: { productos_view: responderCatalogo(rows) } });
+        return { mock, result: createFacturaRevisionRepository(mock.client).buscarCandidatos(lineas, context) };
+      };
+      const expected = (over: Record<string, unknown> = {}) => ({
+        supplierKey: FACTURA_ACTUAL_SUPPLIER_SCOPE, keyType: 'codigo_proveedor', keyValue: '00123', unit: 'UND',
+        codigoInterno: 'SKU-A', normalizationVersion: MATCHING_NORMALIZATION_VERSION, ...over,
+      });
+
+      it("builds the alias from the target line's own printed code and unit, hydrated from the current catalog", async () => {
+        const lineas = [printed()];
+        const snapshot = JSON.stringify(lineas);
+        const { mock, result } = aliasLookup([{ lineIndex: 0, codigoInterno: 'SKU-A' }], lineas);
+        const found = await result;
+        expect(mock.rpc).toHaveBeenCalledTimes(1);
+        expect(found.aliases).toEqual([expected()]);
+        expect(found.supplierKey).toBe(FACTURA_ACTUAL_SUPPLIER_SCOPE);
+        expect(found.productos.find(p => p.codigo_interno === 'SKU-A')?.existencia).toBe(-2);
+        expect(found.parcial).toBe(false);
+        expect(JSON.stringify(lineas)).toBe(snapshot);
+      });
+
+      it('keeps leading zeros, punctuation and an unknown unit literal', async () => {
+        const { result } = aliasLookup([{ lineIndex: 0, codigoInterno: 'SKU-A' }], [printed({ codigoProveedor: ' 0-0123. ', unidad: null })]);
+        expect((await result).aliases).toEqual([expected({ keyValue: ' 0-0123. ', unit: null })]);
+      });
+
+      it.each([
+        ['not an array', { lineIndex: 0 }],
+        ['a null entry', [null]],
+        ['an out-of-range line', [{ lineIndex: 1, codigoInterno: 'SKU-A' }]],
+        ['a fractional line', [{ lineIndex: 0.5, codigoInterno: 'SKU-A' }]],
+        ['a negative line', [{ lineIndex: -1, codigoInterno: 'SKU-A' }]],
+        ['an unsafe SKU', [{ lineIndex: 0, codigoInterno: 'SKU A,(x)' }]],
+        ['a null SKU', [{ lineIndex: 0, codigoInterno: null }]],
+        ['contradictory duplicates', [{ lineIndex: 0, codigoInterno: 'SKU-A' }, { lineIndex: 0, codigoInterno: 'COD1' }]],
+        ['more than 200 entries', Array.from({ length: 201 }, () => ({ lineIndex: 0, codigoInterno: 'SKU-A' }))],
+      ])('drops %s and marks the lookup partial without touching decisions', async (_name, aliases) => {
+        const { result } = aliasLookup(aliases, [printed()], [skuA, producto('COD1')], { decisiones: [{ ...corrected, codigoInterno: 'COD1' }] });
+        const found = await result;
+        expect(found.aliases).toBeUndefined();
+        expect(found.supplierKey).toBeUndefined();
+        expect(found.feedback).toEqual([{ ...corrected, codigoInterno: 'COD1' }]);
+        expect(found.parcial).toBe(true);
+      });
+
+      it.each(['missing', 'placeholder'])('drops an alias to a %s SKU without falling back and marks partial', async kind => {
+        const rows = kind === 'missing' ? [producto('COD1')] : [producto('COD1'), { ...skuA, es_placeholder: true }];
+        const { result } = aliasLookup([{ lineIndex: 0, codigoInterno: 'SKU-A' }], [printed()], rows);
+        const found = await result;
+        expect(found.aliases).toBeUndefined();
+        expect(found.parcial).toBe(true);
+      });
+
+      it.each([null, '  ', 'SIN_CODIGO'])('drops an alias for a target line without a printed code (%j)', async codigoProveedor => {
+        const { result } = aliasLookup([{ lineIndex: 0, codigoInterno: 'SKU-A' }], [printed({ codigoProveedor })]);
+        const found = await result;
+        expect(found.aliases).toBeUndefined();
+        expect(found.parcial).toBe(true);
+      });
+
+      it('drops an alias the matcher would also apply to a same-code line the server left without that alias', async () => {
+        // Server suppressed line 0 (its exact printed line disagrees); line 1's alias would still reach it.
+        const disagreeing = aliasLookup([{ lineIndex: 1, codigoInterno: 'SKU-A' }], [printed({ descripcion: 'Tubo viejo' }), printed()]);
+        expect((await disagreeing.result).aliases).toBeUndefined();
+        expect((await disagreeing.result).parcial).toBe(true);
+
+        // A blank unit is unknown to the matcher, so it would reach the CAJA line the server keyed apart.
+        const blankUnit = aliasLookup([{ lineIndex: 0, codigoInterno: 'SKU-A' }], [printed({ unidad: null }), printed({ unidad: 'CAJA' })]);
+        expect((await blankUnit.result).aliases).toBeUndefined();
+      });
+
+      it('keeps aliases whose reach the server fully covered, including other units of the same code', async () => {
+        const lineas = [printed(), printed({ unidad: 'CAJA' }), printed({ descripcion: 'Tubo otra vez' })];
+        const { result } = aliasLookup([{ lineIndex: 0, codigoInterno: 'SKU-A' }, { lineIndex: 2, codigoInterno: 'SKU-A' }], lineas);
+        const found = await result;
+        expect(found.aliases).toEqual([expected(), expected()]);
+        expect(found.parcial).toBe(false);
+      });
+
+      it('keeps aliases when the semantic endpoint fails and drops them when the feedback RPC fails', async () => {
+        const offline = fakeClient({ invoke: async () => { throw new Error('offline'); }, rpc: { data: { decisiones: [], aliases: [{ lineIndex: 0, codigoInterno: 'SKU-A' }] } }, tables: { productos_view: responderCatalogo([skuA]) } });
+        const kept = await createFacturaRevisionRepository(offline.client).buscarCandidatos([printed()], context);
+        expect(kept.aliases).toEqual([expected()]);
+        expect(kept.parcial).toBe(true);
+
+        const rejected = fakeClient({ invoke, rpc: { error: { code: '42501', message: 'PRIVATE' } }, tables: { productos_view: responderCatalogo([skuA]) } });
+        const none = await createFacturaRevisionRepository(rejected.client).buscarCandidatos([printed()], context);
+        expect(none.aliases).toBeUndefined();
+        expect(none.supplierKey).toBeUndefined();
+        expect(none.parcial).toBe(true);
+      });
+    });
+
     it('keeps exact reads on a rejected feedback RPC without leaking the error', async () => {
       const mock = fakeClient({ invoke, rpc: { error: { code: '42501', message: 'PRIVATE' } }, tables: { productos_view: responderCatalogo(products) } });
       const result = await lookup(mock.client);

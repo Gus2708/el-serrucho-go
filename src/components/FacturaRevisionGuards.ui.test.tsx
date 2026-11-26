@@ -1,8 +1,10 @@
 import * as React from 'react';
 import { act, fireEvent, screen } from '@testing-library/react-native';
 import FacturaRevisionView, { type EtapaRevision, type FacturaRevisionViewProps } from './FacturaRevisionView';
+import { MATCHING_NORMALIZATION_VERSION } from '../lib/facturaMatching';
 import {
   createFacturaRevisionRepository,
+  FACTURA_ACTUAL_SUPPLIER_SCOPE,
   type ExtraccionRow,
   type FacturaRevisionRepository,
   type GuardarRevisionInput,
@@ -77,6 +79,61 @@ describe('saved feedback suggestions', () => {
     await settle();
     expect(current.efectiva!.lineas[0].asociacion.codigoInterno).toBe('MANUAL');
     expect((current.candidatos[1] as any).feedback).toEqual(chosen);
+  });
+
+  const supplierAlias = {
+    supplierKey: FACTURA_ACTUAL_SUPPLIER_SCOPE, keyType: 'codigo_proveedor', keyValue: '00123', unit: 'UND',
+    codigoInterno: 'PAST', normalizationVersion: MATCHING_NORMALIZATION_VERSION,
+  };
+  const withAlias = { productos: [product], parcial: false, aliases: [supplierAlias], supplierKey: FACTURA_ACTUAL_SUPPLIER_SCOPE };
+  const aliasEvidence = (n: number) =>
+    current.candidatos[n]?.candidates.find(c => c.codigoInterno === 'PAST')?.evidence.some(e => e.source === 'alias') ?? false;
+
+  it('passes a supplier alias to the real matcher as evidence without confirming the line', async () => {
+    const repo = fakeRepo({ buscarCandidatos: jest.fn(async () => withAlias) });
+    await startHook(repo);
+    expect(repo.buscarCandidatos).toHaveBeenCalledTimes(1);
+    expect(aliasEvidence(1)).toBe(true);
+    expect(aliasEvidence(3)).toBe(false);
+    expect(current.efectiva!.lineas[0].asociacion.tipo).toBe('pendiente');
+  });
+
+  it('shows the supplier-alias chip on that line while the decision stays pending', async () => {
+    const repo = fakeRepo({ buscarCandidatos: jest.fn(async () => withAlias) });
+    await startRevision(repo);
+    expect(textOf('revision-linea-1-tarjeta-PAST')).toContain('Alias del proveedor');
+    expect(textOf('revision-linea-1-decision')).toMatch(/pendiente|Sin decidir/i);
+  });
+
+  it('ignores an alias returned without the current-invoice supplier scope', async () => {
+    const repo = fakeRepo({ buscarCandidatos: jest.fn(async () => ({ productos: [product], parcial: false, aliases: [supplierAlias] })) });
+    await startHook(repo);
+    expect(aliasEvidence(1)).toBe(false);
+  });
+
+  it('never applies aliases from a previous invoice or session generation', async () => {
+    const late = deferred<any>();
+    const repo = fakeRepo({ buscarCandidatos: jest.fn().mockReturnValueOnce(late.promise).mockResolvedValue({ productos: [], parcial: false }) });
+    const view = await startHook(repo);
+    view.rerenderUi(<Hook {...hookProps(repo, { facturaId: FACTURA_2 })} />);
+    await settle();
+    await act(async () => late.resolve(withAlias));
+    expect(current.candidatos).toEqual({});
+    view.unmount();
+
+    const lateSession = deferred<any>();
+    let uid = OWNER_A;
+    const other = fakeRepo({ buscarCandidatos: jest.fn().mockReturnValueOnce(lateSession.promise) });
+    other.leerExtracciones.mockResolvedValue([extraccionRow()]);
+    await mountHook(other, { getSessionUid: () => uid });
+    await act(async () => {
+      expect(current.aplicarExtraccion(EXT, null).ok).toBe(true);
+    });
+    await settle();
+    uid = OWNER_B;
+    await act(async () => lateSession.resolve(withAlias));
+    await settle();
+    expect(aliasEvidence(1)).toBe(false);
   });
 });
 const EXT = 'e0000000-0000-4000-8000-000000000001';

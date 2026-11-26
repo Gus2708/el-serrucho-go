@@ -1,7 +1,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CatalogoCodigosBarras, RevisionContenido } from './facturaRevision';
 import type { ExtraidaLinea } from './facturaExtractionContract';
-import { parseProductFeedback, type ProductFeedback, type HybridLineRanks, type HybridRankEntry } from './facturaMatching';
+import {
+  isAbsentIdentifier,
+  matchInvoiceLines,
+  MATCHING_NORMALIZATION_VERSION,
+  parseProductFeedback,
+  type HybridLineRanks,
+  type HybridRankEntry,
+  type ProductFeedback,
+  type SupplierAlias,
+} from './facturaMatching';
 import type { Producto } from './supabase';
 import { reportFacturaThrown, type FacturaOperation } from './facturaTelemetry';
 
@@ -113,7 +122,17 @@ export interface CatalogoAcotado {
    */
   readonly hybridRanks?: readonly HybridLineRanks[];
   readonly feedback?: readonly ProductFeedback[];
+  /** Saved supplier aliases for target lines, built from each line's own printed code and unit; present only when usable. */
+  readonly aliases?: readonly SupplierAlias[];
+  /** Matcher supplier scope for `aliases`; the server already limited them to this invoice's own saved supplier. */
+  readonly supplierKey?: string;
 }
+
+/**
+ * Supplier scope of aliases returned for the current invoice. The feedback RPC already scoped them to the invoice's own
+ * saved supplier, so the client never supplies or trusts a supplier string (OCR or otherwise).
+ */
+export const FACTURA_ACTUAL_SUPPLIER_SCOPE = 'factura-actual';
 
 /** Stored extraction the hybrid retrieval endpoint may read on the server; the only data the client sends. */
 export interface ContextoBusquedaHibrida {
@@ -240,6 +259,8 @@ const HYBRID_FUNCTION = 'consultar-productos-semantico';
 const MAX_HYBRID_GROUPS = 200;
 const MAX_HYBRID_ENTRIES = 8;
 const MAX_HYBRID_SKUS = MAX_CODES_PER_QUERY * 4;
+const MAX_ALIASES = 200;
+const ALIAS_KEY_TYPE = 'codigo_proveedor';
 const HYBRID_SOURCES = ['lexical', 'semantic'] as const;
 
 function escapeIlikeLiteral(value: string): string {
@@ -396,9 +417,10 @@ async function hydrateHybridRanks(
   parsed: ParsedHybrid,
   byCode: Map<string, Producto>,
   feedback: readonly ProductFeedback[],
-): Promise<{ ranks: HybridLineRanks[]; feedback: ProductFeedback[]; parcial: boolean }> {
+  aliases: readonly ProductFeedback[],
+): Promise<{ ranks: HybridLineRanks[]; feedback: ProductFeedback[]; aliases: ProductFeedback[]; parcial: boolean }> {
   let parcial = parsed.parcial;
-  const wanted = new Set(feedback.flatMap(item => item.codigoInterno === null ? [] : [item.codigoInterno]));
+  const wanted = new Set([...feedback, ...aliases].flatMap(item => item.codigoInterno === null ? [] : [item.codigoInterno]));
   for (const group of parsed.groups) {
     for (const entry of [...group.lexical, ...group.semantic]) wanted.add(entry.codigoInterno);
   }
@@ -431,7 +453,8 @@ async function hydrateHybridRanks(
       ...(semantic.length > 0 ? { semantic } : {}),
     });
   }
-  const decisions = feedback.filter(item => {
+  // A remembered SKU missing from the current catalog, or a placeholder, is dropped and never replaced by an older one.
+  const current = (item: ProductFeedback): boolean => {
     if (item.decision === 'producto_nuevo') return true;
     const product = item.codigoInterno === null ? undefined : byCode.get(item.codigoInterno);
     if (!product || product.es_placeholder === true) {
@@ -439,8 +462,63 @@ async function hydrateHybridRanks(
       return false;
     }
     return true;
+  };
+  return { ranks, feedback: feedback.filter(current), aliases: aliases.filter(current), parcial };
+}
+
+/**
+ * Supplier aliases of the feedback RPC, validated like saved decisions (safe literal SKU, in-range line, contradictory
+ * duplicates dropped). An absent key is an older RPC: no aliases and nothing partial. Over the cap nothing is kept.
+ */
+function parseAliases(data: unknown, lineas: readonly ExtraidaLinea[]): { aliases: ProductFeedback[]; parcial: boolean } {
+  if (!isRecord(data) || data.aliases === undefined) return { aliases: [], parcial: false };
+  const raw = data.aliases;
+  if (Array.isArray(raw) && raw.length > MAX_ALIASES) return { aliases: [], parcial: true };
+  const entries = Array.isArray(raw)
+    ? raw.map(item => (isRecord(item) ? { lineIndex: item.lineIndex, decision: 'confirmado', codigoInterno: item.codigoInterno } : item))
+    : raw;
+  const parsed = parseProductFeedback(entries, lineas.length, MAX_ALIASES);
+  const aliases = parsed.decisiones.filter(item => !isAbsentIdentifier(lineas[item.lineIndex].codigoProveedor));
+  return { aliases, parcial: parsed.parcial || aliases.length < parsed.decisiones.length };
+}
+
+/**
+ * Builds each alias from its target line's own printed code and unit. The matcher applies an alias to every line with the
+ * same printed code, so an alias survives only if the real matcher reaches no line the server did not give the same SKU.
+ */
+function coveredAliases(
+  lineas: readonly ExtraidaLinea[],
+  hints: readonly ProductFeedback[],
+  byCode: ReadonlyMap<string, Producto>,
+): { aliases: SupplierAlias[]; parcial: boolean } {
+  const sent = new Map(hints.map(hint => [hint.lineIndex, hint.codigoInterno]));
+  const built: SupplierAlias[] = hints.map(hint => ({
+    supplierKey: FACTURA_ACTUAL_SUPPLIER_SCOPE,
+    keyType: ALIAS_KEY_TYPE,
+    keyValue: lineas[hint.lineIndex].codigoProveedor ?? '',
+    unit: lineas[hint.lineIndex].unidad,
+    codigoInterno: hint.codigoInterno ?? '',
+    normalizationVersion: MATCHING_NORMALIZATION_VERSION,
+  }));
+  const verdicts = new Map<string, boolean>();
+  function covered(alias: SupplierAlias): boolean {
+    const product = byCode.get(alias.codigoInterno);
+    if (!product) return false;
+    const probe = matchInvoiceLines({ supplierKey: FACTURA_ACTUAL_SUPPLIER_SCOPE, lines: lineas, catalog: [product], aliases: [alias] });
+    if (!probe.ok) return false;
+    return probe.lines.every(line => {
+      const reached =
+        line.candidates.some(c => c.codigoInterno === alias.codigoInterno && c.evidence.some(e => e.source === 'alias')) ||
+        line.conflicts.some(conflict => conflict.codigosInternos.includes(alias.codigoInterno));
+      return !reached || sent.get(line.index) === alias.codigoInterno;
+    });
+  }
+  const aliases = built.filter(alias => {
+    const key = JSON.stringify([alias.keyValue, alias.unit, alias.codigoInterno]);
+    if (!verdicts.has(key)) verdicts.set(key, covered(alias));
+    return verdicts.get(key) === true;
   });
-  return { ranks, feedback: decisions, parcial };
+  return { aliases, parcial: aliases.length < built.length };
 }
 
 export function createFacturaRevisionRepository(client: RevisionClient): FacturaRevisionRepository {
@@ -522,7 +600,8 @@ export function createFacturaRevisionRepository(client: RevisionClient): Factura
     },
 
     async buscarCandidatos(lineas, contexto) {
-      const codes = [...new Set(lineas.map(l => l.codigoProveedor?.trim() ?? '').filter(c => c !== ''))];
+      // The SIN_CODIGO sentinel is no identifier: skipping its code reads is not a partial lookup.
+      const codes = [...new Set(lineas.map(l => l.codigoProveedor?.trim() ?? '').filter(c => !isAbsentIdentifier(c)))];
       const safeCodes = codes.filter(code => SAFE_FILTER_VALUE.test(code));
       let parcial = safeCodes.length !== codes.length;
       const reads: Read[] = [];
@@ -595,12 +674,15 @@ export function createFacturaRevisionRepository(client: RevisionClient): Factura
       const [hybridData, feedbackData] = await Promise.all([hybridRequest, feedbackRequest]);
       const parsed = parseHybridPayload(hybridData, lineas.length) ?? { groups: [], parcial: true };
       const saved = parseProductFeedback(isRecord(feedbackData) ? feedbackData.decisiones : null, lineas.length);
-      const hydrated = await hydrateHybridRanks(client, parsed, byCode, saved.decisiones);
+      const savedAliases = parseAliases(feedbackData, lineas);
+      const hydrated = await hydrateHybridRanks(client, parsed, byCode, saved.decisiones, savedAliases.aliases);
+      const covered = coveredAliases(lineas, hydrated.aliases, byCode);
       return {
         productos: [...byCode.values()],
-        parcial: parcial || hydrated.parcial || saved.parcial,
+        parcial: parcial || hydrated.parcial || saved.parcial || savedAliases.parcial || covered.parcial,
         ...(hydrated.ranks.length > 0 ? { hybridRanks: hydrated.ranks } : {}),
         ...(hydrated.feedback.length > 0 ? { feedback: hydrated.feedback } : {}),
+        ...(covered.aliases.length > 0 ? { aliases: covered.aliases, supplierKey: FACTURA_ACTUAL_SUPPLIER_SCOPE } : {}),
       };
     },
 
