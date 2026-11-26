@@ -7,21 +7,26 @@ Do not merge or deploy it as production-validated work.
 
 ### Guided invoice entry and review
 
-The redesigned entry separates four stages: Factura, Leer, Productos and Compra.
+The simplified entry has three steps: Factura, Productos and Compra. The internal
+legacy `leer` stage remains an alias of Productos, not another visible step.
 The Factura stage supports an optional photo/PDF and preserves manual entry.
 On native devices, Tomar foto opens a guarded camera capture; on web or when
 camera access is unavailable, it falls back to the existing document picker.
 Captured bytes use the same private attachment controller as picked files.
 Capture does not save the invoice, invoke extraction, or emit a purchase.
-Reading remains an explicit user action in Leer. Review stays mounted when
+Reading remains an explicit `Buscar productos` action in Productos, with an
+external-service and possible-cost notice. `Guardar y continuar` only saves
+and navigates; it never starts that external request. Review stays mounted when
 returning to Factura so that unsaved review edits are not discarded.
 
-Leer presents the reading summary and document-level decisions. Productos
-shows review progress and expandable rows with explicit Confirmar, Cambiar and
-Es un producto nuevo actions. Required VAT and unit-factor choices stay manual;
+Productos presents the document questions, review progress and expandable rows
+with explicit `Sí, es este`, `Es otro producto` and `No está en el inventario`
+choices. Required VAT and units-per-invoice-item decisions stay manual;
 quantity, cost and selling-price corrections reuse the existing review edits.
 Compra presents the remaining confirmations and the single current footer
-action: save, approve, or prepare the editable draft. Technical details remain
+action: `Guardar cambios`, `Confirmar revisión`, or `Crear borrador de compra`.
+The main product action opens the next unfinished product before moving to Compra.
+Technical details remain
 available through disclosures rather than dominating the task.
 
 Independent isolated checks passed for the original redesign candidate: 1,317
