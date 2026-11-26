@@ -355,7 +355,10 @@ describe('Impacto en Hybrid (read-only view)', () => {
 
 let current: FacturaRevisionControl;
 function Hook(p: UseFacturaRevisionParams) {
-  current = useFacturaRevision(p);
+  const control = useFacturaRevision(p);
+  React.useLayoutEffect(() => {
+    current = control;
+  }, [control]);
   return null;
 }
 function hookProps(repo: Mocks, leerExistencias: LeerExistencias | undefined, over: Partial<UseFacturaRevisionParams> = {}): UseFacturaRevisionParams {

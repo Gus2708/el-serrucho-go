@@ -563,7 +563,7 @@ export function WebBarcodeScanner({ visible, onClose, onScan }: Props): React.JS
     frameTickRef.current = 0;
 
     try {
-      async function initNativeDetector(): Promise<BarcodeDetector | null> {
+      const initNativeDetector = async function initNativeDetector(): Promise<BarcodeDetector | null> {
         const hasNativeDetectorGlobal = typeof window !== 'undefined' && 'BarcodeDetector' in window;
         if (!hasNativeDetectorGlobal) return null;
         try {
@@ -578,7 +578,7 @@ export function WebBarcodeScanner({ visible, onClose, onScan }: Props): React.JS
           return null;
         }
         return null;
-      }
+      };
 
       const [nativeDetector, barcodeEngine] = await Promise.all([
         initNativeDetector(),

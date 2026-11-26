@@ -114,7 +114,12 @@ export function cleanScannedBarcode(raw: string): string {
   if (!raw) return '';
   let cleaned = raw
     .replace(/^(\]C1|\]e0|\]d1|\]E0|\]I1)/i, '')
-    .replace(/[\x00-\x1f\x7f\u200b]/g, '')
+    .split('')
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code > 0x1f && code !== 0x7f && code !== 0x200b;
+    })
+    .join('')
     .trim();
 
   // Code 39 con asteriscos de guarda (*CODIGO*)

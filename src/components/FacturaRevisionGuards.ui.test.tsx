@@ -369,7 +369,10 @@ function savedRevision(over: Partial<RevisionRow> = {}, edit: (contenido: Revisi
 
 let current: FacturaRevisionControl;
 function Hook(p: UseFacturaRevisionParams) {
-  current = useFacturaRevision(p);
+  const control = useFacturaRevision(p);
+  React.useLayoutEffect(() => {
+    current = control;
+  }, [control]);
   return null;
 }
 function hookProps(repo: Mocks, over: Partial<UseFacturaRevisionParams> = {}): UseFacturaRevisionParams {
