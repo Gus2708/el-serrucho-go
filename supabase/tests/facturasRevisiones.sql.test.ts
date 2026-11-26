@@ -45,7 +45,8 @@ async function actAsServiceRole(database: PGlite): Promise<void> {
 }
 
 // `withPvp` false stops at the revisions migration so a test can apply the PVP migration later in the same engine;
-// `withFeedback` false keeps the matching-feedback migration out so a test can apply it later to a warmed session.
+// `withFeedback` false keeps the matching-feedback and supplier-alias migrations out so a test can apply them later
+// to a warmed session.
 async function initTestDb(withPvp = true, withFeedback = true): Promise<PGlite> {
   const database = await createMigratedDb();
   await database.exec(`
@@ -60,6 +61,7 @@ async function initTestDb(withPvp = true, withFeedback = true): Promise<PGlite> 
   if (withPvp) await database.exec(migrationSql('_facturas_revisiones_pvp.sql'));
   if (withPvp) await database.exec(migrationSql('_factura_revision_barcode_escaneado.sql'));
   if (withPvp && withFeedback) await database.exec(migrationSql('_factura_matching_feedback.sql'));
+  if (withPvp && withFeedback) await database.exec(migrationSql('_factura_matching_supplier_aliases.sql'));
   return database;
 }
 
@@ -1467,6 +1469,31 @@ async function feedback(s: { facturaId: string; extraccionId: string }, version 
 const confirmed = (lineIndex: number, codigoInterno: string): FeedbackDecision => ({ lineIndex, decision: 'confirmado', codigoInterno });
 const brandNew = (lineIndex: number): FeedbackDecision => ({ lineIndex, decision: 'producto_nuevo', codigoInterno: null });
 
+interface SupplierAlias {
+  lineIndex: number;
+  codigoInterno: string;
+}
+
+interface FeedbackResponse {
+  decisiones: FeedbackDecision[];
+  aliases: SupplierAlias[];
+}
+
+async function feedbackResponse(s: { facturaId: string; extraccionId: string }, version = 1, user = ADMIN): Promise<FeedbackResponse> {
+  await actAs(db, user, true);
+  const r = await db.query<{ r: FeedbackResponse }>(
+    'select public.buscar_feedback_productos_factura($1::uuid, $2::uuid, $3::int) as r',
+    [s.facturaId, s.extraccionId, version]
+  );
+  return r.rows[0].r;
+}
+
+async function aliases(s: { facturaId: string; extraccionId: string }, version = 1, user = ADMIN): Promise<SupplierAlias[]> {
+  return (await feedbackResponse(s, version, user)).aliases;
+}
+
+const alias = (lineIndex: number, codigoInterno: string): SupplierAlias => ({ lineIndex, codigoInterno });
+
 describe('buscar_feedback_productos_factura: saved human decisions as search feedback', () => {
   beforeAll(async () => {
     db = await initTestDb();
@@ -1749,6 +1776,239 @@ describe('buscar_feedback_productos_factura: saved human decisions as search fee
     expect(await feedback(target)).toEqual([]);
   });
 
+  describe('supplier aliases: latest current confirmation of the same printed code and unit', () => {
+    it('reuses a confirmation of the same supplier code and unit when the printed description changed', async () => {
+      const supplier = newSupplier();
+      const history = await feedbackScenario({ supplier, lines: [['C-77', 'Tubo PVC 1/2', 'UND']] });
+      await saveDecisions(history, ['SKU-A']);
+      const target = await feedbackScenario({
+        supplier,
+        lines: [['C-77', 'TUBO PVC 1/2 PAVCO', 'UND'], ['C-78', 'Tubo PVC 1/2', 'UND'], ['C-77', 'Tubo PVC 1/2', 'UND']],
+      });
+      const response = await feedbackResponse(target);
+      expect(response.aliases).toEqual([alias(0, 'SKU-A'), alias(2, 'SKU-A')]);
+      // The exact-context decisions are unchanged: only the identical printed line gets one.
+      expect(response.decisiones).toEqual([confirmed(2, 'SKU-A')]);
+      expect(await aliases(target)).toEqual(response.aliases);
+    });
+
+    it('exposes only the target line index and SKU: no history, user, supplier, code or description', async () => {
+      const supplier = newSupplier();
+      const history = await feedbackScenario({ supplier, lines: [['LEAK-1', 'Descripcion historica', 'UND']] });
+      await saveDecisions(history, ['SKU-A']);
+      const target = await feedbackScenario({ supplier, lines: [['LEAK-1', 'Descripcion nueva', 'UND']] });
+      const found = await aliases(target);
+      expect(found).toEqual([alias(0, 'SKU-A')]);
+      for (const a of found) expect(Object.keys(a).sort()).toEqual(['codigoInterno', 'lineIndex']);
+      const raw = JSON.stringify(found);
+      for (const secret of [history.facturaId, history.extraccionId, ADMIN, supplier, 'LEAK', 'Descripcion', 'UND']) {
+        expect(raw).not.toContain(secret);
+      }
+    });
+
+    it('lets a later new-product decision for the key revoke the alias without reviving the older SKU', async () => {
+      const supplier = newSupplier();
+      const older = await feedbackScenario({ supplier, lines: [['N-1', 'Codo uno', 'UND']] });
+      await saveDecisions(older, ['SKU-A']);
+      const target = await feedbackScenario({ supplier, lines: [['N-1', 'Codo tres', 'UND']] });
+      expect(await aliases(target)).toEqual([alias(0, 'SKU-A')]);
+      const later = await feedbackScenario({ supplier, lines: [['N-1', 'Codo dos', 'UND']] });
+      await saveDecisions(later, ['nuevo']);
+      expect(await aliases(target)).toEqual([]);
+    });
+
+    it('does not revive an older revision of the same invoice after a reset to pending or a detached save', async () => {
+      const supplier = newSupplier();
+      const history = await feedbackScenario({ supplier, lines: [['P-1', 'Llave uno', 'UND']] });
+      await saveDecisions(history, ['SKU-B']);
+      await saveDecisions(history, ['SKU-A'], { expectedRevision: 1 });
+      const target = await feedbackScenario({ supplier, lines: [['P-1', 'Llave otra', 'UND']] });
+      expect(await aliases(target)).toEqual([alias(0, 'SKU-A')]);
+      await saveDecisions(history, ['pendiente'], { expectedRevision: 2 });
+      expect(await aliases(target)).toEqual([]);
+
+      const detached = await feedbackScenario({ supplier, lines: [['P-2', 'Llave dos', 'UND']] });
+      await saveDecisions(detached, ['SKU-A']);
+      const target2 = await feedbackScenario({ supplier, lines: [['P-2', 'Llave dos bis', 'UND']] });
+      expect(await aliases(target2)).toEqual([alias(0, 'SKU-A')]);
+      await actAs(db, ADMIN, true);
+      await save({ id: detached.facturaId, expectedRevision: 1, content: contenido(null, []), extraccionId: null, motivo: 'Desvincular extraccion' });
+      expect(await aliases(target2)).toEqual([]);
+    });
+
+    it('replaces the alias with a later explicit different SKU and never returns the old one', async () => {
+      const supplier = newSupplier();
+      const first = await feedbackScenario({ supplier, lines: [['R-9', 'Valvula vieja', 'UND']] });
+      await saveDecisions(first, ['SKU-A']);
+      const second = await feedbackScenario({ supplier, lines: [['R-9', 'Valvula nueva', 'UND']] });
+      await saveDecisions(second, ['SKU-B']);
+      const target = await feedbackScenario({ supplier, lines: [['R-9', 'Valvula otra', 'UND']] });
+      expect(await aliases(target)).toEqual([alias(0, 'SKU-B')]);
+      expect(JSON.stringify(await feedbackResponse(target))).not.toContain('SKU-A');
+    });
+
+    it('suppresses the alias when the exact printed line has a disagreeing decision, keeping that decision', async () => {
+      const supplier = newSupplier();
+      const first = await feedbackScenario({ supplier, lines: [['D-1', 'Grifo viejo', 'UND']] });
+      await saveDecisions(first, ['SKU-A']);
+      const second = await feedbackScenario({ supplier, lines: [['D-1', 'Grifo nuevo', 'UND']] });
+      await saveDecisions(second, ['SKU-B']);
+      const target = await feedbackScenario({ supplier, lines: [['D-1', 'Grifo viejo', 'UND'], ['D-1', 'Grifo nuevo', 'UND']] });
+      expect(await feedbackResponse(target)).toEqual({
+        decisiones: [confirmed(0, 'SKU-A'), confirmed(1, 'SKU-B')],
+        aliases: [alias(1, 'SKU-B')],
+      });
+
+      // An exact new-product decision also disagrees with a later confirmation under another description.
+      const brandNewFirst = await feedbackScenario({ supplier, lines: [['D-2', 'Grifo raro', 'UND']] });
+      await saveDecisions(brandNewFirst, ['nuevo']);
+      const confirmedLater = await feedbackScenario({ supplier, lines: [['D-2', 'Grifo raro registrado', 'UND']] });
+      await saveDecisions(confirmedLater, ['SKU-B']);
+      const later = await feedbackScenario({ supplier, lines: [['D-2', 'Grifo raro', 'UND'], ['D-2', 'Grifo raro tres', 'UND']] });
+      expect(await feedbackResponse(later)).toEqual({ decisiones: [brandNew(0)], aliases: [alias(1, 'SKU-B')] });
+    });
+
+    it('returns no alias when the latest revision for the key holds different decisions, with no older fallback', async () => {
+      const supplier = newSupplier();
+      const older = await feedbackScenario({ supplier, lines: [['K-1', 'Pieza vieja', 'UND']] });
+      await saveDecisions(older, ['SKU-C']);
+      const reused = await feedbackScenario({ supplier, lines: [['K-1', 'Pieza uno', 'UND'], ['K-1', 'Pieza dos', 'UND']] });
+      await saveDecisions(reused, ['SKU-A', 'SKU-B']);
+      const target = await feedbackScenario({ supplier, lines: [['K-1', 'Pieza tres', 'UND']] });
+      expect(await aliases(target)).toEqual([]);
+
+      await saveDecisions(reused, ['SKU-A', 'nuevo'], { expectedRevision: 1 });
+      expect(await aliases(target)).toEqual([]);
+
+      // The same SKU repeated under one key is not ambiguous.
+      await saveDecisions(reused, ['SKU-A', 'SKU-A'], { expectedRevision: 2 });
+      expect(await aliases(target)).toEqual([alias(0, 'SKU-A')]);
+    });
+
+    it('keeps units apart, normalizing only whitespace and case, and never treats a missing unit as a known one', async () => {
+      const supplier = newSupplier();
+      const history = await feedbackScenario({ supplier, lines: [['U-1', 'Cable', 'MTS'], ['U-2', 'Alambre', null]] });
+      await saveDecisions(history, ['SKU-A', 'SKU-B']);
+      const target = await feedbackScenario({
+        supplier,
+        lines: [
+          ['U-1', 'Cable 2', 'MTS'],
+          ['U-1', 'Cable 2', 'ROLLO'],
+          ['U-1', 'Cable 2', null],
+          ['  u-1 ', 'Cable 3', ' mts '],
+          ['U-2', 'Alambre 2', null],
+          ['U-2', 'Alambre 2', 'UND'],
+        ],
+      });
+      expect(await aliases(target)).toEqual([alias(0, 'SKU-A'), alias(3, 'SKU-A'), alias(4, 'SKU-B')]);
+    });
+
+    it('keeps leading zeros and punctuation significant in the printed code', async () => {
+      const supplier = newSupplier();
+      const history = await feedbackScenario({ supplier, lines: [['00123', 'Tornillo 1/4', 'UND']] });
+      await saveDecisions(history, ['00123-A']);
+      const target = await feedbackScenario({
+        supplier,
+        lines: [
+          ['123', 'Tornillo', 'UND'],
+          ['0-0123', 'Tornillo', 'UND'],
+          ['00123.', 'Tornillo', 'UND'],
+          ['00123', 'Tornillo 1/4 galvanizado', 'UND'],
+        ],
+      });
+      expect(await aliases(target)).toEqual([alias(3, '00123-A')]);
+    });
+
+    it('never builds an alias from a blank or SIN_CODIGO printed code', async () => {
+      const supplier = newSupplier();
+      const history = await feedbackScenario({
+        supplier,
+        lines: [[null, 'Sin codigo uno', 'UND'], ['  ', 'Sin codigo dos', 'UND'], ['SIN_CODIGO', 'Sin codigo tres', 'UND']],
+      });
+      await saveDecisions(history, ['SKU-A', 'SKU-B', 'SKU-C']);
+      const target = await feedbackScenario({
+        supplier,
+        lines: [[null, 'Otra', 'UND'], ['', 'Otra', 'UND'], ['SIN_CODIGO', 'Otra', 'UND'], [' sin_codigo ', 'Otra mas', 'und']],
+      });
+      expect(await aliases(target)).toEqual([]);
+    });
+
+    it('never learns aliases across owners or suppliers', async () => {
+      const supplier = newSupplier();
+      const foreignOwner = await feedbackScenario({ owner: OTHER_ADMIN, supplier, lines: [['O-1', 'Ajeno', 'UND']] });
+      await saveDecisions(foreignOwner, ['SKU-B']);
+      const otherSupplier = await feedbackScenario({ supplier: newSupplier(), lines: [['O-1', 'Otro proveedor', 'UND']] });
+      await saveDecisions(otherSupplier, ['SKU-C']);
+      const mine = await feedbackScenario({ supplier, lines: [['O-1', 'Mio', 'UND']] });
+      expect(await aliases(mine)).toEqual([]);
+
+      await saveDecisions(mine, ['SKU-A']);
+      const foreignTarget = await feedbackScenario({ owner: OTHER_ADMIN, supplier, lines: [['O-1', 'Ajeno 2', 'UND']] });
+      expect(await aliases(foreignTarget, 1, OTHER_ADMIN)).toEqual([alias(0, 'SKU-B')]);
+    });
+
+    it.each([
+      ['without a supplier code', null],
+      ['with a blank supplier code', '   '],
+    ])('learns no alias for an invoice %s and returns both keys empty', async (_name, supplier) => {
+      const first = await feedbackScenario({ supplier, lines: [['B-1', 'Uno', 'UND']] });
+      await saveDecisions(first, ['SKU-A']);
+      const target = await feedbackScenario({ supplier, lines: [['B-1', 'Dos', 'UND']] });
+      expect(await feedbackResponse(target)).toEqual({ decisiones: [], aliases: [] });
+    });
+
+    it('gives no alias and no older fallback when the latest confirmed SKU is a placeholder, missing or deleted', async () => {
+      const supplier = newSupplier();
+      const older = await feedbackScenario({ supplier, lines: [['X-1', 'Broca vieja', 'UND']] });
+      await saveDecisions(older, ['SKU-A']);
+      const target = await feedbackScenario({ supplier, lines: [['X-1', 'Broca otra', 'UND']] });
+      expect(await aliases(target)).toEqual([alias(0, 'SKU-A')]);
+
+      const placeholder = await feedbackScenario({ supplier, lines: [['X-1', 'Broca punto', 'UND']] });
+      await saveDecisions(placeholder, ['PLACEHOLDER']);
+      expect(await aliases(target)).toEqual([]);
+
+      const missing = await feedbackScenario({ supplier, lines: [['X-1', 'Broca falta', 'UND']] });
+      await saveDecisions(missing, ['NO-EXISTE']);
+      expect(await aliases(target)).toEqual([]);
+
+      const deleted = await feedbackScenario({ supplier, lines: [['X-1', 'Broca borrada', 'UND']] });
+      await saveDecisions(deleted, ['SKU-DEL']);
+      expect(await aliases(target)).toEqual([alias(0, 'SKU-DEL')]);
+      await actAsOwner(db);
+      await db.exec("delete from public.productos where codigo_interno = 'SKU-DEL'");
+      expect(await aliases(target)).toEqual([]);
+      await actAsOwner(db);
+      await db.exec("insert into public.productos (codigo_interno, descripcion, existencia) values ('SKU-DEL', 'Producto por borrar', 0)");
+    });
+
+    it('ignores a historical revision whose source changed and keeps the typed stale-source errors', async () => {
+      const supplier = newSupplier();
+      const stale = await feedbackScenario({ supplier, lines: [['S-1', 'Manguera', 'UND']] });
+      await saveDecisions(stale, ['SKU-A']);
+      const target = await feedbackScenario({ supplier, lines: [['S-1', 'Manguera 2', 'UND']] });
+      expect(await aliases(target)).toEqual([alias(0, 'SKU-A')]);
+      await reattachDocument(ADMIN, stale.facturaId, 1);
+      expect(await aliases(target)).toEqual([]);
+
+      await expect(aliases(target, 2)).rejects.toMatchObject({ code: 'PV409', message: 'version_obsoleta' });
+      await expect(aliases({ ...target, extraccionId: uuid() })).rejects.toMatchObject({ code: 'P0002' });
+      await expect(aliases(target, 1, OTHER_ADMIN)).rejects.toMatchObject({ code: 'P0002', message: 'fuente_no_disponible' });
+    });
+
+    it('considers only the first 200 target lines and never writes', async () => {
+      const supplier = newSupplier();
+      const history = await feedbackScenario({ supplier, lines: [['BULK-A', 'Linea historica', 'UND']] });
+      await saveDecisions(history, ['SKU-A']);
+      const target = await feedbackScenario({ supplier, lines: Array.from({ length: 205 }, (): PrintedLine => ['BULK-A', 'Linea nueva', 'UND']) });
+      const before = await snapshot(FEEDBACK_TABLES);
+      const found = await aliases(target);
+      expect(found).toHaveLength(200);
+      expect(found[199]).toEqual(alias(199, 'SKU-A'));
+      expect(await snapshot(FEEDBACK_TABLES)).toBe(before);
+    });
+  });
+
   describe('source and caller guards', () => {
     it.each([
       ['an expected version that is not the current one', (s: FeedbackScenario) => feedback(s, 2), 'PV409'],
@@ -1904,5 +2164,63 @@ describe('buscar_feedback_productos_factura: migration applied to a warmed sessi
     expect(Array.isArray(await feedback(s))).toBe(true);
     // A rejected command after the migration still leaves every table untouched.
     await expectRejected(as(ADMIN), () => save({ id: s.facturaId, expectedRevision: 0, content }), 'PR409');
+  });
+});
+
+describe('buscar_feedback_productos_factura: supplier-alias migration applied to a warmed session', () => {
+  beforeAll(async () => {
+    db = await initTestDb(true, false);
+    await addUser(db, ADMIN, 'admin');
+    await db.exec(CATALOG_FIXTURE);
+    await db.exec(migrationSql('_factura_matching_feedback.sql'));
+  });
+
+  afterAll(async () => {
+    await db.close();
+  });
+
+  const SIGNATURE = 'public.buscar_feedback_productos_factura(uuid, uuid, integer)';
+
+  const functionIdentity = async () => {
+    await actAsOwner(db);
+    const meta = await db.query<Record<string, unknown>>(
+      `select oid::int as oid, proowner::int as owner, prosecdef, provolatile, proconfig, proacl::text as acl,
+              pg_get_function_identity_arguments(oid) as args, pg_get_function_result(oid) as result
+         from pg_proc where oid = $1::regprocedure`,
+      [SIGNATURE]
+    );
+    return meta.rows;
+  };
+
+  it('keeps the function identity, ACL and decisiones output while adding aliases in the same session', async () => {
+    const supplier = newSupplier();
+    const history = await feedbackScenario({ supplier, lines: [['W-1', 'Desc vieja', 'UND'], ['W-2', 'Nuevo', 'UND'], ['W-3', 'Pendiente', 'UND']] });
+    await saveDecisions(history, ['SKU-A', 'nuevo', 'pendiente']);
+    const target = await feedbackScenario({
+      supplier,
+      lines: [['W-1', 'Desc vieja', 'UND'], ['W-1', 'Desc nueva', 'UND'], ['W-2', 'Nuevo', 'UND'], ['W-3', 'Pendiente', 'UND']],
+    });
+
+    const legacy = await feedbackResponse(target);
+    expect(Object.keys(legacy)).toEqual(['decisiones']);
+    const legacyHistory = await feedbackResponse(history);
+    const identityBefore = await functionIdentity();
+    const tablesBefore = await snapshot(FEEDBACK_TABLES);
+
+    await actAsOwner(db);
+    await db.exec(migrationSql('_factura_matching_supplier_aliases.sql'));
+
+    expect(await functionIdentity()).toEqual(identityBefore);
+    expect(await snapshot(FEEDBACK_TABLES)).toBe(tablesBefore);
+
+    // Same session, no reconnect: decisiones is byte-identical and aliases is the only added key.
+    const current = await feedbackResponse(target);
+    expect(Object.keys(current).sort()).toEqual(['aliases', 'decisiones']);
+    expect(JSON.stringify(current.decisiones)).toBe(JSON.stringify(legacy.decisiones));
+    expect(current.decisiones).toEqual([confirmed(0, 'SKU-A'), brandNew(2)]);
+    expect(current.aliases).toEqual([alias(0, 'SKU-A'), alias(1, 'SKU-A')]);
+    expect(JSON.stringify((await feedbackResponse(history)).decisiones)).toBe(JSON.stringify(legacyHistory.decisiones));
+    await expect(feedbackResponse(target, 2)).rejects.toMatchObject({ code: 'PV409', message: 'version_obsoleta' });
+    expect(await snapshot(FEEDBACK_TABLES)).toBe(tablesBefore);
   });
 });
