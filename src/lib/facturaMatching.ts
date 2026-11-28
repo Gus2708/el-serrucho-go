@@ -269,6 +269,7 @@ type HybridIndex = ReadonlyMap<number, ReadonlyMap<string, number>>;
 
 const RRF_K = 60;
 const RANK_SOURCES = ['lexical', 'semantic'] as const;
+const DOMINATED_SIMILARITY_RATIO = 0.8;
 
 // Evidence is untrusted at runtime: anything malformed is ignored, so an invalid input behaves as no input.
 // Each source keeps one best (lowest) valid rank per line and SKU, so repeated groups never add votes.
@@ -605,6 +606,32 @@ function lineStatus(
   return suggested ? 'suggested' : 'review';
 }
 
+// Prunes retrieval-only and weak description noise after conflicts and status run on the full pool,
+// only when a single non-conflicting corroborated code/alias candidate dominates.
+function pruneDominatedNoise(
+  candidates: readonly MatchCandidate[],
+  conflicts: readonly MatchConflict[],
+  minSimilarity: number,
+  remembered: string | null,
+): readonly MatchCandidate[] {
+  const [top] = candidates;
+  if (
+    conflicts.length > 0 ||
+    top === undefined ||
+    !hasCodeEvidence(top) ||
+    top.similarity === null ||
+    top.similarity < minSimilarity
+  ) {
+    return candidates;
+  }
+  const competitorFloor = top.similarity * DOMINATED_SIMILARITY_RATIO;
+  return candidates.filter((candidate) => {
+    if (hasCodeEvidence(candidate) || candidate.codigoInterno === remembered) return true;
+    const hasDescription = candidate.evidence.some((e) => e.source === 'descripcion');
+    return hasDescription && candidate.similarity !== null && candidate.similarity >= competitorFloor;
+  });
+}
+
 function matchLine(line: ExtraidaLinea, index: number, ctx: MatchContext): LineMatch {
   const base = { index, numeroLinea: line.numeroLinea, codigoProveedor: line.codigoProveedor };
   const { bounds } = ctx;
@@ -669,15 +696,17 @@ function matchLine(line: ExtraidaLinea, index: number, ctx: MatchContext): LineM
 
   candidates.sort((a, b) => compareCandidates(a, b, hybrid, remembered));
   excluded.sort((a, b) => compareText(a.codigoInterno, b.codigoInterno));
-  // Conflicts and status read every candidate, so the per-line cap can never hide them.
+  // Conflicts and status read every candidate, so relevance pruning and the per-line cap can never hide them.
   const conflicts = findConflicts(candidates, aliases.conflict, incompatibleCodeIds, text !== '', bounds.minSimilarity);
-  const kept = candidates.slice(0, bounds.maxCandidatesPerLine);
+  const status = lineStatus(candidates, conflicts, bounds.minSimilarity);
+  const relevant = pruneDominatedNoise(candidates, conflicts, bounds.minSimilarity, remembered);
+  const kept = relevant.slice(0, bounds.maxCandidatesPerLine);
   const reasons = new Set(aliases.reasons);
   if (conflicts.length === 0 && candidates.length === 0) reasons.add('no_candidates');
 
   return {
     ...base,
-    status: lineStatus(candidates, conflicts, bounds.minSimilarity),
+    status,
     candidates: kept,
     excluded,
     conflicts,

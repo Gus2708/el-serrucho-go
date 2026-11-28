@@ -706,7 +706,8 @@ describe('matchInvoiceLines: hybrid retrieval ranks', () => {
   });
 
   it('does not raise a description conflict or a suggestion from retrieval-only evidence', () => {
-    // P1 keeps a corroborating (but not identical) description: an unrelated coded SKU is now its own conflict.
+    // P1 keeps a corroborating (but not identical) description: retrieval-only P2 never raises a conflict
+    // or suggestion on the full pool, and is omitted as dominated noise once P1 corroborates without conflicts.
     const catalog = [prod('P1', 'Tornillo hexagonal 1/2', { codigo_barras: 'S-1' }), prod('P2', 'Tornillo')];
     const lines = [line(1, { codigoProveedor: 'S-1', descripcion: 'Tornillo hexagonal 1/2 pulgada', unidad: 'UND' })];
     const legacy = run(lines, catalog)[0];
@@ -716,7 +717,8 @@ describe('matchInvoiceLines: hybrid retrieval ranks', () => {
     expect(legacy.conflicts).toEqual([]);
     expect(ranked.conflicts).toEqual([]);
     expect(ranked.status).toBe(legacy.status);
-    expect(ranked.candidates.map((c) => c.codigoInterno)).toEqual(['P1', 'P2']);
+    expect(ranked.candidates.map((c) => c.codigoInterno)).toEqual(['P1']);
+    expect(ranked.omittedCandidates).toBe(1);
   });
 });
 
@@ -1067,5 +1069,201 @@ describe('absent identifiers and candidate support', () => {
     expect(describeCandidateSupport({ ...coded, codigoInterno: 'B' }, conflicted).support).toBe('codigo_coincidente');
     expect(describeCandidateSupport({ ...coded, evidence: [{ source: 'alias', similarity: null }] }, match).identifiers).toEqual(['alias']);
     expect(JSON.stringify({ coded, fuzzy, retrieved, conflicted })).toBe(before);
+  });
+});
+
+describe('matchInvoiceLines: conservative relevance under dominant corroborated code/alias', () => {
+  const GEN_DESC = 'GENERADOR A GASOLINA 3000W 120V/240V (4 TIEMPOS) - SACO';
+  const entry = (codigoInterno: string, rank: number) => ({ codigoInterno, rank });
+
+  it('omits unrelated description and hybrid-only noise when a corroborated code dominates without conflicts', () => {
+    const catalog = [
+      prod('04-FR-33886', GEN_DESC),
+      prod('FUM-1', 'FUMIGADORA A GASOLINA 20L SACO'),
+      prod('PROT-1', 'PROTECTOR DE VOLTAJE120V DIESELTOOLS'),
+      prod('PROT-2', 'PROTECTOR DE VOLTAJE 120V DIESEL TOOLS'),
+    ];
+    const input = deepFreeze({
+      supplierKey: SUPPLIER,
+      lines: [line(1, { codigoProveedor: '04-FR-33886', descripcion: GEN_DESC, unidad: 'UND' })],
+      catalog,
+      hybridRanks: [{
+        lineIndex: 0,
+        lexical: [entry('04-FR-33886', 1), entry('FUM-1', 2)],
+        semantic: [entry('04-FR-33886', 1), entry('PROT-1', 2), entry('PROT-2', 3)],
+      }],
+    });
+    const before = JSON.stringify(input);
+    const result = matchInvoiceLines(input);
+    if (!result.ok) throw new Error(`unexpected rejection: ${result.reason}`);
+    const [match] = result.lines;
+
+    expect(match.candidates.map((c) => c.codigoInterno)).toEqual(['04-FR-33886']);
+    expect(match.omittedCandidates).toBe(3);
+    expect(match.status).toBe('suggested');
+    expect(match.conflicts).toEqual([]);
+    expect(describeCandidateSupport(match.candidates[0], match)).toEqual({
+      identifiers: ['codigo_interno'],
+      support: 'codigo_coincidente',
+      unknowns: [],
+    });
+    expect(JSON.stringify(input)).toBe(before);
+    expect(
+      run(
+        [line(1, { codigoProveedor: '04-FR-33886', descripcion: GEN_DESC, unidad: 'UND' })],
+        [...catalog].reverse(),
+        {
+          hybridRanks: [{
+            lineIndex: 0,
+            lexical: [entry('FUM-1', 2), entry('04-FR-33886', 1)],
+            semantic: [entry('PROT-2', 3), entry('PROT-1', 2), entry('04-FR-33886', 1)],
+          }],
+        },
+      )[0],
+    ).toEqual(match);
+  });
+
+  it('prunes noise for a corroborated supplier alias even when an attribute like unit is unknown, without promoting status', () => {
+    const catalog = [
+      prod('04-FR-33886', GEN_DESC),
+      prod('FUM-1', 'FUMIGADORA A GASOLINA 20L SACO'),
+      prod('PROT-1', 'PROTECTOR DE VOLTAJE120V DIESELTOOLS'),
+    ];
+    const [match] = run(
+      [line(1, { codigoProveedor: 'SUP-GEN', descripcion: GEN_DESC, unidad: null })],
+      catalog,
+      {
+        aliases: [alias({ keyValue: 'SUP-GEN', codigoInterno: '04-FR-33886' })],
+        hybridRanks: [{ lineIndex: 0, semantic: [entry('PROT-1', 1)] }],
+      },
+    );
+
+    expect(match.candidates.map((c) => c.codigoInterno)).toEqual(['04-FR-33886']);
+    expect(match.omittedCandidates).toBe(2);
+    expect(match.status).toBe('review');
+    expect(match.conflicts).toEqual([]);
+    expect(match.candidates[0].unknownAttributes).toContain('unit');
+  });
+
+  it('keeps strong near-duplicate description competitors while pruning trailing noise before applying the candidate cap', () => {
+    const noise = ['PROT-1', 'PROT-2', 'PROT-3', 'PROT-4', 'PROT-5'].map((id) =>
+      prod(id, `PROTECTOR DE VOLTAJE 120V MODELO ${id}`),
+    );
+    const catalog = [
+      prod('04-FR-33886', GEN_DESC),
+      prod('ALT-GEN', 'GENERADOR A GASOLINA 3000W 120V/240V (4 TIEMPOS) INGCO'),
+      prod('FUM-1', 'FUMIGADORA A GASOLINA 20L SACO'),
+      ...noise,
+    ];
+    const [match] = run(
+      [line(1, { codigoProveedor: '04-FR-33886', descripcion: GEN_DESC, unidad: 'UND' })],
+      catalog,
+      {
+        hybridRanks: [{
+          lineIndex: 0,
+          semantic: noise.map((p, i) => entry(p.codigo_interno, i + 1)),
+        }],
+      },
+    );
+
+    expect(match.candidates.map((c) => c.codigoInterno)).toEqual(['04-FR-33886', 'ALT-GEN']);
+    expect(match.omittedCandidates).toBe(6);
+    expect(match.conflicts).toEqual([]);
+  });
+
+  it('computes conflicts from the full pool before pruning and does not prune uncorroborated or descriptionless codes', () => {
+    const conflictCatalog = [
+      prod('A', 'Taladro Makita 500 W', { codigo_barras: 'A' }),
+      prod('B', 'Taladro Bosch 500 W'),
+      prod('N1', 'Protector de voltaje 120V'),
+    ];
+    const [conflicted] = run(
+      [line(1, { codigoProveedor: 'A', descripcion: 'Taladro Bosch 500 W', unidad: 'UND' })],
+      conflictCatalog,
+      { hybridRanks: [{ lineIndex: 0, semantic: [entry('N1', 1)] }] },
+    );
+    expect(conflicted.status).toBe('conflict');
+    expect(conflicted.conflicts).toEqual([{ code: 'code_description_conflict', codigosInternos: ['A', 'B'] }]);
+    expect(conflicted.candidates.map((c) => c.codigoInterno)).toEqual(['A', 'N1', 'B']);
+    expect(conflicted.omittedCandidates).toBe(0);
+
+    const [uncorroboratedAlias] = run(
+      [line(1, { codigoProveedor: 'S-77', descripcion: 'Pintura latex blanco galon', unidad: 'UND' })],
+      [prod('P1', SCREW), prod('P2', 'Pintura acrilica rojo')],
+      {
+        aliases: [alias()],
+        hybridRanks: [{ lineIndex: 0, semantic: [entry('P2', 1)] }],
+      },
+    );
+    expect(uncorroboratedAlias.conflicts).toEqual([]);
+    expect(uncorroboratedAlias.candidates.map((c) => c.codigoInterno)).toEqual(['P1', 'P2']);
+    expect(uncorroboratedAlias.omittedCandidates).toBe(0);
+
+    const [noDescription] = run(
+      [line(1, { codigoProveedor: '04-FR-33886', descripcion: null, unidad: 'UND' })],
+      [prod('04-FR-33886', GEN_DESC), prod('PROT-1', 'PROTECTOR DE VOLTAJE120V DIESELTOOLS')],
+      { hybridRanks: [{ lineIndex: 0, semantic: [entry('PROT-1', 1)] }] },
+    );
+    expect(noDescription.status).toBe('review');
+    expect(noDescription.candidates.map((c) => c.codigoInterno)).toEqual(['04-FR-33886', 'PROT-1']);
+    expect(noDescription.omittedCandidates).toBe(0);
+  });
+
+  it('preserves no-identifier behavior so semantic synonyms and non-code ambiguity remain reviewable', () => {
+    const catalog = [
+      prod('04-FR-33886', GEN_DESC),
+      prod('FUM-1', 'FUMIGADORA A GASOLINA 20L SACO'),
+      prod('PROT-1', 'PROTECTOR DE VOLTAJE120V DIESELTOOLS'),
+    ];
+    const [noCode] = run(
+      [line(1, { codigoProveedor: null, descripcion: GEN_DESC, unidad: 'UND' })],
+      catalog,
+      {
+        hybridRanks: [{
+          lineIndex: 0,
+          lexical: [entry('04-FR-33886', 1), entry('FUM-1', 2)],
+          semantic: [entry('04-FR-33886', 1), entry('PROT-1', 2)],
+        }],
+      },
+    );
+    expect(noCode.status).toBe('review');
+    expect(noCode.candidates.map((c) => c.codigoInterno)).toEqual(['04-FR-33886', 'FUM-1', 'PROT-1']);
+    expect(noCode.omittedCandidates).toBe(0);
+
+    const [synonym] = run(
+      [line(1, { codigoProveedor: 'SIN_CODIGO', descripcion: 'Adhesivo blanco', unidad: 'UND' })],
+      [prod('P1', 'Pegamento blanco')],
+      { hybridRanks: [{ lineIndex: 0, semantic: [entry('P1', 1)] }] },
+    );
+    expect(synonym.status).toBe('review');
+    expect(synonym.candidates.map((c) => c.codigoInterno)).toEqual(['P1']);
+    expect(synonym.omittedCandidates).toBe(0);
+  });
+
+  it('keeps an equal-similarity duplicate and saved human feedback while omitting other trailing noise', () => {
+    const catalog = [
+      prod('04-FR-33886', GEN_DESC),
+      prod('DUP-GEN', GEN_DESC),
+      prod('FUM-1', 'FUMIGADORA A GASOLINA 20L SACO'),
+      prod('PROT-1', 'PROTECTOR DE VOLTAJE120V DIESELTOOLS'),
+    ];
+    const [tied] = run(
+      [line(1, { codigoProveedor: '04-FR-33886', descripcion: GEN_DESC, unidad: 'UND' })],
+      catalog,
+      { hybridRanks: [{ lineIndex: 0, semantic: [entry('PROT-1', 1)] }] },
+    );
+    expect(tied.status).toBe('review');
+    expect(tied.candidates.map((c) => c.codigoInterno)).toEqual(['04-FR-33886', 'DUP-GEN']);
+    expect(tied.omittedCandidates).toBe(2);
+
+    const feedback = [{ lineIndex: 0, decision: 'confirmado' as const, codigoInterno: 'PROT-1' }];
+    const [withRemembered] = run(
+      [line(1, { codigoProveedor: '04-FR-33886', descripcion: GEN_DESC, unidad: 'UND' })],
+      [catalog[0], catalog[2], catalog[3]],
+      { hybridRanks: [{ lineIndex: 0, semantic: [entry('PROT-1', 1)] }], feedback },
+    );
+    expect(withRemembered.candidates.map((c) => c.codigoInterno)).toEqual(['04-FR-33886', 'PROT-1']);
+    expect(withRemembered.omittedCandidates).toBe(1);
+    expect(withRemembered.feedback).toEqual(feedback[0]);
   });
 });
