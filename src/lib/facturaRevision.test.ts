@@ -595,6 +595,119 @@ describe('calcularRevision: global discounts', () => {
   });
 });
 
+describe('calcularRevision: invoice-wide percentage discounts (S4)', () => {
+  const pct = (orden: number, porcentaje: string, over: Partial<ExtraidoDescuento> = {}) =>
+    desc({ orden, porcentaje, monto: null, alcance: 'global', incluidoEnPrecio: false, ...over });
+  const tres = (descuentos: ExtraidoDescuento[]) => extraccion(
+    [1, 2, 3].map(n => linea(n, { cantidad: '1', precioUnitario: '10', tasaIva: '0', total: '10.00' })),
+    { descuentos }
+  );
+
+  it('applies an invoice-wide 10 % to every line before VAT without any policy, keeping the printed line totals', () => {
+    const ext = tres([pct(1, '10')]);
+    const contenido = deepFreeze(confirmada(ext));
+    const calculo = calcularRevision({ extraccion: ext, contenido });
+    expect(calculo.bloqueos).toEqual([]);
+    expect(calculo.lineas.map(l => [l.importeTrasDescuentos, l.descuentoGlobalAsignado, l.importeFinal, l.base, l.costoNetoUnitarioStock])).toEqual([
+      ['10.00', '1.00', '9.00', '9.00', '9.00'],
+      ['10.00', '1.00', '9.00', '9.00', '9.00'],
+      ['10.00', '1.00', '9.00', '9.00', '9.00'],
+    ]);
+    expect(calculo.totales).toEqual({ base: '27.00', iva: '0.00', total: '27.00' });
+    expect(calculo.diferencias.filter(d => d.campo === 'total' && d.ambito === 'linea').map(d => d.diferencia)).toEqual(['0.00', '0.00', '0.00']);
+  });
+
+  it('cascades a sequential 20 % + 5 % multiplicatively before 16 % VAT, never as an added 25 %', () => {
+    const ext = extraccion([linea(1, { cantidad: '2', precioUnitario: '6.06', tasaIva: '16', total: '12.12' })], { descuentos: [pct(2, '5'), pct(1, '20')] });
+    const calculo = calcularRevision({ extraccion: ext, contenido: confirmada(ext) });
+    expect(calculo.bloqueos).toEqual([]);
+    expect(calculo.lineas[0]).toMatchObject({
+      cantidadDocumento: '2',
+      importeBruto: '12.12',
+      importeTrasDescuentos: '12.12',
+      descuentoGlobalAsignado: '2.9088',
+      importeFinal: '9.2112',
+      base: '9.2112',
+      iva: '1.473792',
+      totalConIva: '10.684992',
+      costoNetoUnitarioStock: '4.6056',
+    });
+    expect(calculo.lineas[0].importeFinal).not.toBe('9.09');
+    expect(calculo.totales).toEqual({ base: '9.2112', iva: '1.473792', total: '10.684992' });
+    expect(calculo.diferencias).toEqual([{ ambito: 'linea', lineaId: calculo.lineas[0].lineaId, campo: 'total', impreso: '12.12', calculado: '12.12', diferencia: '0.00' }]);
+    // The PVP suggestion starts from the discounted ex-VAT stock cost: VAT is added once, by the invoice factor.
+    expect(resolverPrecioVenta({ tipoDocumento: 'factura', costoNetoUnitario: calculo.lineas[0].costoNetoUnitarioStock, precioVenta: null })).toEqual({ valor: '6.9452448', origen: 'sugerido' });
+  });
+
+  it('divides the discounted net by the stock quantity of a confirmed conversion, leaving the document quantity literal', () => {
+    const ext = extraccion([linea(1, { cantidad: '2', precioUnitario: '6.06', tasaIva: '16' })], { descuentos: [pct(1, '20'), pct(2, '5')] });
+    const calculo = calcularRevision({ extraccion: ext, contenido: confirmada(ext, { factor: '12' }) });
+    expect(calculo.bloqueos).toEqual([]);
+    expect(calculo.lineas[0]).toMatchObject({ cantidadDocumento: '2', factorConversion: '12', cantidadStock: '24', base: '9.2112', costoNetoUnitarioStock: '0.3838' });
+  });
+
+  it('applies the header percentage after the line discounts, comparing the printed line total before it', () => {
+    const ext = extraccion(
+      [linea(1, { cantidad: '1', precioUnitario: '10', tasaIva: '0', total: '9.00', descuentos: [desc({ porcentaje: '10' })] })],
+      { descuentos: [pct(1, '20')] }
+    );
+    const calculo = calcularRevision({ extraccion: ext, contenido: confirmada(ext) });
+    expect(calculo.bloqueos).toEqual([]);
+    expect(calculo.lineas[0]).toMatchObject({ importeTrasDescuentos: '9.00', descuentoGlobalAsignado: '1.80', importeFinal: '7.20', costoNetoUnitarioStock: '7.20' });
+    expect(calculo.lineas[0].descuentosAplicados).toHaveLength(1);
+    expect(calculo.diferencias[0]).toMatchObject({ campo: 'total', impreso: '9.00', calculado: '9.00', diferencia: '0.00' });
+  });
+
+  it('uses the percentage typed for the whole invoice through the existing header correction', () => {
+    const ext = tres([]);
+    const contenido = aplicar(confirmada(ext), ext, {
+      tipo: 'cabecera_descuentos',
+      valor: [pct(1, '20'), pct(2, '5')],
+      motivo: 'Descuento de la factura indicado manualmente: 20 % + 5 %',
+    });
+    const calculo = calcularRevision({ extraccion: ext, contenido });
+    expect(calculo.bloqueos).toEqual([]);
+    expect(calculo.lineas.map(l => l.importeFinal)).toEqual(['7.60', '7.60', '7.60']);
+    expect(calculo.totales).toEqual({ base: '22.80', iva: '0.00', total: '22.80' });
+    expect(ext.cabecera.descuentos).toEqual([]);
+  });
+
+  it('never applies a percentage already included in the price again', () => {
+    const ext = tres([pct(1, '10', { incluidoEnPrecio: true })]);
+    const calculo = calcularRevision({ extraccion: ext, contenido: confirmada(ext) });
+    expect(calculo.bloqueos).toEqual([]);
+    expect(calculo.lineas.map(l => [l.descuentoGlobalAsignado, l.importeFinal])).toEqual([[null, '10.00'], [null, '10.00'], [null, '10.00']]);
+  });
+
+  it.each([
+    ['a fixed USD amount', [pct(1, '10', { porcentaje: null, monto: '3.00' })]],
+    ['a percentage with an amount reading', [pct(1, '10', { monto: '3.00' })]],
+    ['a percentage next to a fixed amount', [pct(1, '10'), pct(2, '5', { porcentaje: null, monto: '1.00' })]],
+  ] as Array<[string, ExtraidoDescuento[]]>)('still blocks %s without an approved allocation policy', (_nombre, descuentos) => {
+    const ext = tres(descuentos);
+    const calculo = calcularRevision({ extraccion: ext, contenido: confirmada(ext) });
+    expect(codigos(calculo.bloqueos)).toContain('descuento_global_sin_politica');
+    expect(calculo.totales).toBeNull();
+    expect(calculo.sinBloqueos).toBe(false);
+  });
+
+  it('blocks a header percentage over 100', () => {
+    const ext = tres([pct(1, '100.5')]);
+    const calculo = calcularRevision({ extraccion: ext, contenido: confirmada(ext) });
+    expect(codigos(calculo.bloqueos)).toEqual(['descuento_invalido']);
+    expect(calculo.totales).toBeNull();
+  });
+
+  it('keeps the explicit-policy allocation for a percentage when a policy is injected', () => {
+    const ext = tres([pct(1, '10')]);
+    const contenido = confirmada(ext);
+    const calculo = calcularRevision({ extraccion: ext, contenido, politicas: { descuentoGlobal: { escala: 2, lineasElegibles: [contenido.lineas[0].lineaId, contenido.lineas[1].lineaId] } } });
+    expect(calculo.lineas.map(l => l.descuentoGlobalAsignado)).toEqual(['1.00', '1.00', null]);
+    expect(calculo.lineas.map(l => l.importeFinal)).toEqual(['9.00', '9.00', '10.00']);
+    expect(codigos(calculo.bloqueos)).toEqual(['politica_no_aprobada']);
+  });
+});
+
 describe('calcularRevision: VAT per line', () => {
   it('retains an explicit zero equal to detected VAT and treats its identical repeat as unchanged', () => {
     const ext = extraccion([linea(1, { tasaIva: '0' })]);

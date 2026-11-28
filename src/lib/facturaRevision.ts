@@ -1014,7 +1014,9 @@ export function calcularRevision(input: {
     };
   });
 
-  // Header discounts: only explicit, included-or-eligible ones; never a guessed distribution.
+  // Header discounts: only explicit, included-or-eligible ones; never a guessed distribution. Without an allocation
+  // policy only an unambiguous percentage applies: the same exact multiplication on every line, after its line discounts
+  // and before VAT, so nothing is distributed. Any amount still needs an approved policy.
   let globalPendiente = false;
   for (const descuento of [...efectiva.descuentos.valor].sort((a, b) => a.orden - b.orden)) {
     const etiqueta = String(descuento.orden);
@@ -1036,9 +1038,30 @@ export function calcularRevision(input: {
       continue;
     }
     const politica = politicas.descuentoGlobal;
-    if (!politica) {
+    if (!politica && (descuento.porcentaje === null || descuento.monto !== null)) {
       globalPendiente = true;
       bloquear('descuento_global_sin_politica', null, etiqueta);
+      continue;
+    }
+    if (!politica) {
+      const porcentaje = leer(descuento.porcentaje, FORMA_PORCENTAJE);
+      if (!porcentaje.ok || porcentaje.valor === null) {
+        globalPendiente = true;
+        bloquear('valor_invalido', null, `descuento global ${etiqueta}`);
+        continue;
+      }
+      if (cmpDecimal(porcentaje.valor, CIEN) > 0) {
+        globalPendiente = true;
+        bloquear('descuento_invalido', null, etiqueta);
+        continue;
+      }
+      const restante = subDecimal(CIEN, porcentaje.valor);
+      for (const trabajo of trabajos) {
+        if (trabajo.final === null) continue;
+        const final = scaleDownPow10(mulDecimal(trabajo.final, restante), 2);
+        trabajo.globalAsignado = addDecimal(trabajo.globalAsignado ?? CERO, subDecimal(trabajo.final, final));
+        trabajo.final = final;
+      }
       continue;
     }
     const elegibles = trabajos.filter(t => politica.lineasElegibles.includes(t.efectiva.lineaId));
