@@ -9,6 +9,8 @@ let mockItemsOverride: any[] | null = null;
 let mockDescuentosGenerales: number[] = [];
 const mockUpdateItem = jest.fn();
 const mockSetDescuentosGenerales = jest.fn();
+const mockAddItem = jest.fn();
+let mockProductos: Array<Record<string, unknown>> = [];
 
 jest.mock('../hooks/useUserRole', () => ({
   useUserRole: () => ({ data: { role: mockRole, profile: { id: 'a0000000-0000-4000-8000-00000000000a' } } }),
@@ -34,7 +36,7 @@ jest.mock('../hooks/useCompra', () => ({
     facturaVinculada: mockFacturaVinculada,
     setProveedor: jest.fn(),
     setDescuentosGenerales: mockSetDescuentosGenerales,
-    addItem: jest.fn(),
+    addItem: mockAddItem,
     removeItem: jest.fn(),
     updateItem: mockUpdateItem,
     setNota: jest.fn(),
@@ -47,7 +49,11 @@ jest.mock('../hooks/useCompra', () => ({
   }),
 }));
 jest.mock('../hooks/useBorradores', () => ({ borradoresQueryKey: ['b'] }));
-jest.mock('../hooks/useProductos', () => ({ useProductos: () => ({ data: undefined, isLoading: false }), normalizeSearchTerm: (s: string) => s }));
+jest.mock('../hooks/useProductos', () => ({
+  useProductos: () => ({ productos: mockProductos, isLoading: false, isFetchingMore: false, hasMore: false, fetchMore: jest.fn(), error: null }),
+  isPlaceholder: (p: { es_placeholder?: boolean }) => p.es_placeholder === true,
+  normalizeSearchTerm: (s: string) => s,
+}));
 jest.mock('../hooks/useExistencias', () => ({ useExistencias: () => ({ data: undefined }), faltantePorNegativo: () => 0 }));
 jest.mock('../hooks/useColisionesCodigo', () => ({ useColisionesCodigo: () => ({ data: undefined }), describirColision: () => '' }));
 jest.mock('../components/BarcodeScannerModal', () => ({ BarcodeScannerModal: () => null }));
@@ -203,5 +209,30 @@ describe('ComprasView invoice entry gate', () => {
     const genInput = r.getByTestId('compra-desc-general-input');
     await act(async () => { fireEvent.changeText(genInput, '20+5'); });
     expect(mockSetDescuentosGenerales).toHaveBeenLastCalledWith([20, 5]);
+  });
+});
+
+describe('ComprasView product search (shared inventory picker, S7)', () => {
+  afterEach(() => {
+    mockProductos = [];
+    mockAddItem.mockClear();
+  });
+
+  it('opens the shared picker and adds the chosen product with its current cost and selling price, as before', async () => {
+    mockProductos = [{ codigo_interno: 'TAL-500', descripcion: 'TALADRO', unidad: 'UND', codigo_barras: '', costo: 31.2, precio_venta: 48.5, existencia: 0, referencia: 'R-9', actualizado_en: '' }];
+    const r = await mount();
+    expect(r.queryByTestId('producto-picker')).toBeNull();
+    await act(async () => { fireEvent.press(r.getByText('Buscar existente')); });
+    expect(r.getByText('Agregar producto')).toBeTruthy();
+    await act(async () => { fireEvent.press(r.getByTestId('producto-picker-fila-TAL-500')); });
+    expect(mockAddItem).toHaveBeenCalledWith({ codigo_producto: 'TAL-500', descripcion: 'TALADRO', cantidad: 1, costo: 31.2, precio: 48.5, referencia: 'R-9', es_nuevo: false, es_ajuste: false });
+  });
+
+  it('closes the shared picker without adding anything', async () => {
+    mockProductos = [{ codigo_interno: 'TAL-500', descripcion: 'TALADRO', unidad: 'UND', codigo_barras: '', costo: 1, precio_venta: 2, existencia: 3, actualizado_en: '' }];
+    const r = await mount();
+    await act(async () => { fireEvent.press(r.getByText('Buscar existente')); });
+    await act(async () => { fireEvent.press(r.getByTestId('producto-picker-cerrar')); });
+    expect(mockAddItem).not.toHaveBeenCalled();
   });
 });

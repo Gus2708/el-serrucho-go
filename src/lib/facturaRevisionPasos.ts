@@ -1,4 +1,8 @@
-import type { Bloqueo, CalculoRevision, CodigoBloqueo, Edicion, LineaRevision } from './facturaRevision';
+import { MAX_DESCUENTO_STEPS, parseDescuentoTexto } from './compraDescuentos';
+import { cmpDecimal, parseDecimal } from './facturaDecimal';
+import type { ExtraidoDescuento } from './facturaExtractionContract';
+import { precioVentaValido } from './facturaRevision';
+import type { AsociacionRevision, Bloqueo, CalculoRevision, CodigoBloqueo, Edicion, LineaEfectiva, LineaRevision } from './facturaRevision';
 
 /** The three bodies of the guided review; the outer shell owns the stepper and may control which one is shown. */
 export type EtapaRevision = 'leer' | 'productos' | 'compra';
@@ -12,6 +16,7 @@ export type EstadoLinea =
   | 'verificando_codigo'
   | 'codigo_sin_verificar'
   | 'codigo_en_uso'
+  | 'falta_precio'
   | 'revisar'
   | 'listo';
 
@@ -23,6 +28,7 @@ export const ETIQUETA_ESTADO_LINEA: Readonly<Record<EstadoLinea, string>> = {
   verificando_codigo: 'Verificando código',
   codigo_sin_verificar: 'No se pudo verificar el código',
   codigo_en_uso: 'Código ya usado',
+  falta_precio: 'Falta el precio de venta',
   revisar: 'Revisa los datos',
   listo: 'Listo',
 };
@@ -62,7 +68,9 @@ export function estadoLinea(linea: LineaRevision, calculo: CalculoRevision, veri
     const pendiente = estadoDeCodigoNuevo(verificacion);
     if (pendiente) return pendiente;
   }
-  return propios.size > 0 ? 'revisar' : 'listo';
+  if (propios.size > 0) return 'revisar';
+  // An existing product sells at a saved price; only a new product falls back to the cost-based suggestion.
+  return linea.asociacion.tipo === 'confirmado' && linea.precioVenta === undefined ? 'falta_precio' : 'listo';
 }
 
 export function resumenLineas(estados: readonly EstadoLinea[]): { total: number; listas: number; porRevisar: number } {
@@ -109,6 +117,8 @@ export interface SituacionRevision {
   readonly puedeMaterializar: boolean;
   readonly materializando: boolean;
   readonly hayBorradorPrecio: boolean;
+  /** Existing products without a saved selling price: approval and the purchase draft wait for them. */
+  readonly preciosPendientes?: number;
   readonly sinBloqueos: boolean;
   /** The latest saved revision carries an approval (it may no longer be valid for the current invoice version). */
   readonly aprobada: boolean;
@@ -118,7 +128,13 @@ function accion(id: AccionPrincipalId, etiqueta: string, deshabilitada = false, 
   return { id, etiqueta, deshabilitada, razon };
 }
 
+function razonPreciosPendientes(cantidad: number): string {
+  const productos = cantidad === 1 ? '1 producto existente' : `${cantidad} productos existentes`;
+  return `Falta el precio de venta de ${productos}: usa el precio actual o escribe uno.`;
+}
+
 function accionCompra(s: SituacionRevision): AccionPrincipal {
+  const preciosPendientes = s.preciosPendientes ?? 0;
   if (s.materializando) return accion('preparar', 'Preparando borrador…', true);
   if (s.ocupado === 'guardando') return accion('guardar', 'Guardando…', true);
   if (s.ocupado === 'aprobando') return accion('aprobar', 'Confirmando…', true);
@@ -129,12 +145,14 @@ function accionCompra(s: SituacionRevision): AccionPrincipal {
   }
   if (!s.aprobada) {
     if (s.hayBorradorPrecio) return accion('aprobar', 'Confirmar revisión', true, 'Corrige o borra el precio de venta no válido para confirmar.');
+    if (preciosPendientes > 0) return accion('aprobar', 'Confirmar revisión', true, razonPreciosPendientes(preciosPendientes));
     if (s.puedeAprobar) return accion('aprobar', 'Confirmar revisión');
     if (s.conflicto) return accion('aprobar', 'Confirmar revisión', true, 'Hay una versión más reciente en el servidor: recárgala para continuar.');
     if (!s.sinBloqueos) return accion('aprobar', 'Confirmar revisión', true, 'Completa los datos que faltan para confirmar.');
     if (s.editorDirty) return accion('aprobar', 'Confirmar revisión', true, 'Guarda los cambios de la factura antes de confirmar.');
     return accion('aprobar', 'Confirmar revisión', true, 'Ahora no se puede confirmar: guarda los cambios o revisa la sesión.');
   }
+  if (preciosPendientes > 0) return accion('preparar', 'Crear borrador de compra', true, razonPreciosPendientes(preciosPendientes));
   if (s.puedeMaterializar) return accion('preparar', 'Crear borrador de compra');
   if (s.editorDirty) return accion('preparar', 'Crear borrador de compra', true, 'Guarda los cambios de la factura antes de preparar la compra.');
   return accion('preparar', 'Crear borrador de compra', true, 'Cambiaste la factura: guarda los cambios y confirma de nuevo.');
@@ -148,7 +166,7 @@ export function accionPrincipal(s: SituacionRevision): AccionPrincipal | null {
     if (s.hayContenido) {
       const pendientes = s.porRevisar ?? 0;
       return pendientes > 0
-        ? accion('siguiente_producto', `Revisar siguiente (${pendientes} faltan)`)
+        ? accion('siguiente_producto', `Revisar siguiente (${pendientes} ${pendientes === 1 ? 'falta' : 'faltan'})`)
         : accion('continuar_compra', 'Seguir a la compra');
     }
     if (s.hayExtraccionUsable) return accion('revisar_leido', 'Ver productos encontrados');
@@ -210,4 +228,134 @@ export function edicionIvaManual(lineaId: string, tasa: string): Edicion {
 /** The edit of the per-line "1 por 1" chip. */
 export function edicionFactorUno(lineaId: string): Edicion {
   return { tipo: 'factor_conversion', lineaId, valor: '1' };
+}
+
+// ── Invoice-wide VAT and percentage discount ────────────────────────────────
+
+/** VAT decided for the invoice, read from the explicit per-line decisions (a printed rate is never a decision). */
+export interface EstadoIvaFactura {
+  readonly total: number;
+  /** Lines without an explicit VAT decision. */
+  readonly faltan: number;
+  /** Distinct decided rates, ascending. */
+  readonly tasas: readonly string[];
+}
+
+function tasaIndicada(linea: LineaEfectiva): string | null {
+  const iva = linea.campos.tasaIva;
+  return iva.corregido && iva.valor !== null ? iva.valor : null;
+}
+
+function compararTasas(a: string, b: string): number {
+  const x = parseDecimal(a);
+  const y = parseDecimal(b);
+  if (x === null || y === null) return a.localeCompare(b);
+  return cmpDecimal(x, y);
+}
+
+const mismaTasa = (a: string, b: string): boolean => compararTasas(a, b) === 0;
+
+export function estadoIvaFactura(lineas: readonly LineaEfectiva[]): EstadoIvaFactura {
+  const tasas: string[] = [];
+  let faltan = 0;
+  for (const linea of lineas) {
+    const tasa = tasaIndicada(linea);
+    if (tasa === null) faltan += 1;
+    else if (!tasas.some(t => mismaTasa(t, tasa))) tasas.push(tasa);
+  }
+  return { total: lineas.length, faltan, tasas: tasas.sort(compararTasas) };
+}
+
+/**
+ * The per-line edits of one invoice-wide VAT answer, with the manual-path payload. `faltan` only fills lines without a
+ * decision, so an exempt or other explicit rate survives; `todas` is the explicit overwrite. A line already at `tasa`
+ * is never rewritten, so its saved motive stays as it was.
+ */
+export function edicionesIvaFactura(lineas: readonly LineaEfectiva[], tasa: string, alcance: 'faltan' | 'todas'): Edicion[] {
+  return lineas
+    .filter(linea => {
+      const actual = tasaIndicada(linea);
+      return actual === null || (alcance === 'todas' && !mismaTasa(actual, tasa));
+    })
+    .map(linea => edicionIvaManual(linea.lineaId, tasa));
+}
+
+export type ResumenDescuentoFactura =
+  | { readonly tipo: 'ninguno' }
+  | { readonly tipo: 'porcentajes'; readonly porcentajes: readonly string[] }
+  | { readonly tipo: 'incluidos' }
+  | { readonly tipo: 'otro' };
+
+/** `porcentajes` is exactly what the calculation applies without a policy; anything else needs a person to look. */
+export function resumenDescuentoFactura(descuentos: readonly ExtraidoDescuento[]): ResumenDescuentoFactura {
+  if (descuentos.length === 0) return { tipo: 'ninguno' };
+  if (descuentos.every(d => d.alcance === 'global' && d.incluidoEnPrecio === true)) return { tipo: 'incluidos' };
+  const ordenados = [...descuentos].sort((a, b) => a.orden - b.orden);
+  if (ordenados.every(d => d.alcance === 'global' && d.incluidoEnPrecio === false && d.porcentaje !== null && d.monto === null)) {
+    return { tipo: 'porcentajes', porcentajes: ordenados.map(d => d.porcentaje as string) };
+  }
+  return { tipo: 'otro' };
+}
+
+const PORCENTAJE_EXACTO = /^[0-9]{1,2}(\.[0-9]{1,4})?$/;
+
+/**
+ * Reads typed invoice percentages ("10", "20+5", "12,5 %") with the purchase-discount parser. Each step must stay an
+ * exact decimal the review contract accepts, so nothing is rounded on the way.
+ */
+export function leerPorcentajesFactura(texto: string): { readonly ok: true; readonly porcentajes: readonly string[] } | { readonly ok: false; readonly error: string } {
+  const pasos = texto.replace(/[%\s]/g, '').split('+').filter(paso => paso !== '');
+  if (pasos.length > MAX_DESCUENTO_STEPS) return { ok: false, error: `Máximo ${MAX_DESCUENTO_STEPS} descuentos seguidos.` };
+  const leido = parseDescuentoTexto(texto);
+  if (leido.error) return { ok: false, error: leido.error };
+  const porcentajes = [...leido.committed, ...(leido.draftValue === null ? [] : [leido.draftValue])].map(String);
+  if (porcentajes.length === 0) return { ok: false, error: 'Escribe un porcentaje, por ejemplo 10 o 20+5.' };
+  if (!porcentajes.every(p => PORCENTAJE_EXACTO.test(p))) return { ok: false, error: 'Usa hasta 4 decimales en cada porcentaje.' };
+  return { ok: true, porcentajes };
+}
+
+/** The existing header discount correction: global, not included in the price, applied in the typed order. */
+export function edicionDescuentoFactura(porcentajes: readonly string[]): Edicion {
+  if (porcentajes.length === 0) return { tipo: 'cabecera_descuentos', valor: [], motivo: 'Factura sin descuento, indicado manualmente' };
+  return {
+    tipo: 'cabecera_descuentos',
+    valor: porcentajes.map((porcentaje, index) => ({ orden: index + 1, porcentaje, monto: null, alcance: 'global', incluidoEnPrecio: false })),
+    motivo: `Descuento de la factura indicado manualmente: ${porcentajes.map(p => `${p} %`).join(' + ')}`,
+  };
+}
+
+// ── Existing-product selling price ──────────────────────────────────────────
+
+/**
+ * The catalog selling price (IVA included) as exact review decimal text, or null when it is missing, not positive or
+ * not representable without rounding. Never multiplied by a markup or by IVA: it is already the shelf price.
+ */
+export function precioCatalogo(producto: { readonly precio_venta?: unknown } | undefined): string | null {
+  const valor = producto?.precio_venta;
+  let texto: string | null = null;
+  if (typeof valor === 'number' && Number.isFinite(valor)) texto = String(valor);
+  else if (typeof valor === 'string') texto = valor.trim();
+  return texto !== null && precioVentaValido(texto) ? texto : null;
+}
+
+/**
+ * The edits of one explicit product choice, applied together. Choosing the same product again keeps any typed price;
+ * any other choice takes that product's current catalog price (or none), so the previous product's price never carries
+ * over. A new product has no catalog price: its existing cost-based suggestion applies.
+ */
+export function edicionesElegirProducto(
+  linea: Pick<LineaRevision, 'lineaId' | 'asociacion'>,
+  asociacion: AsociacionRevision,
+  producto: { readonly precio_venta?: unknown } | null
+): Edicion[] {
+  const ediciones: Edicion[] = [{ tipo: 'asociacion', lineaId: linea.lineaId, asociacion }];
+  const mismoProducto = asociacion.tipo === 'confirmado' && linea.asociacion.tipo === 'confirmado' && linea.asociacion.codigoInterno === asociacion.codigoInterno;
+  if (mismoProducto) return ediciones;
+  const valor = asociacion.tipo === 'confirmado' ? precioCatalogo(producto ?? undefined) : null;
+  return [...ediciones, { tipo: 'precio_venta', lineaId: linea.lineaId, valor }];
+}
+
+/** Existing products still without a saved selling price: approval and the purchase draft wait for them. */
+export function lineasSinPrecioVenta(lineas: readonly LineaRevision[]): string[] {
+  return lineas.filter(linea => linea.asociacion.tipo === 'confirmado' && linea.precioVenta === undefined).map(linea => linea.lineaId);
 }

@@ -23,6 +23,25 @@ Productos presents the document questions, review progress and expandable rows
 with explicit `Sí, es este`, `Es otro producto` and `No está en el inventario`
 choices. Required VAT and units-per-invoice-item decisions stay manual;
 quantity, cost and selling-price corrections reuse the existing review edits.
+The compact follow-up places IVA and percentage discounts once at invoice level.
+Filling missing IVA preserves existing exempt/mixed decisions; replacing all
+rates is an explicit separate action. After selection, only the chosen product
+is shown with `Cambiar producto`; detected invoice cost sits beside selling
+price, with a separate net stock-unit cost when needed. Per-line exceptions
+remain secondary. Global percentages cascade before IVA using exact decimal
+arithmetic; included discounts are not applied twice and fixed-USD allocation
+remains blocked. Both calculation-consuming Edge Functions require an accepted,
+separately authorized deployment before hosted use of the new discount behavior.
+The invoice settings also hold the existing explicit "1 unidad" batch for products
+whose units are still unconfirmed; with document type, price inclusion, IVA and
+units answered, the group collapses into one summary with a single `Cambiar`.
+A decided per-product factor shows as one line with its own `Cambiar`.
+`Es otro producto` uses the shared purchase inventory picker
+(`ProductoPickerModal`, also used by Compras): name, code or barcode search over
+the paged inventory view, distinct loading, error/retry, empty and next-page
+states, POS placeholders disabled, any stock level selectable. A failed or empty
+search never proves a product is new. The picked row applies only with a motive,
+through a batch fenced by the capture context and the line's expected association.
 Compra presents the remaining confirmations and the single current footer
 action: `Guardar cambios`, `Confirmar revisión`, or `Crear borrador de compra`.
 The main product action opens the next unfinished product before moving to Compra.
@@ -204,7 +223,28 @@ Not covered by this slice: supplier alias scope, purchase transfer, native/devic
 browser proof (the RNTL suite is not native proof), and any deployed-function or
 real-extraction check.
 
+## Existing-product selling price
+
+Choosing an existing product (a suggestion or an inventory row) adopts its current
+catalog `precio_venta`, which already includes IVA, into `lineas[].precioVenta` in the
+same atomic edit as the association. It is never multiplied by the markup or by 1.16,
+and the invoice's documentary quantity, cost and factor are untouched. Choosing the
+same product again keeps a typed price; any other choice replaces the previous
+product's price (or clears it when the new product has no valid catalog price) and
+drops an invalid draft only after the change succeeds. Catalog values are accepted
+only as exact positive review decimals; zero, missing or unrepresentable prices are
+not adopted and nothing is rounded. Rows come from the fenced suggestion read or one
+bounded `leerProductos` lookup for saved/manual choices; a failed, capped or partial
+read leaves the price unavailable. A saved existing product without `precioVenta` is
+shown as "sin aplicar" with `Usar precio actual`; opening a saved or approved review
+never edits it, and `Confirmar revisión` and `Crear borrador de compra` stay disabled
+until each such product has a saved price, because materialization would otherwise
+fall back to the markup. Displayed, saved and materialized prices are the same value.
+
 ## Sale price (PVP) suggestion in the review (local, no purchase effect)
+
+The suggestion below now applies to new products only; existing products follow the
+section above.
 
 The review shows an editable sale price per line. It is a review aid: nothing here
 changes the invoice taxes or costs, creates a purchase, changes stock or enables emission.

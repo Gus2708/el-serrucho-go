@@ -11,9 +11,20 @@ import type {
   DecisionCabecera,
   Edicion,
   FacturaEfectiva,
+  LineaEfectiva,
   TipoDocumento,
   ValorEfectivo,
 } from '../lib/facturaRevision';
+import {
+  edicionFactorUno,
+  edicionDescuentoFactura,
+  edicionesIvaFactura,
+  estadoIvaFactura,
+  leerPorcentajesFactura,
+  resumenDescuentoFactura,
+  type EstadoIvaFactura,
+  type ResumenDescuentoFactura,
+} from '../lib/facturaRevisionPasos';
 
 // ── Shared building blocks (also used by FacturaRevisionLinea) ──────────────
 
@@ -553,19 +564,317 @@ export function ListasTecnicasCabecera(props: { efectiva: FacturaEfectiva; calcu
   );
 }
 
-/** Reading stage content: the summary plus the two required questions. */
+// ── Invoice-wide settings: VAT and percentage discount, answered once ──────
+
+/** Several explicit edits as one decision, fenced by the capture context the choice was made under. */
+type OnEditarVarios = (ediciones: readonly Edicion[], contexto: string) => { ok: boolean };
+
+interface AjusteProps {
+  /** Ready, idle, current session and no conflict: the same gate as every other batch edit. */
+  habilitado: boolean;
+  contextoActual: () => string;
+  onEditarVarios: OnEditarVarios;
+}
+
+function productos(cantidad: number): string {
+  return cantidad === 1 ? '1 producto' : `${cantidad} productos`;
+}
+
+const listaTasas = (tasas: readonly string[]): string => tasas.map(tasa => `${tasa} %`).join(', ');
+
+function textoEstadoIva(estado: EstadoIvaFactura): string {
+  if (estado.faltan === 0) return `Ahora: ${listaTasas(estado.tasas)}.`;
+  const falta = `Falta en ${productos(estado.faltan)}.`;
+  return estado.tasas.length === 0 ? falta : `${falta} Ya indicado: ${listaTasas(estado.tasas)}.`;
+}
+
+function textoResumenIva(tasas: readonly string[]): string {
+  return tasas.length === 1 ? `IVA de la factura: ${tasas[0]} %` : `IVA de la factura: mixto (${listaTasas(tasas)})`;
+}
+
+/**
+ * One VAT answer for every product. It fills only the products without VAT; a product with another explicit rate (an
+ * exempt one, for example) changes only through the separate replace-all button. Collapses to one line once answered.
+ */
+function IvaFactura({ lineas, habilitado, contextoActual, onEditarVarios }: AjusteProps & { lineas: readonly LineaEfectiva[] }): React.JSX.Element | null {
+  const { colors } = useTheme();
+  const [cambiar, setCambiar] = useState(false);
+  const [eleccion, setEleccion] = useState<{ tasa: '0' | '16' | 'otro'; contexto: string } | null>(null);
+  const [otra, setOtra] = useState('');
+  if (lineas.length === 0) return null;
+  const estado = estadoIvaFactura(lineas);
+  const resuelto = estado.faltan === 0;
+
+  if (resuelto && !cambiar) {
+    return (
+      <View testID="revision-iva-factura" style={[styles.resumenInline, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+        <View style={styles.resumenTexto}>
+          <Texto testID="revision-iva-factura-resumen">{textoResumenIva(estado.tasas)}</Texto>
+        </View>
+        <Boton testID="revision-iva-factura-cambiar" label="Cambiar" onPress={() => setCambiar(true)} />
+      </View>
+    );
+  }
+
+  let tasa = '';
+  if (eleccion !== null) tasa = eleccion.tasa === 'otro' ? otra.trim() : eleccion.tasa;
+  const faltantes = tasa === '' ? estado.faltan : edicionesIvaFactura(lineas, tasa, 'faltan').length;
+  const todas = tasa === '' ? 0 : edicionesIvaFactura(lineas, tasa, 'todas').length;
+  const conOtroIva = todas - faltantes;
+
+  function elegir(opcion: '0' | '16' | 'otro'): void {
+    setEleccion({ tasa: opcion, contexto: contextoActual() });
+  }
+
+  function aplicar(alcance: 'faltan' | 'todas'): void {
+    if (eleccion === null || tasa === '' || !habilitado) return;
+    if (onEditarVarios(edicionesIvaFactura(lineas, tasa, alcance), eleccion.contexto).ok) {
+      setEleccion(null);
+      setOtra('');
+      setCambiar(false);
+    }
+  }
+
+  const etiquetaAplicar = tasa === '' ? `Aplicar IVA a ${productos(faltantes)} sin IVA` : `Aplicar ${tasa} % a ${productos(faltantes)} sin IVA`;
+  return (
+    <View testID="revision-iva-factura" style={[styles.ajuste, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+      <Texto tone="primary">IVA de la factura</Texto>
+      <Texto testID="revision-iva-factura-estado" small tone={resuelto ? 'muted' : 'warning'}>{textoEstadoIva(estado)}</Texto>
+      <View style={styles.fila}>
+        <Boton testID="revision-iva-factura-0" label="0 %" selected={eleccion?.tasa === '0'} disabled={!habilitado} onPress={() => elegir('0')} />
+        <Boton testID="revision-iva-factura-16" label="16 %" selected={eleccion?.tasa === '16'} disabled={!habilitado} onPress={() => elegir('16')} />
+        <Boton testID="revision-iva-factura-otro" label="Otro…" selected={eleccion?.tasa === 'otro'} disabled={!habilitado} onPress={() => elegir('otro')} />
+      </View>
+      {eleccion?.tasa === 'otro' ? <Entrada testID="revision-iva-factura-valor" label="IVA % de la factura" value={otra} keyboardType="decimal-pad" onChangeText={setOtra} /> : null}
+      {eleccion !== null && faltantes > 0 ? (
+        <Boton testID="revision-iva-factura-aplicar" label={etiquetaAplicar} disabled={!habilitado || tasa === ''} onPress={() => aplicar('faltan')} />
+      ) : null}
+      {conOtroIva > 0 ? (
+        <>
+          <Texto testID="revision-iva-factura-aviso" small tone="warning">{`Ya tienen otro IVA: ${productos(conOtroIva)}. No se cambian sin tu confirmación.`}</Texto>
+          <Boton testID="revision-iva-factura-reemplazar" label={`Usar ${tasa} % en todos (${productos(todas)})`} danger disabled={!habilitado} onPress={() => aplicar('todas')} />
+        </>
+      ) : null}
+      {cambiar && resuelto ? <Boton testID="revision-iva-factura-listo" label="Listo" onPress={() => { setCambiar(false); setEleccion(null); }} /> : null}
+    </View>
+  );
+}
+
+function textoResumenDescuento(resumen: ResumenDescuentoFactura): string {
+  switch (resumen.tipo) {
+    case 'ninguno':
+      return 'Descuento de la factura: ninguno';
+    case 'porcentajes':
+      return `Descuento de la factura: ${resumen.porcentajes.map(p => `${p} %`).join(' + ')} (antes del IVA)`;
+    case 'incluidos':
+      return 'Descuento de la factura: ya incluido en los precios';
+    default:
+      return 'Descuento de la factura: revisar';
+  }
+}
+
+/**
+ * Percentages for the whole invoice, in order and before VAT, stored as the existing header discount correction. Never
+ * written on its own: only Aplicar or Sin descuento writes, and replacing a discount read from the document (already
+ * included, or not a plain percentage) asks first so it is not applied twice.
+ */
+function DescuentoFactura({ descuentos, habilitado, contextoActual, onEditarVarios }: AjusteProps & { descuentos: FacturaEfectiva['descuentos'] }): React.JSX.Element {
+  const { colors } = useTheme();
+  const resumen = resumenDescuentoFactura(descuentos.valor);
+  const [edicion, setEdicion] = useState<{ texto: string; contexto: string } | null>(null);
+  const [pendiente, setPendiente] = useState<Edicion | null>(null);
+  const leido = edicion === null ? null : leerPorcentajesFactura(edicion.texto);
+  const reemplazaLeido = resumen.tipo === 'incluidos' || resumen.tipo === 'otro';
+
+  function abrir(): void {
+    setEdicion({ texto: resumen.tipo === 'porcentajes' ? resumen.porcentajes.join('+') : '', contexto: contextoActual() });
+    setPendiente(null);
+  }
+
+  function cerrar(): void {
+    setEdicion(null);
+    setPendiente(null);
+  }
+
+  function escribir(texto: string): void {
+    if (edicion === null) return;
+    setEdicion({ ...edicion, texto });
+    setPendiente(null);
+  }
+
+  function enviar(nueva: Edicion, confirmado: boolean): void {
+    if (edicion === null || !habilitado) return;
+    if (reemplazaLeido && !confirmado) {
+      setPendiente(nueva);
+      return;
+    }
+    if (onEditarVarios([nueva], edicion.contexto).ok) cerrar();
+  }
+
+  return (
+    <View testID="revision-descuento-factura" style={[styles.ajuste, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+      <View testID="revision-descuento-factura-fila" style={styles.filaResumen}>
+        <View testID="revision-descuento-factura-texto" style={styles.textoResumen}>
+          <Texto testID="revision-descuento-factura-resumen">{textoResumenDescuento(resumen)}</Texto>
+        </View>
+        {edicion === null ? <Boton testID="revision-descuento-factura-cambiar" label="Cambiar" onPress={abrir} /> : null}
+      </View>
+      {resumen.tipo === 'otro' ? (
+        <Texto testID="revision-descuento-factura-aviso" small tone="warning">El descuento leído no es solo un porcentaje: escribe el porcentaje aquí o corrígelo en Detalles para soporte.</Texto>
+      ) : null}
+      {edicion !== null ? (
+        <>
+          <Entrada
+            testID="revision-descuento-factura-valor"
+            label="Descuento de la factura (%)"
+            hint="Ejemplo: 10 o 20+5. Se aplica en orden, antes del IVA."
+            placeholder="10 o 20+5"
+            value={edicion.texto}
+            keyboardType="decimal-pad"
+            onChangeText={escribir}
+          />
+          {leido && !leido.ok && edicion.texto.trim() !== '' ? <Texto testID="revision-descuento-factura-error" small tone="danger">{leido.error}</Texto> : null}
+          {pendiente ? (
+            <>
+              <Texto testID="revision-descuento-factura-confirmar-aviso" small tone="warning">Esto reemplaza el descuento leído de la factura. Si ya está incluido en los precios, no lo apliques de nuevo.</Texto>
+              <Boton testID="revision-descuento-factura-confirmar" label="Sí, reemplazar" danger disabled={!habilitado} onPress={() => enviar(pendiente, true)} />
+            </>
+          ) : null}
+          <View style={styles.fila}>
+            <Boton
+              testID="revision-descuento-factura-aplicar"
+              label="Aplicar a toda la factura"
+              disabled={!habilitado || !leido?.ok}
+              onPress={() => { if (leido?.ok) enviar(edicionDescuentoFactura(leido.porcentajes), false); }}
+            />
+            {resumen.tipo !== 'ninguno' ? <Boton testID="revision-descuento-factura-quitar" label="Sin descuento" disabled={!habilitado} onPress={() => enviar(edicionDescuentoFactura([]), false)} /> : null}
+            <Boton testID="revision-descuento-factura-cancelar" label="Cancelar" onPress={cerrar} />
+          </View>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+function textoDescuentoCorto(resumen: ResumenDescuentoFactura): string {
+  switch (resumen.tipo) {
+    case 'porcentajes':
+      return `Descuento ${resumen.porcentajes.map(p => `${p} %`).join(' + ')}`;
+    case 'incluidos':
+      return 'Descuento ya incluido en los precios';
+    default:
+      return 'Sin descuento';
+  }
+}
+
+function textoValoresAjustes(estado: EstadoIvaFactura, resumen: ResumenDescuentoFactura): string {
+  const descuento = textoDescuentoCorto(resumen);
+  if (estado.total === 0) return descuento;
+  const iva = estado.tasas.length === 1 ? `IVA ${estado.tasas[0]} %` : `IVA mixto (${listaTasas(estado.tasas)})`;
+  return `${iva} · ${descuento}`;
+}
+
+/**
+ * The existing explicit "1 unit" batch for products whose units are still unconfirmed: never a default, never applied
+ * to a product that already has a factor (a package factor survives), fenced by the context captured on choice.
+ */
+function UnidadesFactura({ lineas, habilitado, contextoActual, onEditarVarios }: AjusteProps & { lineas: readonly LineaEfectiva[] }): React.JSX.Element | null {
+  const { colors } = useTheme();
+  const [eleccion, setEleccion] = useState<{ contexto: string } | null>(null);
+  const pendientes = lineas.filter(linea => linea.factorConversion === null).map(linea => linea.lineaId);
+  if (pendientes.length === 0) return null;
+
+  function aplicar(): void {
+    if (eleccion === null || !habilitado) return;
+    if (onEditarVarios(pendientes.map(edicionFactorUno), eleccion.contexto).ok) setEleccion(null);
+  }
+
+  return (
+    <View testID="revision-lote" style={[styles.ajuste, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+      <Texto tone="primary">Usar 1 unidad en los que faltan</Texto>
+      <Texto small tone="warning">{`Faltan las unidades de ${productos(pendientes.length)}`}</Texto>
+      <Texto small tone="muted">No cambia los productos que ya tienen unidades.</Texto>
+      <View style={styles.fila}>
+        <Boton testID="revision-lote-factor-uno" label="1 unidad" selected={eleccion !== null} disabled={!habilitado} onPress={() => setEleccion({ contexto: contextoActual() })} />
+        {eleccion ? (
+          <Boton testID="revision-lote-factor-aplicar" label={`Usar 1 unidad en ${productos(pendientes.length)} pendientes`} disabled={!habilitado} onPress={aplicar} />
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function textoPaquetes(lineas: readonly LineaEfectiva[]): string | null {
+  const conPaquete = lineas.filter(linea => linea.factorConversion !== null && linea.factorConversion !== '1').length;
+  return conPaquete === 0 ? null : `Unidades: ${productos(conPaquete)} con paquete`;
+}
+
+/** Inputs of the invoice-wide settings; the document questions travel with them so all of it collapses as one. */
+export interface AjustesFacturaProps extends AjusteProps {
+  tipoDocumento: TipoDocumento | null;
+  precioIncluyeIva: boolean | null;
+  onEditar: OnEditar;
+}
+
+/**
+ * Document type, price inclusion, VAT, units still unconfirmed and discount, set once for every product. Once all of them are answered they
+ * collapse into one summary with a single Cambiar that reopens the same explicit controls; anything unanswered, or a
+ * read discount that needs review, keeps the controls open.
+ */
+function AjustesFactura(props: AjustesFacturaProps & { efectiva: FacturaEfectiva }): React.JSX.Element {
+  const { colors } = useTheme();
+  const { efectiva, tipoDocumento, precioIncluyeIva, onEditar, ...ajuste } = props;
+  const [abierto, setAbierto] = useState(false);
+  const estadoIva = estadoIvaFactura(efectiva.lineas);
+  const resumen = resumenDescuentoFactura(efectiva.descuentos.valor);
+  const unidadesListas = efectiva.lineas.every(linea => linea.factorConversion !== null);
+  const respondido = tipoDocumento !== null && precioIncluyeIva !== null && estadoIva.faltan === 0 && unidadesListas && resumen.tipo !== 'otro';
+  const paquetes = textoPaquetes(efectiva.lineas);
+
+  if (respondido && !abierto) {
+    return (
+      <View testID="revision-ajustes-factura" style={[styles.filaResumen, styles.resumenCompacto, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+        <View style={styles.textoResumen}>
+          <Texto testID="revision-ajustes-resumen-documento">{`${tipoDocumento === 'factura' ? 'Factura' : 'Nota de entrega'} · precios ${precioIncluyeIva ? 'con' : 'sin'} IVA`}</Texto>
+          <Texto testID="revision-ajustes-resumen-valores" small tone="muted">{textoValoresAjustes(estadoIva, resumen)}</Texto>
+          {paquetes ? <Texto testID="revision-ajustes-resumen-unidades" small tone="muted">{paquetes}</Texto> : null}
+        </View>
+        <BotonDespliegue testID="revision-ajustes-cambiar" label="Cambiar" abierto={false} onPress={() => setAbierto(true)} />
+      </View>
+    );
+  }
+  return (
+    <View testID="revision-ajustes-factura" style={styles.cabeceraCompacta}>
+      <PreguntasDocumento tipoDocumento={tipoDocumento} precioIncluyeIva={precioIncluyeIva} onEditar={onEditar} />
+      <IvaFactura lineas={efectiva.lineas} {...ajuste} />
+      <UnidadesFactura lineas={efectiva.lineas} {...ajuste} />
+      <DescuentoFactura descuentos={efectiva.descuentos} {...ajuste} />
+      {respondido ? <Boton testID="revision-ajustes-listo" label="Listo" onPress={() => setAbierto(false)} /> : null}
+    </View>
+  );
+}
+
+/**
+ * Reading stage content: the summary plus the two required questions. With `ajustes`, the questions are part of the
+ * invoice-wide settings (VAT and discount), which collapse together once answered.
+ */
 export default function FacturaRevisionCabecera(props: {
   efectiva: FacturaEfectiva;
   decisiones: Readonly<Record<DecisionCabecera, boolean | null>>;
   tipoDocumento: TipoDocumento | null;
   calculo: CalculoRevision;
   onEditar: OnEditar;
+  ajustes?: AjusteProps;
 }): React.JSX.Element {
-  const { efectiva, decisiones, tipoDocumento, calculo, onEditar } = props;
+  const { efectiva, decisiones, tipoDocumento, calculo, onEditar, ajustes } = props;
   const [detalles, setDetalles] = useState(false);
   return (
     <View style={styles.cabeceraCompacta}>
-      <PreguntasDocumento tipoDocumento={tipoDocumento} precioIncluyeIva={decisiones.precioIncluyeIva} onEditar={onEditar} />
+      {ajustes ? (
+        <AjustesFactura efectiva={efectiva} tipoDocumento={tipoDocumento} precioIncluyeIva={decisiones.precioIncluyeIva} onEditar={onEditar} {...ajustes} />
+      ) : (
+        <PreguntasDocumento tipoDocumento={tipoDocumento} precioIncluyeIva={decisiones.precioIncluyeIva} onEditar={onEditar} />
+      )}
       {calculo.moneda !== 'USD' ? <Texto tone="warning">La moneda no es USD o falta definirla. Corrige la moneda en Más detalles.</Texto> : null}
       <BotonDespliegue testID="revision-cab-detalles" label="Más detalles" abierto={detalles} onPress={() => setDetalles(actual => !actual)} />
       {detalles ? <ResumenCabecera efectiva={efectiva} calculo={calculo} onEditar={onEditar} /> : null}
@@ -578,6 +887,10 @@ const styles = StyleSheet.create({
   cabeceraCompacta: { gap: 6 },
   resumenInline: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderWidth: 0.5, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 },
   resumenTexto: { flexGrow: 1, flexShrink: 1, minWidth: 150 },
+  ajuste: { gap: 8, borderWidth: 0.5, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
+  filaResumen: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  textoResumen: { flex: 1, gap: 2 },
+  resumenCompacto: { borderWidth: 0.5, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 },
   tarjeta: { borderWidth: 0.5, borderRadius: 12, padding: 12, gap: 10 },
   filaDatoCaja: { gap: 6 },
   despliegue: { minHeight: 44, minWidth: 44, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, alignSelf: 'flex-start' },

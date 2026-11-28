@@ -25,13 +25,14 @@ import { supabase, Producto } from '../lib/supabase';
 import { useProveedores, Proveedor } from '../hooks/useProveedores';
 import { useCompra, CompraDraftItem } from '../hooks/useCompra';
 import { borradoresQueryKey } from '../hooks/useBorradores';
-import { useProductos, normalizeSearchTerm, buildBarcodeSearchVariants } from '../hooks/useProductos';
+import { normalizeSearchTerm, buildBarcodeSearchVariants } from '../hooks/useProductos';
 import { useExistencias, faltantePorNegativo } from '../hooks/useExistencias';
 import { useColisionesCodigo, describirColision, ColisionCodigo } from '../hooks/useColisionesCodigo';
 import { useUserRole, isPrivilegedRole } from '../hooks/useUserRole';
 import { PressableScale } from './PressableScale';
 import { pressScale } from '../theme/motion';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
+import ProductoPickerModal from './ProductoPickerModal';
 import RegistroProveedorModal from './RegistroProveedorModal';
 import GuardarBorradorModal from './GuardarBorradorModal';
 import FacturasProveedorModal from './FacturasProveedorModal';
@@ -762,6 +763,7 @@ export default function ComprasView({ router, onEmitted, onSavedDraft }: Compras
       />
       <ProductoPickerModal
         visible={productoModalVisible}
+        titulo="Agregar producto"
         onClose={() => setProductoModalVisible(false)}
         onSelect={handleSelectProducto}
       />
@@ -1345,129 +1347,6 @@ function ProveedorPickerModal({ visible, canCreate, onClose, onSelect, onCreate 
           )}
         </View>
       </KeyboardAvoidingView>
-    </Modal>
-  );
-}
-
-// ── Modal: selector de producto ──────────────────────────────────────────────
-
-interface ProductoPickerModalProps {
-  visible:        boolean;
-  initialSearch?: string;
-  onClose:        () => void;
-  onSelect:       (producto: Producto) => void;
-}
-
-function ProductoPickerModal({ visible, initialSearch = '', onClose, onSelect }: ProductoPickerModalProps): React.JSX.Element {
-  const { colors } = useTheme();
-  const [search, setSearch] = useState<string>('');
-  const [scannerVisible, setScannerVisible] = useState<boolean>(false);
-  const { productos, isLoading } = useProductos(search);
-
-  useEffect(() => {
-    if (visible) {
-      setSearch(initialSearch ? normalizeSearchTerm(initialSearch) : '');
-      setScannerVisible(false);
-    }
-  }, [visible, initialSearch]);
-
-  return (
-    <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'android' ? 'height' : undefined}>
-        <View style={[styles.modalContent, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-          <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Agregar producto</Text>
-            <Pressable onPress={onClose} hitSlop={8}>
-              <Feather name="x" size={22} color={colors.textMuted} />
-            </Pressable>
-          </View>
-
-          <View style={[styles.searchBox, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-            <Feather name="search" size={16} color={colors.textDim} />
-            <TextInput
-              style={[styles.searchInput, { color: colors.text }]}
-              placeholder="Buscar por código, descripción o barras…"
-              placeholderTextColor={colors.textDim}
-              value={search}
-              onChangeText={v => setSearch(normalizeSearchTerm(v))}
-              autoCapitalize="characters"
-              autoComplete="off"
-              autoCorrect={false}
-              spellCheck={false}
-              autoFocus
-            />
-            {search.length > 0 && (
-              <Pressable onPress={() => setSearch('')} hitSlop={8} style={{ padding: 4, marginRight: 2 }}>
-                <Feather name="x-circle" size={16} color={colors.textDim} />
-              </Pressable>
-            )}
-            <PressableScale
-              style={[styles.scanBtn, { backgroundColor: colors.primaryFaded, borderColor: colors.primary + '40' }]}
-              onPress={() => setScannerVisible(true)}
-              hitSlop={4}
-            >
-              <Feather name="camera" size={16} color={colors.primary} />
-            </PressableScale>
-          </View>
-
-          {isLoading ? (
-            <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
-          ) : (
-            <FlatList
-              data={productos}
-              keyExtractor={p => p.codigo_interno}
-              keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => {
-                const isOut = item.existencia <= 0;
-                const badgeBg = isOut ? colors.danger + '1A' : colors.surface;
-                const badgeBorder = isOut ? colors.danger + '40' : colors.border;
-                const badgeTextColor = isOut ? colors.danger : colors.textMuted;
-
-                return (
-                  <PressableScale
-                    activeScale={pressScale.row}
-                    style={[
-                      styles.pickerRow,
-                      { borderColor: colors.border },
-                    ]}
-                    onPress={() => onSelect(item)}
-                  >
-                    <View style={styles.pickerRowLeft}>
-                      <Text style={[styles.pickerRowTitle, { color: colors.text }]} numberOfLines={1}>
-                        {item.descripcion}
-                      </Text>
-                      <Text style={[styles.pickerRowSub, { color: colors.textMuted }]} numberOfLines={1}>
-                        {item.codigo_interno}
-                        {item.referencia ? `  ·  Ref: ${item.referencia}` : ''}
-                        {item.codigo_barras ? `  ·  CB: ${item.codigo_barras}` : ''}
-                      </Text>
-                    </View>
-                    <View style={[styles.pickerStockBadge, { backgroundColor: badgeBg, borderColor: badgeBorder }]}>
-                      <Text style={[styles.pickerStockText, { color: badgeTextColor }]}>
-                        {item.existencia} {item.unidad || 'uds'}
-                      </Text>
-                    </View>
-                  </PressableScale>
-                );
-              }}
-              ListEmptyComponent={
-                <View style={styles.empty}>
-                  <Feather name="package" size={28} color={colors.textDim} />
-                  <Text style={[styles.emptySub, { color: colors.textDim }]}>Sin resultados</Text>
-                </View>
-              }
-            />
-          )}
-        </View>
-      </KeyboardAvoidingView>
-      <BarcodeScannerModal
-        visible={scannerVisible}
-        onClose={() => setScannerVisible(false)}
-        onScan={(data) => {
-          setSearch(normalizeSearchTerm(data));
-          setScannerVisible(false);
-        }}
-      />
     </Modal>
   );
 }

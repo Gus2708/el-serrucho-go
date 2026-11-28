@@ -6,14 +6,14 @@ import { useTheme } from '../theme/ThemeContext';
 import { useDeviceSize } from '../hooks/useDeviceSize';
 import { newUuid } from '../lib/facturaDocumentoPicker';
 import type { ExtraccionRow, FacturaRevisionRepository } from '../lib/facturaRevisionRepository';
-import type { Bloqueo, CodigoBloqueo, CorreccionesLinea, DecisionCabecera, FacturaEfectiva, RevisionContenido } from '../lib/facturaRevision';
+import type { AsociacionRevision, Bloqueo, CodigoBloqueo, CorreccionesLinea, DecisionCabecera, FacturaEfectiva, RevisionContenido } from '../lib/facturaRevision';
+import type { Producto } from '../lib/producto';
 import {
   accionPrincipal,
   agruparBloqueos,
-  edicionFactorUno,
-  edicionIvaManual,
+  edicionesElegirProducto,
   estadoLinea,
-  lineasConBloqueo,
+  lineasSinPrecioVenta,
   pendientesDeLinea,
   resumenLineas,
   siguientePorRevisar,
@@ -31,6 +31,7 @@ import { reanudarBorradorCompra } from '../hooks/useBorradores';
 import FacturaRevisionCabecera, { Boton, BotonDespliegue, ConfirmacionesCompra, Entrada, ListasTecnicasCabecera, Texto, avisoImporteOculto, formatoUsdExacto } from './FacturaRevisionCabecera';
 import FacturaRevisionLinea from './FacturaRevisionLinea';
 import FacturaRevisionPos from './FacturaRevisionPos';
+import ProductoPickerModal from './ProductoPickerModal';
 
 export type { EtapaRevision } from '../lib/facturaRevisionPasos';
 
@@ -111,8 +112,20 @@ const RESUELTOS_EN_COMPRA: ReadonlySet<CodigoBloqueo> = new Set(['documento_comp
 
 const AVISO_CATALOGO_PARCIAL = 'No se pudo revisar todo el inventario. Si no ves el producto, búscalo por su código; márcalo como nuevo solo si confirmas que no existe.';
 
-function renglones(cantidad: number): string {
-  return cantidad === 1 ? '1 producto' : `${cantidad} productos`;
+/** A manual product choice from the inventory search, bound to the line state, association and capture context it was opened under. */
+interface BusquedaInventario {
+  readonly lineaId: string;
+  readonly esperada: AsociacionRevision;
+  readonly contexto: string;
+}
+
+const AVISO_ELECCION_VENCIDA = 'Esta elección quedó desactualizada: busca el producto de nuevo.';
+
+function sinClave<T>(registro: Record<string, T>, clave: string): Record<string, T> {
+  if (!(clave in registro)) return registro;
+  const resto = { ...registro };
+  delete resto[clave];
+  return resto;
 }
 
 /** Offsets inside the stage scroll, measured by layout, to bring a line into view on a phone. */
@@ -247,6 +260,7 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
     aprobarRevision: (...args) => repository.aprobarRevision(...args),
     buscarCandidatos: (...args) => repository.buscarCandidatos(...args),
     leerColisionesBarras: (...args) => repository.leerColisionesBarras(...args),
+    leerProductos: (...args) => repository.leerProductos(...args),
     async extraer(entrada) {
       const origen = lecturaPedida.current;
       const resultado = await repository.extraer(entrada);
@@ -273,11 +287,10 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
   const [lineaAbierta, setLineaAbierta] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<FiltroLineas>('todos');
   const [agregarAbierto, setAgregarAbierto] = useState(false);
-  const [loteAbierto, setLoteAbierto] = useState(false);
   const [detalles, setDetalles] = useState({ leer: false, compra: false });
-  const [loteIva, setLoteIva] = useState<{ tasa: '0' | '16' | 'otro'; contexto: string } | null>(null);
-  const [otraTasa, setOtraTasa] = useState('');
-  const [loteFactor, setLoteFactor] = useState<{ contexto: string } | null>(null);
+  const [busquedaInventario, setBusquedaInventario] = useState<BusquedaInventario | null>(null);
+  const [eleccionesInventario, setEleccionesInventario] = useState<Record<string, BusquedaInventario & { producto: Producto }>>({});
+  const [avisosInventario, setAvisosInventario] = useState<Record<string, string>>({});
   const etapaSolicitada = props.etapa ?? etapaInterna;
   const etapa = etapaSolicitada === 'leer' ? 'productos' : etapaSolicitada;
   const cuerpoRef = useRef<ScrollView>(null);
@@ -297,10 +310,9 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
     setLineaAbierta(null);
     setFiltro('todos');
     setAgregarAbierto(false);
-    setLoteAbierto(false);
-    setLoteIva(null);
-    setOtraTasa('');
-    setLoteFactor(null);
+    setBusquedaInventario(null);
+    setEleccionesInventario({});
+    setAvisosInventario({});
     lineaPorMostrar.current = null;
   }, [facturaId]);
 
@@ -317,7 +329,10 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
     const fila = control.extraccionesUsables.find(fila => fila.id === origen.resultado && fila.documentoSha256 === origen.documento && fila.facturaVersion === facturaVersion);
     if (control.carga === 'listo' && control.aviso?.tipo === 'ok' && fila) control.aplicarExtraccion(fila.id, null);
   }, [control, facturaId, ownerId, documento?.sha256, facturaVersion, props.getSessionUid]);
-  const puedeMaterializar = control.estadoVisible === 'Validada' && !editorDirty && !control.sucio && calculo?.sinBloqueos === true && control.ultimaFila?.aprobadoEn !== null && control.ultimaFila !== null;
+  // An existing product without a saved selling price would be priced by the cost markup on the server: it must be adopted first.
+  const lineasSinPrecio = contenido ? lineasSinPrecioVenta(contenido.lineas) : [];
+  const preciosPendientes = lineasSinPrecio.length;
+  const puedeMaterializar = control.estadoVisible === 'Validada' && !editorDirty && !control.sucio && calculo?.sinBloqueos === true && control.ultimaFila?.aprobadoEn !== null && control.ultimaFila !== null && preciosPendientes === 0;
   const numeroPorLinea = new Map(calculo?.lineas.map((l, i) => [l.lineaId, l.numeroLinea ?? `m${i + 1}`]) ?? []);
   const llavePorLinea = new Map(efectiva?.lineas.map((l, i) => [l.lineaId, l.numeroLinea !== null ? String(l.numeroLinea) : `m${i + 1}`]) ?? []);
   const bloqueos = (calculo?.bloqueos ?? []).map(b => ({
@@ -399,10 +414,9 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
   }, [claveCabecera]);
 
   const ordenLineas = contenido?.lineas.map(linea => linea.lineaId) ?? [];
-  const sinIva = lineasConBloqueo(calculo?.bloqueos ?? [], 'iva_tasa_desconocida', ordenLineas);
-  const sinFactor = lineasConBloqueo(calculo?.bloqueos ?? [], 'conversion_no_confirmada', ordenLineas);
   const puedeLote = control.carga === 'listo' && control.ocupado === null && !control.conflicto && sesionVigente();
-  const tasaLote = loteIva === null ? '' : loteIva.tasa === 'otro' ? otraTasa.trim() : loteIva.tasa;
+  // Same gate and the same context-fenced batch callback as before; only the layout moved into the header.
+  const ajustesFactura = { habilitado: puedeLote, contextoActual: control.contextoActual, onEditarVarios: control.editarVarios };
   const puedeVerDocumento = props.onVerDocumento !== undefined && documento !== null;
 
   const intentoFallido = contenido === null && control.extraccionesUsables.length === 0 && control.extracciones.some(fila => fila.estado === 'fallido' || fila.estado === 'cuarentena');
@@ -424,6 +438,7 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
     puedeMaterializar,
     materializando,
     hayBorradorPrecio,
+    preciosPendientes,
     sinBloqueos: calculo?.sinBloqueos === true,
     aprobada: control.ultimaFila !== null && control.ultimaFila.aprobadoEn !== null,
   };
@@ -463,17 +478,53 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
     mostrarLineaPedida();
   }
 
-  function aplicarLoteIva(): void {
-    if (loteIva === null || tasaLote === '' || !puedeLote) return;
-    if (control.editarVarios(sinIva.map(lineaId => edicionIvaManual(lineaId, tasaLote)), loteIva.contexto).ok) {
-      setLoteIva(null);
-      setOtraTasa('');
-    }
+  /** Applies a product identity with its catalog price; only a successful change of product drops the old invalid draft. */
+  function aplicarProducto(linea: BusquedaInventario, asociacion: AsociacionRevision, producto: Producto | null): { ok: boolean } {
+    const resultado = control.editarConAsociacion({ ...linea, ediciones: actual => edicionesElegirProducto(actual, asociacion, producto) });
+    if (resultado.ok && linea.esperada.codigoInterno !== asociacion.codigoInterno) setBorradorPrecio(linea.lineaId, null);
+    return resultado;
   }
 
-  function aplicarLoteFactor(): void {
-    if (loteFactor === null || !puedeLote) return;
-    if (control.editarVarios(sinFactor.map(edicionFactorUno), loteFactor.contexto).ok) setLoteFactor(null);
+  function elegirSugerencia(linea: LineasEfectivas[number], codigo: string, contexto: string): void {
+    const resultado = control.elegirCandidato(linea.numeroLinea ?? 0, linea.lineaId, codigo, contexto);
+    if (resultado.ok && linea.asociacion.codigoInterno !== codigo) setBorradorPrecio(linea.lineaId, null);
+  }
+
+  function marcarNuevo(linea: LineasEfectivas[number], motivo: string, contexto: string): { ok: boolean } {
+    const asociacion: AsociacionRevision = { tipo: 'producto_nuevo', codigoInterno: null, evidencia: 'manual', motivo };
+    return aplicarProducto({ lineaId: linea.lineaId, esperada: linea.asociacion, contexto }, asociacion, null);
+  }
+
+  function usarPrecioActual(linea: LineasEfectivas[number], contexto: string): void {
+    const codigo = linea.asociacion.codigoInterno;
+    const actual = codigo === null ? null : control.precioCatalogoDe(codigo);
+    if (actual?.estado !== 'listo') return;
+    const lineaId = linea.lineaId;
+    const resultado = control.editarConAsociacion({ lineaId, esperada: linea.asociacion, contexto, ediciones: () => [{ tipo: 'precio_venta', lineaId, valor: actual.valor }] });
+    if (resultado.ok) setBorradorPrecio(lineaId, null);
+  }
+
+  function abrirInventario(linea: LineasEfectivas[number], contexto: string): void {
+    setAvisosInventario(actual => sinClave(actual, linea.lineaId));
+    setBusquedaInventario({ lineaId: linea.lineaId, esperada: linea.asociacion, contexto });
+  }
+
+  /** The picked row is only remembered for its line; nothing is applied until Usar este producto. Cancel keeps everything. */
+  function elegirEnInventario(producto: Producto): void {
+    const busqueda = busquedaInventario;
+    if (!busqueda) return;
+    setBusquedaInventario(null);
+    setEleccionesInventario(actual => ({ ...actual, [busqueda.lineaId]: { ...busqueda, producto } }));
+  }
+
+  function asociarDesdeInventario(lineaId: string, motivo: string): { ok: boolean } {
+    const eleccion = eleccionesInventario[lineaId];
+    if (!eleccion) return { ok: false };
+    const asociacion: AsociacionRevision = { tipo: 'confirmado', codigoInterno: eleccion.producto.codigo_interno, evidencia: 'manual', motivo };
+    const resultado = aplicarProducto(eleccion, asociacion, eleccion.producto);
+    setEleccionesInventario(actual => sinClave(actual, lineaId));
+    if (!resultado.ok) setAvisosInventario(actual => ({ ...actual, [lineaId]: AVISO_ELECCION_VENCIDA }));
+    return resultado;
   }
 
   async function materializarCompra(): Promise<void> {
@@ -717,7 +768,13 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
         borradorPrecio={borradoresPrecio[linea.lineaId]}
         onBorradorPrecio={setBorradorPrecio}
         onEditar={control.editar}
-        onElegirCandidato={codigo => control.elegirCandidato(linea.numeroLinea ?? 0, linea.lineaId, codigo)}
+        onElegirCandidato={codigo => elegirSugerencia(linea, codigo, contextoCaptura)}
+        onMarcarNuevo={motivo => marcarNuevo(linea, motivo, contextoCaptura)}
+        precioCatalogo={linea.asociacion.tipo === 'confirmado' && linea.asociacion.codigoInterno !== null ? control.precioCatalogoDe(linea.asociacion.codigoInterno) : null}
+        productoElegido={linea.asociacion.tipo === 'confirmado' && linea.asociacion.codigoInterno !== null ? control.productoCatalogoDe(linea.asociacion.codigoInterno) ?? null : null}
+        onUsarPrecioActual={() => usarPrecioActual(linea, contextoCaptura)}
+        inventario={{ producto: eleccionesInventario[linea.lineaId]?.producto ?? null, aviso: avisosInventario[linea.lineaId] ?? null, onBuscar: () => abrirInventario(linea, contextoCaptura) }}
+        onAsociarManual={motivo => asociarDesdeInventario(linea.lineaId, motivo)}
         capturaCodigo={control.carga === 'listo' && control.ocupado === null && !control.conflicto ? {
           contexto: `${contextoCaptura}|${contenido.extraccion_id}|${control.ultimaFila?.revision ?? 0}`,
           codigo: contenido.lineas.find(l => l.lineaId === linea.lineaId)?.codigoBarras.codigoEscaneado,
@@ -736,54 +793,6 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
 
   function renderVerDocumento(): React.JSX.Element | null {
     return puedeVerDocumento ? <Boton testID="revision-ver-documento" label="Ver factura" onPress={() => props.onVerDocumento?.()} /> : null;
-  }
-
-  function renderLote(): React.JSX.Element | null {
-    if (sinIva.length === 0 && sinFactor.length === 0) return null;
-    const elegirIva = (tasa: '0' | '16' | 'otro'): void => setLoteIva({ tasa, contexto: control.contextoActual() });
-    const etiquetaIva = tasaLote === '' ? `Aplicar IVA a ${renglones(sinIva.length)} sin IVA` : `Aplicar ${tasaLote} % a ${renglones(sinIva.length)} sin IVA`;
-    return (
-      <View style={styles.bloque}>
-        <BotonDespliegue
-          testID="revision-lote-toggle"
-          label="Cambiar IVA o unidades en varios productos"
-          abierto={loteAbierto}
-          bordered
-          onPress={() => setLoteAbierto(actual => !actual)}
-        />
-        {loteAbierto ? (
-          <View testID="revision-lote" style={[styles.grupo, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-            <Texto tone="primary">Usar el mismo IVA o unidades en los que faltan</Texto>
-            <Texto small tone="muted">No cambia los productos que ya tienen IVA o unidades.</Texto>
-            {sinIva.length > 0 ? (
-              <View style={styles.bloque}>
-                <Texto small>{`IVA de ${renglones(sinIva.length)} sin IVA`}</Texto>
-                <View style={styles.filaFiltros}>
-                  <Boton testID="revision-lote-iva-0" label="0 %" selected={loteIva?.tasa === '0'} disabled={!puedeLote} onPress={() => elegirIva('0')} />
-                  <Boton testID="revision-lote-iva-16" label="16 %" selected={loteIva?.tasa === '16'} disabled={!puedeLote} onPress={() => elegirIva('16')} />
-                  <Boton testID="revision-lote-iva-otro" label="Otro…" selected={loteIva?.tasa === 'otro'} disabled={!puedeLote} onPress={() => elegirIva('otro')} />
-                </View>
-                {loteIva?.tasa === 'otro' ? (
-                  <Entrada testID="revision-lote-iva-valor" label="IVA % para estos productos" value={otraTasa} keyboardType="decimal-pad" onChangeText={setOtraTasa} />
-                ) : null}
-                {loteIva ? <Boton testID="revision-lote-iva-aplicar" label={etiquetaIva} disabled={!puedeLote || tasaLote === ''} onPress={aplicarLoteIva} /> : null}
-              </View>
-            ) : null}
-            {sinFactor.length > 0 ? (
-              <View style={styles.bloque}>
-                <Texto small>{`Faltan las unidades de ${renglones(sinFactor.length)}`}</Texto>
-                <View style={styles.filaFiltros}>
-                  <Boton testID="revision-lote-factor-uno" label="1 unidad" selected={loteFactor !== null} disabled={!puedeLote} onPress={() => setLoteFactor({ contexto: control.contextoActual() })} />
-                </View>
-                {loteFactor ? (
-                  <Boton testID="revision-lote-factor-aplicar" label={`Usar 1 unidad en ${renglones(sinFactor.length)} pendientes`} disabled={!puedeLote} onPress={aplicarLoteFactor} />
-                ) : null}
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-      </View>
-    );
   }
 
   function renderTituloProductos(): React.JSX.Element {
@@ -810,7 +819,6 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
           <Boton testID="revision-filtro-pendientes" label={`Faltan (${resumen.porRevisar})`} selected={filtro === 'pendientes'} onPress={() => setFiltro('pendientes')} />
           <Boton testID="revision-filtro-listos" label={`Listos (${resumen.listas})`} selected={filtro === 'listos'} onPress={() => setFiltro('listos')} />
         </View>
-        {renderLote()}
       </View>
     );
   }
@@ -842,7 +850,7 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
     return (
       <View testID="revision-etapa-productos" style={styles.etapa} onLayout={evento => medir('etapa', evento)}>
         {renderTituloProductos()}
-        <FacturaRevisionCabecera efectiva={efectiva} decisiones={decisiones} tipoDocumento={contenido.cabecera.tipoDocumento ?? null} calculo={calculo} onEditar={control.editar} />
+        <FacturaRevisionCabecera key={facturaId} efectiva={efectiva} decisiones={decisiones} tipoDocumento={contenido.cabecera.tipoDocumento ?? null} calculo={calculo} onEditar={control.editar} ajustes={ajustesFactura} />
         {renderControlesProductos()}
         <View testID="revision-productos-filas" style={styles.bloque} onLayout={evento => medir('filas', evento)}>
           {lineasVisibles(efectiva.lineas).map(({ linea, index }) => (
@@ -871,7 +879,7 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
         </View>
         <View testID="revision-productos-paneles" style={styles.paneles}>
           <ScrollView testID="revision-productos-lista" style={styles.panelLista} contentContainerStyle={styles.contenidoPanel} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
-            <FacturaRevisionCabecera efectiva={efectiva!} decisiones={decisiones} tipoDocumento={contenido?.cabecera.tipoDocumento ?? null} calculo={calculo!} onEditar={control.editar} />
+            <FacturaRevisionCabecera key={facturaId} efectiva={efectiva!} decisiones={decisiones} tipoDocumento={contenido?.cabecera.tipoDocumento ?? null} calculo={calculo!} onEditar={control.editar} ajustes={ajustesFactura} />
             {renderControlesProductos()}
             {lineasVisibles(lineas).map(({ linea, index }) => renderLinea(linea, index, 'fila'))}
             {renderAgregar()}
@@ -921,6 +929,21 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
     );
   }
 
+  /** Existing products without a saved selling price, the same list the footer guard counts. */
+  function renderPreciosPendientes(): React.JSX.Element {
+    const numeros = lineasSinPrecio.map(lineaId => numeroPorLinea.get(lineaId) ?? '');
+    return (
+      <View testID="revision-precios-pendientes" style={[styles.grupo, { borderColor: colors.border }]}>
+        <Texto tone="warning">{`Precio de venta · Falta en ${numeros.length === 1 ? 'el producto' : 'los productos'} ${numeros.join(', ')}`}</Texto>
+        <Texto small tone="muted">Usa el precio actual del inventario o escribe uno.</Texto>
+        {lineasSinPrecio.map(lineaId => {
+          const llave = llavePorLinea.get(lineaId) ?? '';
+          return <Boton key={lineaId} testID={`revision-ir-precio-${llave}`} label={`Ir al producto ${numeroPorLinea.get(lineaId) ?? ''}`} onPress={() => abrirLinea(lineaId)} />;
+        })}
+      </View>
+    );
+  }
+
   function renderCompra(): React.JSX.Element {
     if (!contenido || !efectiva || !calculo) {
       return (
@@ -955,7 +978,8 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
 
         <View testID="revision-bloqueos" style={styles.bloque}>
           <Texto tone="primary">Falta antes de crear la compra</Texto>
-          {calculo.bloqueos.length === 0 ? <Texto tone="success">Sin bloqueos</Texto> : null}
+          {calculo.bloqueos.length === 0 && preciosPendientes === 0 ? <Texto tone="success">Sin bloqueos</Texto> : null}
+          {preciosPendientes > 0 ? renderPreciosPendientes() : null}
           {grupos.documento.length > 0 ? (
             <View testID="revision-bloqueos-documento" style={[styles.grupo, { borderColor: colors.border }]}>
               <Texto tone="warning">Documento</Texto>
@@ -1073,6 +1097,9 @@ export default function FacturaRevisionView(props: FacturaRevisionViewProps): Re
             </View>
           </View>
         </View>
+      ) : null}
+      {busquedaInventario ? (
+        <ProductoPickerModal visible titulo="Buscar en inventario" onClose={() => setBusquedaInventario(null)} onSelect={elegirEnInventario} />
       ) : null}
     </KeyboardAvoidingView>
   );

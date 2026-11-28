@@ -12,6 +12,8 @@ import { parseFacturaExtraction, type FacturaExtraccionPayload } from '../lib/fa
 import { matchInvoiceLines, type LineMatch } from '../lib/facturaMatching';
 import { evaluarRepresentacionPos, type RepresentacionPos } from '../lib/compraRepresentacionPos';
 import { fetchExistenciasEstrictas, type ExistenciasEstrictas } from '../lib/facturaExistencias';
+import { edicionesElegirProducto, precioCatalogo } from '../lib/facturaRevisionPasos';
+import type { Producto } from '../lib/producto';
 import {
   aplicarEdicion,
   asociacionDesdeCandidato,
@@ -40,6 +42,9 @@ export type EstadoVisible =
   | 'Validada';
 
 export type CargaRevision = 'cargando' | 'listo' | 'no_disponible' | 'error' | 'sin_sesion';
+
+/** Current catalog selling price of a chosen product: read, still being read, or unavailable (never assumed). */
+export type PrecioCatalogo = { readonly estado: 'listo'; readonly valor: string } | { readonly estado: 'cargando' } | { readonly estado: 'no_disponible' };
 
 /** State of the Hybrid stock snapshot: `no_aplica` while there is nothing to read (blocked review, no confirmed SKU, no session). */
 export type EstadoExistencias = 'no_aplica' | 'pendiente' | 'error' | 'listo';
@@ -163,6 +168,10 @@ interface Estado {
   candidatosDe: string | null;
   /** Barcode check results keyed by claveBarras(...), never by line alone. */
   estadosBarras: Record<string, EstadoCodigoBarras>;
+  /** Current catalog rows by internal code, from the fenced suggestion read or the bounded lookup of chosen products. */
+  productosCatalogo: Record<string, Producto>;
+  /** Codes whose current row could not be read completely: their price stays unavailable, never inferred. */
+  productosNoDisponibles: Record<string, true>;
 }
 
 const INICIAL: Estado = {
@@ -179,6 +188,8 @@ const INICIAL: Estado = {
   candidatos: {},
   candidatosDe: null,
   estadosBarras: {},
+  productosCatalogo: {},
+  productosNoDisponibles: {},
 };
 
 export function useFacturaRevision(params: UseFacturaRevisionParams) {
@@ -213,6 +224,7 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
   const barrasPedidas = useRef(new Set<string>());
   const catalogoPara = useRef<string | null>(null);
   const peticionCatalogo = useRef(0);
+  const productosPedidos = useRef(new Set<string>());
 
   const vigente = useCallback((token: string): boolean => token === tokenActual() && live.current.getSessionUid() === ownerId, [ownerId, tokenActual]);
   const patch = useCallback((cambio: Partial<Estado> | ((actual: Estado) => Partial<Estado>)) => {
@@ -254,6 +266,7 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
         candidatosDe: actual.candidatosDe,
         catalogoParcial: actual.catalogoParcial,
         estadosBarras: actual.estadosBarras,
+        productosCatalogo: actual.productosCatalogo,
       }));
     } catch (error) {
       if (!vigente(token)) return;
@@ -265,6 +278,7 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
   useEffect(() => {
     pendienteRef.current = null;
     barrasPedidas.current = new Set();
+    productosPedidos.current = new Set();
     catalogoPara.current = null;
     setEstado(INICIAL);
     void cargar(false);
@@ -301,6 +315,7 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
       return;
     }
     barrasPedidas.current = new Set();
+    productosPedidos.current = new Set();
     catalogoPara.current = null;
     if (live.current.getSessionUid() !== ownerId) {
       patch({ ocupado: null, carga: 'sin_sesion' });
@@ -328,7 +343,10 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
         const resultado = matchInvoiceLines({ supplierKey: supplierKey ?? null, lines: extraccion.lineas, catalog: productos, hybridRanks, feedback, aliases });
         const candidatos: Record<number, LineMatch> = {};
         if (resultado.ok) for (const match of resultado.lines) candidatos[match.numeroLinea] = match;
-        patch({ candidatos, candidatosDe: extraccionId, catalogoParcial: parcial || !resultado.ok });
+        // The matcher keeps identities only; the same fenced rows keep each candidate's current selling price.
+        const filas: Record<string, Producto> = {};
+        for (const producto of productos) filas[producto.codigo_interno] = producto;
+        patch(previo => ({ candidatos, candidatosDe: extraccionId, catalogoParcial: parcial || !resultado.ok, productosCatalogo: { ...previo.productosCatalogo, ...filas } }));
       },
       () => {
         if (actual()) patch({ candidatos: {}, candidatosDe: extraccionId, catalogoParcial: true });
@@ -368,6 +386,37 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
       );
     }
   }, [efectiva, estado.carga, estado.contenido?.extraccion_id, sesionGen, vigente, tokenActual, patch]);
+
+  // Chosen products missing from the suggestion rows (a saved or manual choice) get one bounded current read per
+  // generation. Only an answer requested under the current generation is admitted; a failed, capped or partial read
+  // leaves the price unavailable, never zero and never a markup.
+  useEffect(() => {
+    if (!estado.contenido || estado.carga !== 'listo') return;
+    const token = tokenActual();
+    const elegidos = estado.contenido.lineas
+      .filter(linea => linea.asociacion.tipo === 'confirmado' && linea.asociacion.codigoInterno !== null)
+      .map(linea => linea.asociacion.codigoInterno as string);
+    const faltan = [...new Set(elegidos)].filter(codigo => !estado.productosCatalogo[codigo] && !productosPedidos.current.has(`${token}|${codigo}`));
+    if (faltan.length === 0) return;
+    for (const codigo of faltan) productosPedidos.current.add(`${token}|${codigo}`);
+    const noDisponibles = (actual: Estado, codigos: readonly string[]): Record<string, true> => {
+      const marcados: Record<string, true> = { ...actual.productosNoDisponibles };
+      for (const codigo of codigos) marcados[codigo] = true;
+      return marcados;
+    };
+    void Promise.resolve()
+      .then(() => live.current.repository.leerProductos(faltan))
+      .then(
+        ({ productos, completo }) => {
+          if (!vigente(token)) return;
+          const ausentes = faltan.filter(codigo => !completo || !productos[codigo]);
+          patch(actual => ({ productosCatalogo: { ...actual.productosCatalogo, ...productos }, productosNoDisponibles: noDisponibles(actual, ausentes) }));
+        },
+        () => {
+          if (vigente(token)) patch(actual => ({ productosNoDisponibles: noDisponibles(actual, faltan) }));
+        }
+      );
+  }, [estado.contenido, estado.carga, estado.productosCatalogo, sesionGen, vigente, tokenActual, patch]);
 
   // Only evidence for the CURRENT code, SKU, extraction and generation is admitted; anything else counts as unknown.
   const estadosBarrasVigentes = useMemo(() => {
@@ -489,12 +538,32 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
     return { ok: true, aplicadas };
   }, [patch, vigente, tokenActual, contextoCaptura]);
 
-  const elegirCandidato = useCallback((numeroLinea: number, lineaId: string, codigoInterno: string): void => {
+  /**
+   * Edits of one line as one fenced decision: refused unless the line still exists with exactly the association the
+   * choice was made against (`esperada`) and the capture context is current, so a picker answer, a late lookup or a
+   * stale tap never lands on another line state, invoice, session or extraction. All or nothing, via editarVarios.
+   */
+  const editarConAsociacion = useCallback((entrada: {
+    readonly lineaId: string;
+    readonly esperada: AsociacionRevision;
+    readonly ediciones: (linea: RevisionContenido['lineas'][number]) => readonly Edicion[];
+    readonly contexto: string;
+  }): { ok: boolean } => {
+    const linea = estadoRef.current.contenido?.lineas.find(l => l.lineaId === entrada.lineaId);
+    if (!linea || canon(linea.asociacion) !== canon(entrada.esperada)) return { ok: false };
+    return { ok: editarVarios(entrada.ediciones(linea), entrada.contexto).ok };
+  }, [editarVarios]);
+
+  /** A suggested product chosen explicitly, with its current catalog price adopted in the same batch. */
+  const elegirCandidato = useCallback((numeroLinea: number, lineaId: string, codigoInterno: string, contexto: string): { ok: boolean } => {
     const actual = estadoRef.current;
     const match = actual.candidatosDe === actual.contenido?.extraccion_id ? actual.candidatos[numeroLinea] : undefined;
     const asociacion: AsociacionRevision | null = match ? asociacionDesdeCandidato(match, codigoInterno, null) : null;
-    if (asociacion) editar({ tipo: 'asociacion', lineaId, asociacion });
-  }, [editar]);
+    const esperada = actual.contenido?.lineas.find(l => l.lineaId === lineaId)?.asociacion;
+    if (!asociacion || !esperada) return { ok: false };
+    const producto = actual.productosCatalogo[codigoInterno] ?? null;
+    return editarConAsociacion({ lineaId, esperada, contexto, ediciones: linea => edicionesElegirProducto(linea, asociacion, producto) });
+  }, [editarConAsociacion]);
 
   const capturarCodigoNuevo = useCallback((lineaId: string, valor: string | null, contexto: string): { ok: boolean } => {
     const edicion: Edicion = { tipo: 'codigo_barras_escaneado', lineaId, valor };
@@ -655,6 +724,16 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
     await cargar(false);
   }, [cargar]);
 
+  const precioCatalogoDe = useCallback((codigoInterno: string): PrecioCatalogo => {
+    const valor = precioCatalogo(estado.productosCatalogo[codigoInterno]);
+    if (valor !== null) return { estado: 'listo', valor };
+    if (estado.productosCatalogo[codigoInterno] || estado.productosNoDisponibles[codigoInterno]) return { estado: 'no_disponible' };
+    return { estado: 'cargando' };
+  }, [estado.productosCatalogo, estado.productosNoDisponibles]);
+
+  /** Read-only view of an already retained catalog row (suggestion read or bounded lookup); never fetches. */
+  const productoCatalogoDe = useCallback((codigoInterno: string): Producto | undefined => estado.productosCatalogo[codigoInterno], [estado.productosCatalogo]);
+
   const suggestionsCurrent = estado.candidatosDe !== null && estado.candidatosDe === (estado.contenido?.extraccion_id ?? null);
   const extraccionesUsables = useMemo(() => estado.extracciones.filter(row => isUsable(row, documentoSha256)), [estado.extracciones, documentoSha256]);
 
@@ -686,6 +765,9 @@ export function useFacturaRevision(params: UseFacturaRevisionParams) {
     contextoActual: contextoCaptura,
     capturarCodigoNuevo,
     elegirCandidato,
+    editarConAsociacion,
+    precioCatalogoDe,
+    productoCatalogoDe,
     aplicarExtraccion,
     guardar,
     aprobar,

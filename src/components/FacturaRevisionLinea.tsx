@@ -5,12 +5,15 @@ import { Feather } from '@expo/vector-icons';
 import { scaleFont } from '../theme/responsive';
 import { useTheme } from '../theme/ThemeContext';
 import type { ExtraidoDescuento } from '../lib/facturaExtractionContract';
+import { cmpDecimal, parseDecimal } from '../lib/facturaDecimal';
 import { describeCandidateSupport, isAbsentIdentifier, type CandidateSupport, type EvidenceSource, type LineMatch, type MatchCandidate } from '../lib/facturaMatching';
 import { precioVentaValido, resolverPrecioVenta } from '../lib/facturaRevision';
 import type { CalculoLinea, Edicion, EstadoCodigoBarras, LineaCampoEscalar, LineaEfectiva, TipoDocumento } from '../lib/facturaRevision';
-import { ETIQUETA_ESTADO_LINEA, type EstadoLinea } from '../lib/facturaRevisionPasos';
+import { ETIQUETA_ESTADO_LINEA, precioCatalogo as precioDeCatalogo, type EstadoLinea } from '../lib/facturaRevisionPasos';
 import { Boton, BotonDespliegue, CampoCorregible, Entrada, FilasLista, Texto, avisoImporteOculto, etiquetaMonto, formatoUsdExacto } from './FacturaRevisionCabecera';
 import FacturaCodigoBarrasNuevo, { type CapturaCodigoNuevoProps } from './FacturaCodigoBarrasNuevo';
+import type { PrecioCatalogo } from '../hooks/useFacturaRevision';
+import type { Producto } from '../lib/producto';
 
 /** Printed values the person may correct; the VAT rate has its own quick control. */
 const CAMPOS: ReadonlyArray<{ campo: LineaCampoEscalar; label: string; decimal?: boolean; monetario?: boolean }> = [
@@ -24,6 +27,9 @@ const CAMPOS: ReadonlyArray<{ campo: LineaCampoEscalar; label: string; decimal?:
 
 const CAMPO_IVA = { campo: 'tasaIva' as const, label: 'IVA (%)' };
 const TASAS_IVA = ['0', '16'] as const;
+
+/** Candidates shown before the person asks for more; conflicting ones and the saved choice are always added. */
+const CANDIDATOS_INICIALES = 3;
 
 const ESTADO_BARRAS: Record<EstadoCodigoBarras, string> = {
   sin_codigo: 'Sin código impreso que usar.',
@@ -55,6 +61,18 @@ export interface FacturaRevisionLineaProps {
   onBorradorPrecio: (lineaId: string, texto: string | null) => void;
   onEditar: (edicion: Edicion) => { ok: boolean };
   onElegirCandidato: (codigoInterno: string) => void;
+  /** Current catalog selling price (IVA included) of the chosen existing product; null for a pending or new one. */
+  precioCatalogo: PrecioCatalogo | null;
+  /** Retained catalog row of the chosen existing product, used only to name it; null when none was read. */
+  productoElegido: Producto | null;
+  /** Explicitly adopts the current catalog price as this line's saved selling price. */
+  onUsarPrecioActual: () => void;
+  /** The shared inventory search for a manual choice: the product picked for this line (not applied yet) and a stale-choice notice. */
+  inventario: { producto: Producto | null; aviso: string | null; onBuscar: () => void };
+  /** Applies the picked inventory product with this motive, through the view's fenced batch. */
+  onAsociarManual: (motivo: string) => { ok: boolean };
+  /** Marks the line as a new product through the view's fenced batch (the previous product's price never carries over). */
+  onMarcarNuevo: (motivo: string) => { ok: boolean };
   capturaCodigo?: Omit<CapturaCodigoNuevoProps, 'id'> & { contexto: string };
   /** What the person must do next on this line, from the review calculation. */
   estado: EstadoLinea;
@@ -117,6 +135,22 @@ function etiquetasEvidencia(candidato: MatchCandidate): string[] {
 
 const tieneEvidenciaDeCodigo = (candidato: MatchCandidate): boolean => candidato.evidence.some(e => e.source !== 'descripcion');
 
+/** The saved decision in a few lines: the product name (when known from the matcher or the catalog), its code and any motive. */
+function resumenElegido(asociacion: LineaEfectiva['asociacion'], descripcion: string | null): string[] {
+  const { tipo, codigoInterno, evidencia, motivo } = asociacion;
+  if (tipo === 'producto_nuevo') return ['Producto nuevo (sin crear)', `Motivo: ${motivo ?? ''}`];
+  const lineas = [...(descripcion ? [descripcion] : []), `Código ${codigoInterno ?? ''}`];
+  if (evidencia === 'manual') return [...lineas, `Elegido a mano. Motivo: ${motivo ?? ''}`];
+  return motivo ? [...lineas, `Motivo: ${motivo}`] : lineas;
+}
+
+/** Exact comparison of two decimal texts; an unreadable one is never "the same". */
+function mismoDecimal(a: string, b: string | null): boolean {
+  const x = parseDecimal(a);
+  const y = b === null ? null : parseDecimal(b);
+  return x !== null && y !== null && cmpDecimal(x, y) === 0;
+}
+
 const SUPPORT_LABELS: Record<CandidateSupport['support'], string> = {
   codigo_coincidente: 'Código coincidente',
   en_conflicto: 'Datos en conflicto',
@@ -135,10 +169,12 @@ function TarjetaCandidato(props: { id: string; candidato: MatchCandidate; suppor
   const { colors } = useTheme();
   const { id, candidato, support, recomendado, elegido, onElegir } = props;
   return (
-    <View testID={`${id}-tarjeta-${candidato.codigoInterno}`} style={[styles.candidato, { borderColor: elegido ? colors.primary : colors.border, backgroundColor: colors.surfaceAlt }]}>
+    <View testID={`${id}-tarjeta-${candidato.codigoInterno}`} style={[styles.candidato, { borderColor: elegido ? colors.primary : colors.border, backgroundColor: colors.surface }]}>
       <Texto>{candidato.descripcion}</Texto>
-      <Texto small tone="muted">{`Código ${candidato.codigoInterno}`}</Texto>
-      <Texto small tone={support.support === 'en_conflicto' ? 'danger' : 'muted'}>{SUPPORT_LABELS[support.support]}</Texto>
+      <View style={styles.fila}>
+        <Texto small tone="muted">{`Código ${candidato.codigoInterno}`}</Texto>
+        <Texto small tone={support.support === 'en_conflicto' ? 'danger' : 'muted'}>{SUPPORT_LABELS[support.support]}</Texto>
+      </View>
       {support.unknowns.length > 0 ? (
         <Texto small tone="muted">{`No comparado: ${support.unknowns.map(kind => ATTRIBUTE_LABELS[kind] ?? kind).join(', ')}`}</Texto>
       ) : null}
@@ -149,32 +185,32 @@ function TarjetaCandidato(props: { id: string; candidato: MatchCandidate; suppor
             <Text style={[styles.chipTexto, { color: colors.textMuted }]}>{etiqueta}</Text>
           </View>
         ))}
+        <Pressable
+          testID={`${id}-candidato-${candidato.codigoInterno}`}
+          accessibilityRole="button"
+          accessibilityLabel={`Confirmar ${candidato.descripcion}, código ${candidato.codigoInterno}`}
+          accessibilityState={{ selected: elegido }}
+          onPress={onElegir}
+          style={({ pressed }) => [
+            styles.confirmar,
+            {
+              borderColor: elegido ? colors.primary : colors.border,
+              backgroundColor: elegido ? colors.primaryFaded : colors.surface,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <Text style={[styles.chipTexto, { color: elegido ? colors.primary : colors.text }]}>Sí, es este</Text>
+        </Pressable>
       </View>
-      <Pressable
-        testID={`${id}-candidato-${candidato.codigoInterno}`}
-        accessibilityRole="button"
-        accessibilityLabel={`Confirmar ${candidato.descripcion}, código ${candidato.codigoInterno}`}
-        accessibilityState={{ selected: elegido }}
-        onPress={onElegir}
-        style={({ pressed }) => [
-          styles.confirmar,
-          {
-            borderColor: elegido ? colors.primary : colors.border,
-            backgroundColor: elegido ? colors.primaryFaded : colors.surface,
-            opacity: pressed ? 0.7 : 1,
-          },
-        ]}
-      >
-        <Text style={[styles.chipTexto, { color: elegido ? colors.primary : colors.text }]}>Sí, es este</Text>
-      </Pressable>
     </View>
   );
 }
 
-function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }): React.JSX.Element {
+function Seccion({ testID, titulo, children }: { testID?: string; titulo: string; children: React.ReactNode }): React.JSX.Element {
   const { colors } = useTheme();
   return (
-    <View style={[styles.seccion, { borderTopColor: colors.border }]}>
+    <View testID={testID} style={[styles.seccion, { borderTopColor: colors.border }]}>
       <Texto tone="primary">{titulo}</Texto>
       {children}
     </View>
@@ -184,17 +220,19 @@ function Seccion({ titulo, children }: { titulo: string; children: React.ReactNo
 export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): React.JSX.Element {
   const { colors } = useTheme();
   const { llave, numero, pagina, efectiva, calculo, match, catalogoParcial, moneda, esUsd, estadoBarras, tipoDocumento, precioVenta, borradorPrecio, onBorradorPrecio, onEditar, onElegirCandidato } = props;
-  const { estado, bloqueos, abierta, onAlternar, onSiguiente } = props;
+  const { estado, bloqueos, abierta, onAlternar, onSiguiente, precioCatalogo, productoElegido, onUsarPrecioActual, inventario, onAsociarManual, onMarcarNuevo } = props;
   const modo = props.modo ?? 'completo';
   const id = `revision-linea-${llave}`;
   const lineaId = efectiva.lineaId;
   const [factor, setFactor] = useState('');
-  const [manualCodigo, setManualCodigo] = useState('');
   const [manualMotivo, setManualMotivo] = useState('');
   const [nuevoMotivo, setNuevoMotivo] = useState('');
   const [panelProducto, setPanelProducto] = useState<'manual' | 'nuevo' | null>(null);
+  const [cambiandoDesde, setCambiandoDesde] = useState<string | null>(null);
+  const [verOtras, setVerOtras] = useState(false);
   const [otroIva, setOtroIva] = useState(false);
   const [otroFactor, setOtroFactor] = useState(false);
+  const [cambiarFactor, setCambiarFactor] = useState(false);
   const [corregir, setCorregir] = useState(false);
   const [mas, setMas] = useState(false);
   const codigo = efectiva.campos.codigoProveedor.valor;
@@ -202,15 +240,28 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
   const esManual = efectiva.numeroLinea === null;
   const esNuevo = efectiva.asociacion.tipo === 'producto_nuevo';
   const iva = efectiva.campos.tasaIva;
+  const ivaIndicado = iva.corregido && iva.valor !== null;
   // Unconverted amounts stay internal: no figure is shown until a conversion to USD is approved.
   const oculto = esUsd ? null : avisoImporteOculto(moneda);
   const monto = (valor: string | null): string => oculto ?? formatoUsdExacto(valor);
   const costoNetoUnitario = calculo?.costoNetoUnitarioStock ?? null;
-  const sugerido = resolverPrecioVenta({ tipoDocumento, costoNetoUnitario, precioVenta: null });
+  const costoNetoDistinto = costoNetoUnitario !== null && !mismoDecimal(costoNetoUnitario, efectiva.campos.precioUnitario.valor);
+  // An existing product sells at its own shelf price (IVA included); only a new product gets the cost-based suggestion.
+  const existente = efectiva.asociacion.tipo === 'confirmado';
+  const actual = existente && precioCatalogo?.estado === 'listo' ? precioCatalogo.valor : null;
+  const sugerido = existente ? null : resolverPrecioVenta({ tipoDocumento, costoNetoUnitario, precioVenta: null });
   const aplicado = resolverPrecioVenta({ tipoDocumento, costoNetoUnitario, precioVenta });
   const descripcion = efectiva.campos.descripcion.valor;
   const cantidad = efectiva.campos.cantidad.valor;
   const titulo = `${esManual ? 'Manual' : '#'}${numero} ${descripcion ?? 'Sin descripción'}`;
+  // Changing is tied to the decision it started from: any new saved decision closes the choice again.
+  const firmaAsociacion = JSON.stringify(efectiva.asociacion);
+  const cambiandoProducto = cambiandoDesde === firmaAsociacion;
+
+  function cambiarProducto(): void {
+    setPanelProducto(null);
+    setCambiandoDesde(firmaAsociacion);
+  }
 
   // Valid text (or a blank, which restores the default) is stored at once, so Guardar never depends on a blur.
   // Text that cannot be stored stays here as a draft the view uses to block saving: it is never replaced by the suggestion.
@@ -224,10 +275,23 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
     onBorradorPrecio(lineaId, ok ? null : entrada);
   }
 
+  function estadoPrecioExistente(): { texto: string; tono: 'danger' | 'muted' | 'warning' } {
+    if (precioVenta !== null && actual !== null && mismoDecimal(precioVenta, actual)) {
+      return { texto: `Precio actual del inventario (IVA incluido): ${formatoUsdExacto(actual)}`, tono: 'muted' };
+    }
+    if (precioVenta !== null) {
+      return { texto: `Se usará tu precio: ${formatoUsdExacto(precioVenta)}${actual === null ? '' : `. Precio actual del inventario: ${formatoUsdExacto(actual)}.`}`, tono: 'muted' };
+    }
+    if (actual !== null) return { texto: `Precio actual del inventario sin aplicar: ${formatoUsdExacto(actual)}. Úsalo o escribe otro precio antes de confirmar.`, tono: 'warning' };
+    if (precioCatalogo?.estado === 'no_disponible') return { texto: 'No se pudo leer el precio actual del inventario: escribe el precio de venta.', tono: 'warning' };
+    return { texto: 'Leyendo el precio actual del inventario…', tono: 'muted' };
+  }
+
   function estadoPrecio(): { texto: string; tono: 'danger' | 'muted' | 'warning' } {
     if (borradorPrecio !== undefined) {
       return { texto: 'Precio no válido. Usa punto decimal, mayor que 0, hasta 12 enteros y 8 decimales. Corrígelo o bórralo para continuar.', tono: 'danger' };
     }
+    if (existente) return estadoPrecioExistente();
     if (aplicado?.origen === 'usuario') return { texto: `Se usará tu precio: ${formatoUsdExacto(aplicado.valor)}`, tono: 'muted' };
     if (aplicado) return { texto: `Se usará el precio sugerido: ${formatoUsdExacto(aplicado.valor)}. Escribe un precio para cambiarlo.`, tono: 'muted' };
     if (tipoDocumento === null) return { texto: 'Elige el tipo de documento (factura o nota de entrega) para ver un precio sugerido.', tono: 'warning' };
@@ -248,10 +312,37 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
   const mostrarCodigoImpreso = !esNuevo || efectiva.usarCodigoFactura;
   const codigoImpreso = (codigo ?? '').trim();
 
+  /** The saved decision in a few words; `conCambiar` adds the explicit way back to the options. */
+  function renderElegido(conCambiar: boolean): React.JSX.Element {
+    const candidato = match?.candidates.find(c => c.codigoInterno === efectiva.asociacion.codigoInterno);
+    const descripcionElegida = candidato?.descripcion ?? productoElegido?.descripcion ?? null;
+    return (
+      <View testID={`${id}-elegido`} style={[styles.candidato, { borderColor: colors.primary, backgroundColor: colors.surface }]}>
+        {resumenElegido(efectiva.asociacion, descripcionElegida).map((texto, i) => <Texto key={i} small={i > 0} tone={i > 0 ? 'muted' : 'text'}>{texto}</Texto>)}
+        {conCambiar ? <BotonDespliegue testID={`${id}-cambiar-producto`} label="Cambiar producto" abierto={false} onPress={cambiarProducto} /> : null}
+      </View>
+    );
+  }
+
+  /** The first candidates, plus every conflicting one and the saved choice, so no warning hides behind "more". */
+  function candidatosVisibles(lista: LineMatch): MatchCandidate[] {
+    if (verOtras) return [...lista.candidates];
+    const enConflicto = new Set(lista.conflicts.flatMap(c => c.codigosInternos));
+    return lista.candidates.filter((c, i) => i < CANDIDATOS_INICIALES || enConflicto.has(c.codigoInterno) || c.codigoInterno === efectiva.asociacion.codigoInterno);
+  }
+
   function renderProducto(): React.JSX.Element {
+    const decidido = efectiva.asociacion.tipo !== 'pendiente';
+    if (decidido && !cambiandoProducto) return <Seccion titulo="Producto">{renderElegido(true)}</Seccion>;
+    const visibles = match ? candidatosVisibles(match) : [];
+    const ocultos = (match?.candidates.length ?? 0) - visibles.length;
+    // While changing, a chosen candidate is already its own highlighted card: the summary is only for a choice outside them.
+    const elegidoEnLista = visibles.some(c => c.codigoInterno === efectiva.asociacion.codigoInterno);
+    let encabezado: React.JSX.Element | null = <Texto small tone="muted">Elige el producto del inventario o indica que no está.</Texto>;
+    if (decidido) encabezado = elegidoEnLista ? null : renderElegido(false);
     return (
       <Seccion titulo="¿Qué producto es?">
-        <Texto small tone="muted">Elige el producto del inventario o indica que no está.</Texto>
+        {encabezado}
         {match?.feedback ? (
           <Texto testID={`${id}-feedback`} small tone="warning">
             {match.feedback.decision === 'producto_nuevo'
@@ -261,7 +352,7 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
         ) : null}
         {match && match.candidates.length > 0 ? (
           <>
-            {match.candidates.map((candidato, i) => {
+            {visibles.map(candidato => {
               const support = describeCandidateSupport(candidato, match);
               return (
                 <TarjetaCandidato
@@ -269,12 +360,13 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
                   id={id}
                   candidato={candidato}
                   support={support}
-                  recomendado={i === 0 && match.status === 'suggested' && support.identifiers.length > 0 && support.support !== 'en_conflicto' && support.unknowns.length === 0}
+                  recomendado={candidato === match.candidates[0] && match.status === 'suggested' && support.identifiers.length > 0 && support.support !== 'en_conflicto' && support.unknowns.length === 0}
                   elegido={efectiva.asociacion.codigoInterno === candidato.codigoInterno}
                   onElegir={() => onElegirCandidato(candidato.codigoInterno)}
                 />
               );
             })}
+            {ocultos > 0 ? <BotonDespliegue testID={`${id}-ver-otras`} label={`Ver otras opciones (${ocultos})`} abierto={false} onPress={() => setVerOtras(true)} /> : null}
             {!isAbsentIdentifier(codigoImpreso) && !match.candidates.some(tieneEvidenciaDeCodigo) ? (
               <Texto testID={`${id}-codigo-sin-coincidencia`} small tone="muted">{`Entre estos candidatos, ninguno tiene el código impreso ${codigoImpreso}.`}</Texto>
             ) : null}
@@ -290,23 +382,7 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
           <BotonDespliegue testID={`${id}-manual-abrir`} label="Es otro producto" abierto={panelProducto === 'manual'} onPress={() => alternarPanel('manual')} />
           <BotonDespliegue testID={`${id}-nuevo-abrir`} label="No está en el inventario" abierto={panelProducto === 'nuevo'} onPress={() => alternarPanel('nuevo')} />
         </View>
-        {panelProducto === 'manual' ? (
-          <View style={styles.panel}>
-            <Entrada testID={`${id}-manual-codigo`} label="Código del producto" value={manualCodigo} onChangeText={setManualCodigo} />
-            <Boton testID={`${id}-manual-motivo-sugerido`} label="La sugerencia era otro producto" onPress={() => setManualMotivo('La sugerencia era otro producto')} />
-            <Entrada testID={`${id}-manual-motivo`} label="Por qué elegiste este producto" value={manualMotivo} onChangeText={setManualMotivo} />
-            <Boton
-              testID={`${id}-manual-aplicar`}
-              label="Usar este producto"
-              disabled={manualCodigo.trim() === '' || manualMotivo.trim() === ''}
-              onPress={() => {
-                onEditar({ tipo: 'asociacion', lineaId, asociacion: { tipo: 'confirmado', codigoInterno: manualCodigo.trim(), evidencia: 'manual', motivo: manualMotivo.trim() } });
-                setManualCodigo('');
-                setManualMotivo('');
-              }}
-            />
-          </View>
-        ) : null}
+        {panelProducto === 'manual' ? renderManual() : null}
         {panelProducto === 'nuevo' ? (
           <View style={styles.panel}>
             <Texto small tone="muted">No se crea el producto ahora.</Texto>
@@ -317,27 +393,56 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
               label="Marcar como nuevo"
               disabled={nuevoMotivo.trim() === ''}
               onPress={() => {
-                onEditar({ tipo: 'asociacion', lineaId, asociacion: { tipo: 'producto_nuevo', codigoInterno: null, evidencia: 'manual', motivo: nuevoMotivo.trim() } });
-                setNuevoMotivo('');
+                if (onMarcarNuevo(nuevoMotivo.trim()).ok) setNuevoMotivo('');
               }}
             />
           </View>
         ) : null}
-        {efectiva.asociacion.tipo !== 'pendiente' ? (
-          <>
+        {decidido ? (
+          <View style={styles.fila}>
+            <Boton testID={`${id}-cambiar-cancelar`} label="Mantener elección" onPress={() => setCambiandoDesde(null)} />
             <Boton testID={`${id}-pendiente`} label="Deshacer elección" danger onPress={() => onEditar({ tipo: 'asociacion', lineaId, asociacion: { tipo: 'pendiente', codigoInterno: null, evidencia: null, motivo: null } })} />
-            <Texto small tone="muted">Borra esta elección para que puedas elegir otro producto.</Texto>
-          </>
+          </View>
         ) : null}
       </Seccion>
     );
   }
 
+  /** A product from the shared inventory search, applied only with a motive: nothing is chosen until Usar este producto. */
+  function renderManual(): React.JSX.Element {
+    const elegido = inventario.producto;
+    return (
+      <View style={styles.panel}>
+        <Boton testID={`${id}-manual-buscar`} label={elegido ? 'Buscar otro' : 'Buscar en inventario'} onPress={inventario.onBuscar} />
+        {inventario.aviso ? <Texto testID={`${id}-manual-aviso`} small tone="warning">{inventario.aviso}</Texto> : null}
+        {elegido ? (
+          <View testID={`${id}-manual-elegido`} style={[styles.candidato, { borderColor: colors.primary, backgroundColor: colors.surface }]}>
+            <Texto>{elegido.descripcion}</Texto>
+            <Texto small tone="muted">{`Código ${elegido.codigo_interno} · Existencia ${elegido.existencia} ${elegido.unidad || 'uds'}`}</Texto>
+            {esUsd ? <Texto small tone="muted">{`Precio actual: ${formatoUsdExacto(precioDeCatalogo(elegido))} (IVA incluido)`}</Texto> : null}
+          </View>
+        ) : null}
+        <Boton testID={`${id}-manual-motivo-sugerido`} label="La sugerencia era otro producto" onPress={() => setManualMotivo('La sugerencia era otro producto')} />
+        <Entrada testID={`${id}-manual-motivo`} label="Por qué elegiste este producto" value={manualMotivo} onChangeText={setManualMotivo} />
+        <Boton
+          testID={`${id}-manual-aplicar`}
+          label="Usar este producto"
+          disabled={elegido === null || manualMotivo.trim() === ''}
+          onPress={() => {
+            if (onAsociarManual(manualMotivo.trim()).ok) setManualMotivo('');
+          }}
+        />
+      </View>
+    );
+  }
+
+  /** Secondary exception: the invoice-wide answer is the primary path; this keeps a saved mixed invoice editable. */
   function renderIva(): React.JSX.Element {
     return (
-      <Seccion titulo="IVA de este producto (obligatorio)">
-        <Texto testID={`revision-iva-${llave}-estado`} tone={iva.corregido && iva.valor !== null ? 'text' : 'warning'}>
-          {iva.corregido && iva.valor !== null ? `Indicado: ${iva.valor} %` : 'Sin definir'}
+      <View style={[styles.caja, { borderColor: colors.border }]}>
+        <Texto small tone="muted">IVA solo de este producto (excepción)</Texto>
+        <Texto testID={`revision-iva-${llave}-estado`} tone={ivaIndicado ? 'text' : 'warning'}>
+          {ivaIndicado ? `Indicado: ${iva.valor} %` : 'Sin definir'}
         </Texto>
         {iva.original !== null ? <Texto small tone="muted">{`El documento indica IVA ${iva.original}. Es solo referencia: confírmalo tú.`}</Texto> : null}
         <View style={styles.fila}>
@@ -356,16 +461,31 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
             onRevertir={() => onEditar({ tipo: 'revertir_linea', lineaId, campo: CAMPO_IVA.campo })}
           />
         ) : null}
-      </Seccion>
+      </View>
     );
   }
 
   function renderUnidades(): React.JSX.Element {
+    const decidido = efectiva.factorConversion !== null;
+    const estadoFactor = (
+      <Texto testID={`revision-factor-${llave}-estado`} tone={decidido ? 'text' : 'warning'}>
+        {decidido ? `Confirmado: ${efectiva.factorConversion}` : 'Sin confirmar'}
+      </Texto>
+    );
+    // A decided factor is one line; its controls come back only on request (package exceptions stay reachable).
+    if (decidido && !cambiarFactor) {
+      return (
+        <Seccion titulo="Unidades por cada una de la factura">
+          <View style={styles.fila}>
+            {estadoFactor}
+            <BotonDespliegue testID={`revision-factor-${llave}-cambiar`} label="Cambiar" abierto={false} onPress={() => setCambiarFactor(true)} />
+          </View>
+        </Seccion>
+      );
+    }
     return (
       <Seccion titulo="Unidades por cada una de la factura">
-        <Texto testID={`revision-factor-${llave}-estado`} tone={efectiva.factorConversion === null ? 'warning' : 'text'}>
-          {efectiva.factorConversion === null ? 'Sin confirmar' : `Confirmado: ${efectiva.factorConversion}`}
-        </Texto>
+        {estadoFactor}
         <View style={styles.fila}>
           <Boton
             testID={`revision-factor-${llave}-uno`}
@@ -387,27 +507,40 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
 
   function renderPrecioVenta(): React.JSX.Element {
     return (
-      <Seccion titulo="Precio de venta">
-        <Texto small tone="muted">{etiquetaMonto('Precio de venta del producto (USD)', esUsd)}</Texto>
+      <Seccion testID={`${id}-precio`} titulo="Costo y precio de venta">
+        <Texto testID={`${id}-lectura`} small tone="muted">{`Leído de la factura: cantidad ${cantidad ?? 'sin dato'} · costo unitario ${monto(efectiva.campos.precioUnitario.valor)}`}</Texto>
         {oculto ? (
           <Texto testID={`${id}-pvp-oculto`} small tone="warning">{oculto}</Texto>
         ) : (
           <>
+            {costoNetoDistinto ? (
+              <Texto testID={`${id}-pvp-costo-neto`} small>{`Costo neto por unidad de inventario (sin IVA, con descuentos): ${formatoUsdExacto(costoNetoUnitario)}`}</Texto>
+            ) : null}
             <Entrada
               testID={`${id}-pvp-valor`}
               label="Precio de venta (USD)"
-              hint="Déjalo vacío para usar el precio sugerido."
-              placeholder={sugerido ? formatoUsdExacto(sugerido.valor) : 'Sin precio sugerido'}
+              hint={existente ? 'Precio con IVA incluido.' : 'Déjalo vacío para usar el precio sugerido.'}
+              placeholder={placeholderPrecio()}
               legible
+              // Only a saved or typed price is the value: an unapplied catalog price stays the placeholder, so clearing
+              // the field leaves it empty instead of snapping back to the catalog figure.
               value={borradorPrecio ?? precioVenta ?? ''}
               keyboardType="decimal-pad"
               onChangeText={cambiarPrecio}
             />
             <Texto testID={`${id}-pvp-estado`} small tone={estadoDelPrecio.tono}>{estadoDelPrecio.texto}</Texto>
+            {actual !== null && borradorPrecio === undefined && (precioVenta === null || !mismoDecimal(precioVenta, actual)) ? (
+              <Boton testID={`${id}-pvp-usar-actual`} label="Usar precio actual" onPress={onUsarPrecioActual} />
+            ) : null}
           </>
         )}
       </Seccion>
     );
+  }
+
+  function placeholderPrecio(): string {
+    if (existente) return actual === null ? 'Escribe el precio de venta' : formatoUsdExacto(actual);
+    return sugerido ? formatoUsdExacto(sugerido.valor) : 'Sin precio sugerido';
   }
 
   function renderMasOpciones(): React.JSX.Element {
@@ -418,6 +551,8 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
           {confianza === null ? 'Lectura OCR: sin dato de confianza' : `Lectura OCR: ${Math.round(confianza * 100)} %`}
         </Texto>
         {efectiva.lecturaOcr?.campoDudoso.length ? <Texto small tone="warning">{`Campos dudosos: ${efectiva.lecturaOcr.campoDudoso.join(', ')}`}</Texto> : null}
+
+        {renderIva()}
 
         <View style={[styles.caja, { borderColor: colors.border }]}>
           <Texto small tone="muted">{esUsd ? 'Importes calculados (USD, exactos)' : 'Importes calculados (sin convertir)'}</Texto>
@@ -465,14 +600,10 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
       <View testID={`${id}-detalle`} style={modo === 'detalle' ? [styles.tarjeta, { backgroundColor: colors.surface, borderColor: colors.primary }] : styles.detalle}>
         {modo === 'detalle' ? <Texto tone="primary">{titulo}</Texto> : null}
         {estado === 'revisar' && bloqueos.length > 0 ? bloqueos.map((texto, i) => <Texto key={i} small tone="danger">{`• ${texto}`}</Texto>) : null}
-        <View style={styles.fila}>
-          <Texto testID={`${id}-lectura`} small tone="muted">{`Leído de la factura: cantidad ${cantidad ?? 'sin dato'} · costo unitario ${monto(efectiva.campos.precioUnitario.valor)}`}</Texto>
-          <Boton testID={`${id}-lectura-corregir`} label="Corregir cantidad o costo" onPress={() => setCorregir(true)} />
-        </View>
         {renderProducto()}
         {estado === 'falta_codigo' ? <Texto small tone="warning">Escanea o escribe el código de barras del producto nuevo: sin él no se puede preparar el borrador de compra.</Texto> : null}
         {esNuevo && props.capturaCodigo ? <FacturaCodigoBarrasNuevo key={props.capturaCodigo.contexto} {...props.capturaCodigo} id={id} /> : null}
-        {renderIva()}
+        {ivaIndicado ? null : <Texto testID={`${id}-iva-factura-aviso`} small tone="warning">Falta el IVA: indícalo una vez en &quot;IVA de la factura&quot;, arriba.</Texto>}
         {renderUnidades()}
         {renderPrecioVenta()}
         <BotonDespliegue testID={`${id}-corregir`} label="Corregir lectura" abierto={corregir} onPress={() => setCorregir(actual => !actual)} />
@@ -511,7 +642,10 @@ export default function FacturaRevisionLinea(props: FacturaRevisionLineaProps): 
       >
         <View style={styles.cabezaTexto}>
           <Texto tone="primary">{titulo}</Texto>
-          <Texto small tone="muted">{`Cantidad ${cantidad ?? 'sin dato'}${esUsd ? ` · Costo ${formatoUsdExacto(efectiva.campos.precioUnitario.valor)}` : ''}`}</Texto>
+          {/* Open in one column, the detail shows these values next to the selling price instead. */}
+          {modo === 'completo' && abierta ? null : (
+            <Texto small tone="muted">{`Cantidad ${cantidad ?? 'sin dato'}${esUsd ? ` · Costo ${formatoUsdExacto(efectiva.campos.precioUnitario.valor)}` : ''}`}</Texto>
+          )}
           <View style={styles.filaCodigo}>
             <Texto small tone="muted">Código impreso:</Texto>
             <Texto testID={`${id}-codigo`}>{codigo ?? ''}</Texto>

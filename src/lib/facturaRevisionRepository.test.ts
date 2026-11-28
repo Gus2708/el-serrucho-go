@@ -967,4 +967,38 @@ describe('bounded catalog reads', () => {
       expect(stepsOf(calls[0], 'in')[0][2]).toEqual(['000123A']);
     });
   });
+
+  describe('current product lookup for chosen products (S6)', () => {
+    it('reads the full current rows of the requested internal codes only', async () => {
+      const { client, calls } = fakeClient({ tables: { productos_view: { data: [{ ...producto('SKU-1', null), precio_venta: 18 }, { ...producto('OTRO', null), precio_venta: 3 }] } } });
+      const result = await createFacturaRevisionRepository(client).leerProductos(['SKU-1', 'SKU-1', '00SKU']);
+      expect(calls).toHaveLength(1);
+      expect(stepsOf(calls[0], 'select')[0][1]).toBe('*');
+      expect(stepsOf(calls[0], 'in')[0].slice(1)).toEqual(['codigo_interno', ['SKU-1', '00SKU']]);
+      expect(result.completo).toBe(true);
+      expect(Object.keys(result.productos)).toEqual(['SKU-1']);
+      expect(result.productos['SKU-1'].precio_venta).toBe(18);
+    });
+
+    it('is never complete after a failed, capped or unsafe read, so a missing row proves nothing', async () => {
+      const failed = fakeClient({ tables: { productos_view: { error: { code: '42501', message: 'PRIVATE' } } } });
+      expect(await createFacturaRevisionRepository(failed.client).leerProductos(['SKU-1'])).toEqual({ productos: {}, completo: false });
+      const capped = fakeClient({ tables: { productos_view: { data: Array.from({ length: 200 }, (_x, i) => producto(`P${i}`, null)) } } });
+      expect((await createFacturaRevisionRepository(capped.client).leerProductos(['P1'])).completo).toBe(false);
+      const unsafe = fakeClient({ tables: { productos_view: { data: [] } } });
+      expect(await createFacturaRevisionRepository(unsafe.client).leerProductos(['9,9'])).toEqual({ productos: {}, completo: false });
+      expect(unsafe.calls).toHaveLength(0);
+    });
+
+    it('reads nothing for an empty request and bounds a large one', async () => {
+      const empty = fakeClient({ tables: { productos_view: { data: [] } } });
+      expect(await createFacturaRevisionRepository(empty.client).leerProductos([])).toEqual({ productos: {}, completo: true });
+      expect(empty.calls).toHaveLength(0);
+      const many = fakeClient({ tables: { productos_view: { data: [] } } });
+      const result = await createFacturaRevisionRepository(many.client).leerProductos(Array.from({ length: 150 }, (_x, i) => `C${i}`));
+      expect(many.calls).toHaveLength(1);
+      expect(stepsOf(many.calls[0], 'in')[0][2]).toHaveLength(100);
+      expect(result.completo).toBe(false);
+    });
+  });
 });

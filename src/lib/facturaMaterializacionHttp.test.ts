@@ -1,5 +1,6 @@
 import { handleFacturaMaterializationRequest } from '../../supabase/functions/materializar-compra-factura/handler';
-import { crearRevisionDesdeExtraccion, type RevisionContenido } from './facturaRevision';
+import { aplicarEdicion, crearRevisionDesdeExtraccion, type RevisionContenido } from './facturaRevision';
+import { edicionesElegirProducto } from './facturaRevisionPasos';
 import type { FacturaExtraccionPayload } from './facturaExtractionContract';
 
 const invoiceId = '22222222-2222-4222-8222-222222222222';
@@ -171,4 +172,43 @@ it('does not merge new codes with different invoice references', async () => {
   } });
   expect(result.response.status).toBe(409);
   expect(result.payload).toBeNull();
+});
+
+it('stages the net cost of an invoice-wide 20 % + 5 % once, without any separate discount field to apply again', async () => {
+  const result = await run({ mutate: data => {
+    data.extraction = { ...data.extraction, cabecera: { ...data.extraction.cabecera, descuentos: [
+      { orden: 1, porcentaje: '20', monto: null, alcance: 'global', incluidoEnPrecio: false },
+      { orden: 2, porcentaje: '5', monto: null, alcance: 'global', incluidoEnPrecio: false },
+    ] } };
+  } });
+  expect(result.response.status).toBe(200);
+  // 2 x 6.06 = 12.12; x 0.80 x 0.95 = 9.2112; / 2 stock units = 4.6056 per unit, ex-VAT.
+  expect(result.payload.items).toEqual([{ codigo_producto: '0001234567890', descripcion: 'New pliers',
+    cantidad: '2', costo: '4.6056', precio: '12', referencia: '00-INV-A', es_nuevo: true }]);
+});
+
+it('still refuses to stage an invoice-wide fixed USD discount without an approved allocation', async () => {
+  const result = await run({ mutate: data => {
+    data.extraction = { ...data.extraction, cabecera: { ...data.extraction.cabecera, descuentos: [
+      { orden: 1, porcentaje: null, monto: '1.00', alcance: 'global', incluidoEnPrecio: false },
+    ] } };
+  } });
+  expect(result.response.status).toBeGreaterThanOrEqual(400);
+  expect(result.payload).toBeNull();
+});
+
+it('stages exactly the catalog selling price adopted on product choice, never a markup and never with IVA added again', async () => {
+  const result = await run({ mutate: data => {
+    const base: RevisionContenido = { ...data.content, cabecera: { ...data.content.cabecera, tipoDocumento: 'factura' },
+      lineas: data.content.lineas.map(({ precioVenta: _omit, ...line }) => ({ ...line, asociacion: { tipo: 'pendiente', codigoInterno: null, evidencia: null, motivo: null } })) };
+    const elegido = { tipo: 'confirmado' as const, codigoInterno: 'SKU-1', evidencia: 'manual' as const, motivo: 'Catalog selection' };
+    data.content = edicionesElegirProducto(base.lineas[0], elegido, { precio_venta: 15.5 }).reduce<RevisionContenido>((content, edit) => {
+      const applied = aplicarEdicion(content, data.extraction, edit);
+      if (!applied.ok) throw new Error('fixture edit');
+      return applied.contenido;
+    }, base);
+  } });
+  expect(result.response.status).toBe(200);
+  // Invoice cost and quantity stay documentary; the shelf price is the catalog value as is (6.06 x 1.30 x 1.16 would be 9.138...).
+  expect(result.payload.items).toEqual([{ codigo_producto: 'SKU-1', descripcion: 'New pliers', cantidad: '2', costo: '6.06', precio: '15.5', referencia: null, es_nuevo: false }]);
 });

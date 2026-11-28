@@ -2,6 +2,7 @@ import {
   aplicarEdicion,
   calcularRevision,
   crearRevisionDesdeExtraccion,
+  resolverFactura,
   type Edicion,
   type EstadoCodigoBarras,
   type RevisionContenido,
@@ -12,8 +13,16 @@ import {
   accionPrincipal,
   agruparBloqueos,
   edicionFactorUno,
+  edicionDescuentoFactura,
+  edicionesElegirProducto,
+  edicionesIvaFactura,
   edicionIvaManual,
+  estadoIvaFactura,
   estadoLinea,
+  leerPorcentajesFactura,
+  lineasSinPrecioVenta,
+  precioCatalogo,
+  resumenDescuentoFactura,
   lineasConBloqueo,
   pendientesDeLinea,
   ETIQUETA_ESTADO_LINEA,
@@ -98,6 +107,7 @@ const nuevo = (n: number) => (c: RevisionContenido): Edicion => ({
 const iva = (n: number) => (c: RevisionContenido): Edicion => ({ tipo: 'linea_escalar', lineaId: c.lineas[n].lineaId, campo: 'tasaIva', valor: '16', motivo: 'IVA indicado manualmente: 16 %' });
 const factor = (n: number) => (c: RevisionContenido): Edicion => ({ tipo: 'factor_conversion', lineaId: c.lineas[n].lineaId, valor: '1' });
 const escaneado = (n: number) => (c: RevisionContenido): Edicion => ({ tipo: 'codigo_barras_escaneado', lineaId: c.lineas[n].lineaId, valor: '7591234567890' });
+const precio = (n: number) => (c: RevisionContenido): Edicion => ({ tipo: 'precio_venta', lineaId: c.lineas[n].lineaId, valor: '18' });
 const usarImpreso = (n: number) => (c: RevisionContenido): Edicion => ({ tipo: 'codigo_barras', lineaId: c.lineas[n].lineaId, usarCodigoFactura: true });
 
 function estadoDe(contenido: RevisionContenido, n: number, barras: Record<string, EstadoCodigoBarras> = {}, verificacion?: VerificacionCodigo): EstadoLinea {
@@ -119,7 +129,7 @@ describe('estadoLinea: what the person must do next on one line', () => {
   });
 
   it('is ready with product, VAT and factor, even while document-level confirmations are still missing', () => {
-    expect(estadoDe(conEdiciones(confirmar(0), iva(0), factor(0)), 0)).toBe('listo');
+    expect(estadoDe(conEdiciones(confirmar(0), iva(0), factor(0), precio(0)), 0)).toBe('listo');
   });
 
   it('keeps a new product pending until a physical code is captured, after VAT and factor', () => {
@@ -149,7 +159,7 @@ describe('estadoLinea: what the person must do next on one line', () => {
     });
 
     it('never asks an existing product for a code lookup', () => {
-      expect(estadoDe(conEdiciones(confirmar(0), iva(0), factor(0)), 0, {}, { tipo: 'colision', skus: ['4411'] })).toBe('listo');
+      expect(estadoDe(conEdiciones(confirmar(0), iva(0), factor(0), precio(0)), 0, {}, { tipo: 'colision', skus: ['4411'] })).toBe('listo');
     });
 
     it('still reports the VAT and units gaps before the lookup', () => {
@@ -158,7 +168,7 @@ describe('estadoLinea: what the person must do next on one line', () => {
   });
 
   it('does not ask an existing product for a barcode capture', () => {
-    expect(estadoDe(conEdiciones(confirmar(0), iva(0), factor(0)), 0)).toBe('listo');
+    expect(estadoDe(conEdiciones(confirmar(0), iva(0), factor(0), precio(0)), 0)).toBe('listo');
   });
 
   it('sends any other line blocker to review instead of showing the line as ready', () => {
@@ -167,7 +177,7 @@ describe('estadoLinea: what the person must do next on one line', () => {
   });
 
   it('sends an unverified printed-code reuse on an existing product to review', () => {
-    const contenido = conEdiciones(confirmar(0), iva(0), factor(0), usarImpreso(0));
+    const contenido = conEdiciones(confirmar(0), iva(0), factor(0), precio(0), usarImpreso(0));
     expect(estadoDe(contenido, 0, { [contenido.lineas[0].lineaId]: 'colision' })).toBe('revisar');
     expect(estadoDe(contenido, 0, { [contenido.lineas[0].lineaId]: 'unico_verificado' })).toBe('listo');
   });
@@ -181,6 +191,7 @@ describe('estadoLinea: what the person must do next on one line', () => {
       verificando_codigo: 'Verificando código',
       codigo_sin_verificar: 'No se pudo verificar el código',
       codigo_en_uso: 'Código ya usado',
+      falta_precio: 'Falta el precio de venta',
       revisar: 'Revisa los datos',
       listo: 'Listo',
     });
@@ -304,6 +315,16 @@ describe('accionPrincipal: one primary action per state, with the reason when it
         deshabilitada: true,
         razon: 'Hay una versión más reciente en el servidor: recárgala para continuar.',
       });
+    });
+
+    it('waits for the selling price of existing products before confirming or preparing the draft (S6)', () => {
+      const razon = 'Falta el precio de venta de 2 productos existentes: usa el precio actual o escribe uno.';
+      expect(accionPrincipal(compra({ puedeAprobar: true, sinBloqueos: true, preciosPendientes: 2 }))).toEqual({ id: 'aprobar', etiqueta: 'Confirmar revisión', deshabilitada: true, razon });
+      expect(accionPrincipal(compra({ aprobada: true, puedeMaterializar: true, preciosPendientes: 1 }))).toEqual({
+        id: 'preparar', etiqueta: 'Crear borrador de compra', deshabilitada: true, razon: 'Falta el precio de venta de 1 producto existente: usa el precio actual o escribe uno.',
+      });
+      // Saving is never blocked by it: adopting a price is itself an edit that must be saved.
+      expect(accionPrincipal(compra({ sucio: true, puedeGuardar: true, preciosPendientes: 2 }))).toMatchObject({ id: 'guardar', deshabilitada: false });
     });
 
     it('approves the saved review when it has no blockers', () => {
@@ -446,5 +467,122 @@ describe('batch targets and edits', () => {
   });
   it('treats legacy leer as the same products body', () => {
     expect(accionPrincipal({ ...state, etapa: 'leer' })).toEqual(accionPrincipal(state));
+  });
+});
+
+describe('invoice-wide VAT (S4): one answer for the invoice, written through the per-line field', () => {
+  const lineasDe = (contenido: RevisionContenido) => resolverFactura(EXT, contenido).lineas;
+  const ivaDe = (n: number, tasa: string) => (c: RevisionContenido): Edicion => edicionIvaManual(c.lineas[n].lineaId, tasa);
+
+  it('reads unknown, uniform and mixed states from the explicit per-line decisions only', () => {
+    // The extraction prints 16 on both lines, but a printed rate is never a decision.
+    expect(estadoIvaFactura(lineasDe(contenidoInicial()))).toEqual({ total: 2, faltan: 2, tasas: [] });
+    expect(estadoIvaFactura(lineasDe(conEdiciones(ivaDe(0, '16'), ivaDe(1, '16.0'))))).toEqual({ total: 2, faltan: 0, tasas: ['16'] });
+    expect(estadoIvaFactura(lineasDe(conEdiciones(ivaDe(1, '16'), ivaDe(0, '0'))))).toEqual({ total: 2, faltan: 0, tasas: ['0', '16'] });
+    expect(estadoIvaFactura(lineasDe(conEdiciones(ivaDe(0, '0'))))).toEqual({ total: 2, faltan: 1, tasas: ['0'] });
+  });
+
+  it('fills only the lines without VAT unless an overwrite was explicitly chosen, with the manual-path payload', () => {
+    const mixta = conEdiciones(ivaDe(0, '0'));
+    const lineas = lineasDe(mixta);
+    expect(edicionesIvaFactura(lineas, '16', 'faltan')).toEqual([edicionIvaManual(mixta.lineas[1].lineaId, '16')]);
+    expect(edicionesIvaFactura(lineas, '16', 'todas')).toEqual([edicionIvaManual(mixta.lineas[0].lineaId, '16'), edicionIvaManual(mixta.lineas[1].lineaId, '16')]);
+    // A line already at the chosen rate is left alone, so its saved motive never changes.
+    expect(edicionesIvaFactura(lineas, '0', 'todas')).toEqual([edicionIvaManual(mixta.lineas[1].lineaId, '0')]);
+    expect(edicionesIvaFactura(lineasDe(conEdiciones(ivaDe(0, '16'), ivaDe(1, '16'))), '16.00', 'todas')).toEqual([]);
+  });
+});
+
+describe('invoice-wide percentage discount (S4)', () => {
+  const global = (orden: number, porcentaje: string | null, over: Record<string, unknown> = {}) =>
+    ({ orden, porcentaje, monto: null, alcance: 'global' as const, incluidoEnPrecio: false, ...over });
+
+  it('summarises the header discounts the calculation can apply, the included ones and anything else', () => {
+    expect(resumenDescuentoFactura([])).toEqual({ tipo: 'ninguno' });
+    expect(resumenDescuentoFactura([global(2, '5'), global(1, '20')])).toEqual({ tipo: 'porcentajes', porcentajes: ['20', '5'] });
+    expect(resumenDescuentoFactura([global(1, '10', { incluidoEnPrecio: true })])).toEqual({ tipo: 'incluidos' });
+    expect(resumenDescuentoFactura([global(1, null, { monto: '3.00' })])).toEqual({ tipo: 'otro' });
+    expect(resumenDescuentoFactura([global(1, '10', { alcance: null })])).toEqual({ tipo: 'otro' });
+    expect(resumenDescuentoFactura([global(1, '10'), global(2, '5', { incluidoEnPrecio: true })])).toEqual({ tipo: 'otro' });
+  });
+
+  it('reads a typed cascade with the purchase discount parser and keeps each step as exact text', () => {
+    expect(leerPorcentajesFactura('20+5')).toEqual({ ok: true, porcentajes: ['20', '5'] });
+    expect(leerPorcentajesFactura(' 12,5 % ')).toEqual({ ok: true, porcentajes: ['12.5'] });
+    expect(leerPorcentajesFactura('')).toEqual({ ok: false, error: 'Escribe un porcentaje, por ejemplo 10 o 20+5.' });
+    expect(leerPorcentajesFactura('100')).toEqual({ ok: false, error: 'Debe ser menor a 100%' });
+    expect(leerPorcentajesFactura('abc')).toEqual({ ok: false, error: 'Descuento inválido' });
+    expect(leerPorcentajesFactura('1+1+1+1+1+1+1')).toEqual({ ok: false, error: 'Máximo 6 descuentos seguidos.' });
+  });
+
+  it('writes the existing header correction, global and not included, in the typed order', () => {
+    expect(edicionDescuentoFactura(['20', '5'])).toEqual({
+      tipo: 'cabecera_descuentos',
+      valor: [global(1, '20'), global(2, '5')],
+      motivo: 'Descuento de la factura indicado manualmente: 20 % + 5 %',
+    });
+    expect(edicionDescuentoFactura([])).toEqual({ tipo: 'cabecera_descuentos', valor: [], motivo: 'Factura sin descuento, indicado manualmente' });
+  });
+});
+
+describe('existing-product selling price (S6)', () => {
+  const asociacion = (codigoInterno: string) => ({ tipo: 'confirmado' as const, codigoInterno, evidencia: 'manual' as const, motivo: 'Mismo articulo' });
+
+  it('reads the current catalog price as exact decimal text, never rounding or inventing one', () => {
+    expect(precioCatalogo({ precio_venta: 12.5 })).toBe('12.5');
+    expect(precioCatalogo({ precio_venta: 18 })).toBe('18');
+    expect(precioCatalogo({ precio_venta: '7.25' as unknown as number })).toBe('7.25');
+    for (const malo of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, 1e-9, 1234567890123, 12.123456789, undefined, null, 'abc']) {
+      expect(precioCatalogo({ precio_venta: malo as unknown as number })).toBeNull();
+    }
+    expect(precioCatalogo(undefined)).toBeNull();
+  });
+
+  it('adopts the chosen product price with its association, as one batch', () => {
+    const linea = contenidoInicial().lineas[0];
+    expect(edicionesElegirProducto(linea, asociacion('SKU-9'), { precio_venta: 18 })).toEqual([
+      { tipo: 'asociacion', lineaId: linea.lineaId, asociacion: asociacion('SKU-9') },
+      { tipo: 'precio_venta', lineaId: linea.lineaId, valor: '18' },
+    ]);
+  });
+
+  it('keeps a typed price when the same product is chosen again', () => {
+    const contenido = conEdiciones(confirmar(0), c => ({ tipo: 'precio_venta', lineaId: c.lineas[0].lineaId, valor: '20' }));
+    const linea = contenido.lineas[0];
+    const otraEvidencia = { tipo: 'confirmado' as const, codigoInterno: 'SKU-1', evidencia: 'sugerencia' as const, motivo: null };
+    expect(edicionesElegirProducto(linea, otraEvidencia, { precio_venta: 18 })).toEqual([{ tipo: 'asociacion', lineaId: linea.lineaId, asociacion: otraEvidencia }]);
+  });
+
+  it('never carries the previous product price to another product or a new one', () => {
+    const linea = conEdiciones(confirmar(0), precio(0)).lineas[0];
+    expect(edicionesElegirProducto(linea, asociacion('SKU-2'), { precio_venta: 0 })).toEqual([
+      { tipo: 'asociacion', lineaId: linea.lineaId, asociacion: asociacion('SKU-2') },
+      { tipo: 'precio_venta', lineaId: linea.lineaId, valor: null },
+    ]);
+    const nuevoProducto = { tipo: 'producto_nuevo' as const, codigoInterno: null, evidencia: 'manual' as const, motivo: 'No esta en el inventario' };
+    expect(edicionesElegirProducto(linea, nuevoProducto, null)).toEqual([
+      { tipo: 'asociacion', lineaId: linea.lineaId, asociacion: nuevoProducto },
+      { tipo: 'precio_venta', lineaId: linea.lineaId, valor: null },
+    ]);
+  });
+
+  it('marks an existing product without a saved selling price as not ready; a new product keeps its suggestion', () => {
+    expect(estadoDe(conEdiciones(confirmar(0), iva(0), factor(0)), 0)).toBe('falta_precio');
+    expect(ETIQUETA_ESTADO_LINEA.falta_precio).toBe('Falta el precio de venta');
+    expect(estadoDe(conEdiciones(nuevo(0), iva(0), factor(0), escaneado(0)), 0, {}, { tipo: 'sin_coincidencias' })).toBe('listo');
+  });
+
+  it('lists the existing products that still need a selling price, in line order', () => {
+    const contenido = conEdiciones(confirmar(0), confirmar(1), precio(1), nuevo(1));
+    expect(lineasSinPrecioVenta(contenido.lineas)).toEqual([contenido.lineas[0].lineaId]);
+    expect(lineasSinPrecioVenta(conEdiciones(confirmar(0), precio(0)).lineas)).toEqual([]);
+  });
+});
+
+describe('primary action count wording (NEW-V3)', () => {
+  const productos = { carga: 'listo', etapa: 'productos', hayContenido: true } as SituacionRevision;
+  it('says falta for one product and faltan for several', () => {
+    expect(accionPrincipal({ ...productos, porRevisar: 1 })).toMatchObject({ etiqueta: 'Revisar siguiente (1 falta)' });
+    expect(accionPrincipal({ ...productos, porRevisar: 2 })).toMatchObject({ etiqueta: 'Revisar siguiente (2 faltan)' });
   });
 });

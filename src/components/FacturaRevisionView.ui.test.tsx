@@ -17,6 +17,12 @@ import { OWNER_A, OWNER_B, FACTURA_1, deferred, renderWithProviders, settle } fr
 import { elSerrucho } from '../theme/brands/el-serrucho';
 import { useDeviceSize } from '../hooks/useDeviceSize';
 
+// The manual choice comes from the shared inventory search (S7): its rows are synthetic, with their current selling price.
+const mockInventario = [1, 2, 3].map(n => ({ codigo_interno: `SKU-${n}`, descripcion: `Articulo ${n} inventario`, unidad: 'UND', codigo_barras: '', costo: 1, precio_venta: [12, 9.5, 4][n - 1], existencia: n - 2, actualizado_en: '2026-01-01T00:00:00Z' }));
+jest.mock('../hooks/useProductos', () => ({
+  ...jest.requireActual('../hooks/useProductos'),
+  useProductos: () => ({ productos: mockInventario, isLoading: false, isFetchingMore: false, hasMore: false, fetchMore: jest.fn(), error: null }),
+}));
 jest.mock('../lib/supabase', () => ({ supabase: { functions: { invoke: jest.fn() } } }));
 jest.mock('../hooks/useBorradores', () => ({ reanudarBorradorCompra: jest.fn() }));
 jest.mock('../hooks/useDeviceSize', () => ({ useDeviceSize: jest.fn() }));
@@ -82,6 +88,7 @@ function fakeRepo(over: Partial<Mocks> = {}): Mocks {
     extraer: jest.fn(async () => ({ tipo: 'completado', extraccionId: EXT, replay: false })),
     buscarCandidatos: jest.fn(async () => ({ productos: PRODUCTOS, parcial: false })),
     leerColisionesBarras: jest.fn(async (codes: string[]) => Object.fromEntries(codes.map(code => [code, { productos: [], completo: true }]))),
+    leerProductos: jest.fn(async (codes: string[]) => ({ productos: Object.fromEntries(mockInventario.filter(p => codes.includes(p.codigo_interno)).map(p => [p.codigo_interno, p])), completo: true })),
     ...over,
   } as Mocks;
 }
@@ -139,12 +146,16 @@ function rutaDe(id: string): Ruta {
     const base = `revision-linea-${n}`;
     if (tipo === 'linea' && EN_FILA_O_DETALLE_ABIERTO.test(resto)) return { etapa: 'productos', despliegues: [] };
     const despliegues: string[] = [];
+    // Per-product VAT is a secondary exception (Más opciones); other choices reopen only through Cambiar producto.
+    if (tipo === 'iva') despliegues.push(`${base}-mas`);
     if (tipo === 'linea') {
       if (CAMPOS_LINEA_CORREGIBLES.test(resto)) despliegues.push(`${base}-corregir`);
-      else if (resto.startsWith('tasaIva-')) despliegues.push(`revision-iva-${n}-otro`);
+      else if (resto.startsWith('tasaIva-')) despliegues.push(`${base}-mas`, `revision-iva-${n}-otro`);
       else if (resto.startsWith('factor-')) despliegues.push(`revision-factor-${n}-otro`);
-      else if (resto.startsWith('manual-')) despliegues.push(`${base}-manual-abrir`);
-      else if (resto.startsWith('nuevo-')) despliegues.push(`${base}-nuevo-abrir`);
+      else if (resto.startsWith('manual-')) despliegues.push(`${base}-cambiar-producto`, `${base}-manual-abrir`);
+      else if (resto.startsWith('nuevo-')) despliegues.push(`${base}-cambiar-producto`, `${base}-nuevo-abrir`);
+      else if (/^(candidato|tarjeta)-/.test(resto)) despliegues.push(`${base}-cambiar-producto`, `${base}-ver-otras`);
+      else if (resto === 'pendiente') despliegues.push(`${base}-cambiar-producto`);
       else if (EN_MAS_OPCIONES.test(resto)) despliegues.push(`${base}-mas`);
     }
     return { etapa: 'productos', linea: n, despliegues };
@@ -156,7 +167,9 @@ function rutaDe(id: string): Ruta {
   }
   if (/^revision-agregar-/.test(id)) return { etapa: 'productos', despliegues: ['revision-agregar-abrir'] };
   if (/^revision-(extraer|iniciar-.*|aplicar-.*|reemplazo-motivo|cabecera-.*)$/.test(id)) return { etapa: 'leer', despliegues: ['revision-detalles-tecnicos'] };
-  if (/^revision-(tipo-.*|decision-precioIncluyeIva-.*)$/.test(id)) return { etapa: 'productos', despliegues: ['revision-preguntas-cambiar'] };
+  // Answered invoice settings collapse into one summary: its Cambiar reopens the existing controls.
+  if (/^revision-(tipo-.*|decision-precioIncluyeIva-.*)$/.test(id)) return { etapa: 'productos', despliegues: ['revision-ajustes-cambiar', 'revision-preguntas-cambiar'] };
+  if (/^revision-(iva|descuento)-factura-.*$/.test(id)) return { etapa: 'productos', despliegues: ['revision-ajustes-cambiar'] };
   if (/^revision-(diferencias|pos|impacto-.*)$/.test(id)) return { etapa: 'compra', despliegues: ['revision-detalles-tecnicos'] };
   if (/^revision-(totales|por-tasa|bloqueos|guardar|aprobar|materializar|motivo-guardado|pvp-pendiente|decision-.*)$/.test(id)) return { etapa: 'compra', despliegues: [] };
   return { etapa: null, despliegues: [] };
@@ -262,7 +275,8 @@ async function startRevision(repo: Mocks, over: Partial<FacturaRevisionViewProps
   return view;
 }
 
-async function confirmEverything(): Promise<void> {
+/** `inventario` picks SKU-n from the inventory search (an existing product); `nuevo` marks each line as a new product. */
+async function confirmEverything(identidad: 'inventario' | 'nuevo' = 'inventario'): Promise<void> {
   await pressId('revision-decision-documentoCompletoConfirmado-si');
   await pressId('revision-decision-recepcionCompleta-si');
   await pressId('revision-decision-precioIncluyeIva-no');
@@ -272,7 +286,13 @@ async function confirmEverything(): Promise<void> {
     await pressId(`revision-linea-${n}-tasaIva-aplicar`);
     await typeId(`revision-linea-${n}-factor-valor`, '1');
     await pressId(`revision-linea-${n}-factor-aplicar`);
-    await typeId(`revision-linea-${n}-manual-codigo`, `SKU-${n}`);
+    if (identidad === 'nuevo') {
+      await pressId(`revision-linea-${n}-nuevo-motivo-sugerido`);
+      await pressId(`revision-linea-${n}-nuevo-aplicar`);
+      continue;
+    }
+    await pressId(`revision-linea-${n}-manual-buscar`);
+    await pressId(`producto-picker-fila-SKU-${n}`);
     await typeId(`revision-linea-${n}-manual-motivo`, 'Mismo articulo');
     await pressId(`revision-linea-${n}-manual-aplicar`);
   }
@@ -981,7 +1001,7 @@ describe('no side effects beyond the review contract', () => {
     await confirmEverything();
     await pressId('revision-guardar');
     await pressId('revision-aprobar');
-    expect(Object.keys(repo).sort()).toEqual(['aprobarRevision', 'buscarCandidatos', 'extraer', 'guardarRevision', 'leerColisionesBarras', 'leerExtracciones', 'leerRevisiones']);
+    expect(Object.keys(repo).sort()).toEqual(['aprobarRevision', 'buscarCandidatos', 'extraer', 'guardarRevision', 'leerColisionesBarras', 'leerExtracciones', 'leerProductos', 'leerRevisiones']);
     expect(repo.extraer).not.toHaveBeenCalled();
     expect(within(screen.getByTestId('revision-estado')).queryByText(/compra emitida/i)).toBeNull();
   });
@@ -1003,7 +1023,7 @@ describe('PVP suggestion: document type, subdued placeholder, typed price (S18)'
 
   async function listaConCosto(repo: Mocks, over: Partial<FacturaRevisionViewProps> = {}) {
     const view = await startRevision(repo, over);
-    await confirmEverything();
+    await confirmEverything('nuevo');
     await costo10();
     return view;
   }
@@ -1099,12 +1119,27 @@ describe('PVP suggestion: document type, subdued placeholder, typed price (S18)'
     expect(JSON.stringify(saved.lineas)).not.toContain('precioVenta');
   });
 
-  it('without touching the PVP controls the saved payload is the legacy content', async () => {
+  it('without touching the PVP controls a new product saves no price (the suggestion is derived)', async () => {
+    const repo = fakeRepo();
+    await startRevision(repo);
+    await confirmEverything('nuevo');
+    await pressId('revision-guardar');
+    expect(JSON.stringify(lastSaved(repo).contenido)).not.toMatch(/tipoDocumento|precioVenta/);
+  });
+
+  it('without touching the PVP controls an existing product saves exactly its current catalog price, IVA included (S6)', async () => {
     const repo = fakeRepo();
     await startRevision(repo);
     await confirmEverything();
+    await pressId('revision-tipo-factura');
+    expect(valueOf(pvp(1))).toBe('12');
+    expect(textOf(pvpEstado(1))).toBe('Precio actual del inventario (IVA incluido): $12.00');
     await pressId('revision-guardar');
-    expect(JSON.stringify(lastSaved(repo).contenido)).not.toMatch(/tipoDocumento|precioVenta/);
+    const saved = lastSaved(repo).contenido;
+    expect(saved.lineas.map(l => l.precioVenta)).toEqual(['12', '9.5', '4']);
+    // Documentary quantity and cost are untouched by the catalog row.
+    expect(saved.lineas.map(l => l.correcciones.cantidad ?? null)).toEqual([null, null, null]);
+    expect(saved.lineas.map(l => l.correcciones.precioUnitario ?? null)).toEqual([null, null, null]);
   });
 
   it('a typed price survives a cost change while the placeholder follows the new cost; clearing restores the default', async () => {
@@ -1301,6 +1336,7 @@ const desplegado = (id: string): boolean => Boolean(screen.getByTestId(id).props
 const textoDeId = (id: string): string => textoDe(screen.getByTestId(id));
 
 async function pulsarYa(id: string): Promise<void> {
+  if (/^revision-(tipo-|decision-precioIncluyeIva-|iva-factura-|descuento-factura-)/.test(id) && id !== 'revision-ajustes-cambiar' && screen.queryByTestId('revision-ajustes-cambiar')) fireEvent.press(screen.getByTestId('revision-ajustes-cambiar'));
   if (/^revision-(tipo-|decision-precioIncluyeIva-)/.test(id) && screen.queryByTestId('revision-preguntas-cambiar')) fireEvent.press(screen.getByTestId('revision-preguntas-cambiar'));
   if (/^revision-cab-/.test(id) && id !== 'revision-cab-detalles' && screen.queryByTestId('revision-cab-detalles')?.props.accessibilityState.expanded === false) fireEvent.press(screen.getByTestId('revision-cab-detalles'));
   await act(async () => {
@@ -1504,7 +1540,8 @@ describe('guided review: Productos', () => {
     await pulsarYa('revision-linea-1-abrir');
     await pulsarYa('revision-linea-1-candidato-00123');
     expect(textoDeId('revision-linea-1-estado')).toBe('Falta IVA');
-    await pulsarYa('revision-iva-1-16');
+    await pulsarYa('revision-iva-factura-16');
+    await pulsarYa('revision-iva-factura-aplicar');
     expect(textoDeId('revision-linea-1-estado')).toBe('Faltan unidades por paquete');
     await pulsarYa('revision-factor-1-uno');
     expect(textoDeId('revision-linea-1-estado')).toBe('Listo');
@@ -1543,6 +1580,7 @@ describe('guided review: Productos', () => {
     await pulsarYa('revision-linea-3-abrir');
     await pulsarYa('revision-linea-3-candidato-AB-9');
     expect(textoDeId('revision-linea-3-decision')).toMatch(/Asociado a AB-9/);
+    await pulsarYa('revision-linea-3-cambiar-producto');
     await pulsarYa('revision-linea-3-pendiente');
     expect(textoDeId('revision-linea-3-decision')).toMatch(/Sin decidir/);
     await pulsarYa('revision-linea-3-nuevo-abrir');
@@ -1554,7 +1592,8 @@ describe('guided review: Productos', () => {
 
     await pulsarYa('revision-linea-1-abrir');
     await pulsarYa('revision-linea-1-manual-abrir');
-    await escribirYa('revision-linea-1-manual-codigo', 'SKU-1');
+    await pulsarYa('revision-linea-1-manual-buscar');
+    await pulsarYa('producto-picker-fila-SKU-1');
     await escribirYa('revision-linea-1-manual-motivo', 'Mismo articulo');
     await pulsarYa('revision-linea-1-manual-aplicar');
     expect(textoDeId('revision-linea-1-decision')).toMatch(/SKU-1/);
@@ -1584,7 +1623,8 @@ describe('guided review: Productos', () => {
     await aProductos();
     await pulsarYa('revision-linea-1-abrir');
     await pulsarYa('revision-linea-1-candidato-00123');
-    await pulsarYa('revision-iva-1-16');
+    await pulsarYa('revision-iva-factura-16');
+    await pulsarYa('revision-iva-factura-aplicar');
     await pulsarYa('revision-factor-1-uno');
     expect(textoDeId('revision-filtro-pendientes')).toBe('Faltan (2)');
     expect(textoDeId('revision-filtro-listos')).toBe('Listos (1)');
@@ -1650,6 +1690,7 @@ describe('guided review: quick IVA and units controls', () => {
     await aProductos();
 
     await pulsarYa('revision-linea-1-abrir');
+    await pulsarYa('revision-linea-1-mas');
     expect(textoDeId('revision-iva-1-estado')).toBe('Sin definir');
     expect(screen.getByText(/El documento indica IVA 16\. Es solo referencia/)).toBeTruthy();
     expect(textoDeId('revision-factor-1-estado')).toBe('Sin confirmar');
@@ -1659,6 +1700,7 @@ describe('guided review: quick IVA and units controls', () => {
     expect(textoDeId('revision-factor-1-estado')).toBe('Confirmado: 1');
 
     await pulsarYa('revision-linea-2-abrir');
+    await pulsarYa('revision-linea-2-mas');
     await pulsarYa('revision-iva-2-otro');
     await escribirYa('revision-linea-2-tasaIva-valor', '16');
     await escribirYa('revision-linea-2-tasaIva-motivo', 'IVA indicado manualmente: 16 %');
@@ -1668,6 +1710,7 @@ describe('guided review: quick IVA and units controls', () => {
     await pulsarYa('revision-linea-2-factor-aplicar');
 
     await pulsarYa('revision-linea-3-abrir');
+    await pulsarYa('revision-linea-3-mas');
     await pulsarYa('revision-iva-3-0');
 
     await pulsarYa('revision-ir-compra');
@@ -2174,7 +2217,7 @@ describe('post-E2E: scrolling', () => {
   });
 });
 
-describe('post-E2E: explicit batch VAT and units for unresolved lines', () => {
+describe('post-E2E: invoice-wide VAT and batch units for unresolved lines (S4)', () => {
   const forma = (lineas: RevisionContenido['lineas']) => lineas.map(l => ({ correcciones: l.correcciones, factorConversion: l.factorConversion, asociacion: l.asociacion }));
   const guardadas = (repo: Mocks) => (repo.guardarRevision.mock.calls[0][0] as GuardarRevisionInput).contenido.lineas;
 
@@ -2183,20 +2226,27 @@ describe('post-E2E: explicit batch VAT and units for unresolved lines', () => {
     await pulsarYa('revision-guardar');
   }
 
-  it('applies the chosen VAT and factor to every unresolved line at once, with the payload of the per-line chips', async () => {
+  async function ivaManualEnLinea(n: number, tasa: string): Promise<void> {
+    await pulsarYa(`revision-linea-${n}-abrir`);
+    await pulsarYa(`revision-linea-${n}-mas`);
+    await pulsarYa(`revision-iva-${n}-${tasa}`);
+  }
+
+  it('applies the chosen VAT once for the invoice and the factor to every unresolved line, with the payload of the per-line chips', async () => {
     const repoLote = fakeRepo();
     const vista = await revisarLeido(repoLote);
     await aProductos();
-    expect(aqui('revision-lote')).toBe(false);
-    expect(screen.getByTestId('revision-lote-toggle').props.accessibilityState).toMatchObject({ expanded: false });
-    await pulsarYa('revision-lote-toggle');
-    expect(textoDeId('revision-lote')).toMatch(/Usar el mismo IVA o unidades en los que faltan/);
-    expect(textoDeId('revision-lote')).toMatch(/No cambia los productos que ya tienen IVA o unidades\./);
-    expect(aqui('revision-lote-iva-aplicar')).toBe(false);
+    expect(textoDeId('revision-iva-factura-estado')).toBe('Falta en 3 productos.');
+    expect(aqui('revision-iva-factura-aplicar')).toBe(false);
+    await pulsarYa('revision-iva-factura-16');
+    expect(textoDeId('revision-iva-factura-aplicar')).toBe('Aplicar 16 % a 3 productos sin IVA');
+    await pulsarYa('revision-iva-factura-aplicar');
+    expect(textoDeId('revision-iva-factura-resumen')).toBe('IVA de la factura: 16 %');
+    expect(aqui('revision-iva-factura-16')).toBe(false);
+    expect(aqui('revision-lote-toggle')).toBe(false);
+    expect(textoDeId('revision-lote')).toMatch(/Usar 1 unidad en los que faltan/);
+    expect(textoDeId('revision-lote')).toMatch(/No cambia los productos que ya tienen unidades\./);
     expect(aqui('revision-lote-factor-aplicar')).toBe(false);
-    await pulsarYa('revision-lote-iva-16');
-    expect(textoDeId('revision-lote-iva-aplicar')).toBe('Aplicar 16 % a 3 productos sin IVA');
-    await pulsarYa('revision-lote-iva-aplicar');
     await pulsarYa('revision-lote-factor-uno');
     expect(textoDeId('revision-lote-factor-aplicar')).toBe('Usar 1 unidad en 3 productos pendientes');
     await pulsarYa('revision-lote-factor-aplicar');
@@ -2210,8 +2260,7 @@ describe('post-E2E: explicit batch VAT and units for unresolved lines', () => {
     await revisarLeido(repoManual);
     await aProductos();
     for (const n of [1, 2, 3]) {
-      await pulsarYa(`revision-linea-${n}-abrir`);
-      await pulsarYa(`revision-iva-${n}-16`);
+      await ivaManualEnLinea(n, '16');
       await pulsarYa(`revision-factor-${n}-uno`);
     }
     await guardarDesdeProductos();
@@ -2219,21 +2268,32 @@ describe('post-E2E: explicit batch VAT and units for unresolved lines', () => {
     expect(lote[0].correcciones.tasaIva).toEqual({ valor: '16', motivo: 'IVA indicado manualmente: 16 %' });
   });
 
-  it('never touches an explicit zero or a line whose factor was already confirmed', async () => {
+  it('has no per-product VAT question in an open product: it is answered once for the invoice', async () => {
     const repo = fakeRepo();
     await revisarLeido(repo);
     await aProductos();
     await pulsarYa('revision-linea-1-abrir');
-    await pulsarYa('revision-iva-1-0');
+    expect(aqui('revision-iva-1-16')).toBe(false);
+    expect(screen.queryByText('IVA de este producto (obligatorio)')).toBeNull();
+    expect(textoDeId('revision-linea-1-iva-factura-aviso')).toBe('Falta el IVA: indícalo una vez en "IVA de la factura", arriba.');
+    expect(screen.getAllByTestId('revision-iva-factura')).toHaveLength(1);
+  });
+
+  it('never touches an explicit zero or a confirmed factor, and shows the invoice as mixed afterwards', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    await ivaManualEnLinea(1, '0');
     await pulsarYa('revision-linea-2-abrir');
     await pulsarYa('revision-factor-2-otro');
     await escribirYa('revision-linea-2-factor-valor', '2');
     await pulsarYa('revision-linea-2-factor-aplicar');
-    expect(aqui('revision-lote')).toBe(false);
-    await pulsarYa('revision-lote-toggle');
-    await pulsarYa('revision-lote-iva-16');
-    expect(textoDeId('revision-lote-iva-aplicar')).toBe('Aplicar 16 % a 2 productos sin IVA');
-    await pulsarYa('revision-lote-iva-aplicar');
+    expect(textoDeId('revision-iva-factura-estado')).toBe('Falta en 2 productos. Ya indicado: 0 %.');
+    await pulsarYa('revision-iva-factura-16');
+    expect(textoDeId('revision-iva-factura-aplicar')).toBe('Aplicar 16 % a 2 productos sin IVA');
+    expect(textoDeId('revision-iva-factura-aviso')).toBe('Ya tienen otro IVA: 1 producto. No se cambian sin tu confirmación.');
+    await pulsarYa('revision-iva-factura-aplicar');
+    expect(textoDeId('revision-iva-factura-resumen')).toBe('IVA de la factura: mixto (0 %, 16 %)');
     await pulsarYa('revision-lote-factor-uno');
     expect(textoDeId('revision-lote-factor-aplicar')).toBe('Usar 1 unidad en 2 productos pendientes');
     await pulsarYa('revision-lote-factor-aplicar');
@@ -2245,19 +2305,35 @@ describe('post-E2E: explicit batch VAT and units for unresolved lines', () => {
     for (const l of lineas) expect(l.asociacion.tipo).toBe('pendiente');
   });
 
+  it('overwrites an exempt line only after the explicit replace-all confirmation', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    await ivaManualEnLinea(1, '0');
+    await pulsarYa('revision-iva-factura-16');
+    await pulsarYa('revision-iva-factura-aplicar');
+    await pulsarYa('revision-iva-factura-cambiar');
+    await pulsarYa('revision-iva-factura-16');
+    expect(aqui('revision-iva-factura-aplicar')).toBe(false);
+    expect(textoDeId('revision-iva-factura-reemplazar')).toBe('Usar 16 % en todos (1 producto)');
+    await pulsarYa('revision-iva-factura-reemplazar');
+    expect(textoDeId('revision-iva-factura-resumen')).toBe('IVA de la factura: 16 %');
+    await guardarDesdeProductos();
+    expect(guardadas(repo).map(l => l.correcciones.tasaIva)).toEqual([0, 1, 2].map(() => ({ valor: '16', motivo: 'IVA indicado manualmente: 16 %' })));
+  });
+
   it('rejects an invalid custom rate without changing any line, then applies a valid one', async () => {
     const repo = fakeRepo();
     await revisarLeido(repo);
     await aProductos();
-    await pulsarYa('revision-lote-toggle');
-    await pulsarYa('revision-lote-iva-otro');
-    expect(screen.getByTestId('revision-lote-iva-aplicar').props.accessibilityState?.disabled).toBe(true);
-    await escribirYa('revision-lote-iva-valor', 'abc');
-    await pulsarYa('revision-lote-iva-aplicar');
+    await pulsarYa('revision-iva-factura-otro');
+    expect(screen.getByTestId('revision-iva-factura-aplicar').props.accessibilityState?.disabled).toBe(true);
+    await escribirYa('revision-iva-factura-valor', 'abc');
+    await pulsarYa('revision-iva-factura-aplicar');
     expect(textoDeId('revision-aviso')).toMatch(/Ese valor no es válido: no se cambió ningún producto\./);
-    expect(textoDeId('revision-lote-iva-aplicar')).toBe('Aplicar abc % a 3 productos sin IVA');
-    await escribirYa('revision-lote-iva-valor', '8');
-    await pulsarYa('revision-lote-iva-aplicar');
+    expect(textoDeId('revision-iva-factura-aplicar')).toBe('Aplicar abc % a 3 productos sin IVA');
+    await escribirYa('revision-iva-factura-valor', '8');
+    await pulsarYa('revision-iva-factura-aplicar');
     await guardarDesdeProductos();
     for (const l of guardadas(repo)) expect(l.correcciones.tasaIva).toEqual({ valor: '8', motivo: 'IVA indicado manualmente: 8 %' });
   });
@@ -2267,13 +2343,373 @@ describe('post-E2E: explicit batch VAT and units for unresolved lines', () => {
     let uid: string | null = OWNER_A;
     const vista = await revisarLeido(repo, { getSessionUid: () => uid });
     await aProductos();
-    await pulsarYa('revision-lote-toggle');
-    await pulsarYa('revision-lote-iva-16');
+    await pulsarYa('revision-iva-factura-16');
     uid = OWNER_B;
     vista.rerenderUi(<FacturaRevisionView {...props(repo, { getSessionUid: () => uid })} />);
     await settle();
-    const aplicar = screen.queryByTestId('revision-lote-iva-aplicar');
+    const aplicar = screen.queryByTestId('revision-iva-factura-aplicar');
     expect(aplicar === null || aplicar.props.accessibilityState?.disabled === true).toBe(true);
+  });
+});
+
+describe('invoice-wide percentage discount (S4)', () => {
+  const guardada = (repo: Mocks) => (repo.guardarRevision.mock.calls[0][0] as GuardarRevisionInput).contenido;
+  const global = (orden: number, porcentaje: string | null, over: Record<string, unknown> = {}) =>
+    ({ orden, porcentaje, monto: null, alcance: 'global', incluidoEnPrecio: false, ...over });
+
+  async function guardar(): Promise<void> {
+    await pulsarYa('revision-ir-compra');
+    await pulsarYa('revision-guardar');
+  }
+
+  it('sets 20 % + 5 % once for the whole invoice in the existing header correction, never per product', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    expect(textoDeId('revision-descuento-factura-resumen')).toBe('Descuento de la factura: ninguno');
+    await pulsarYa('revision-descuento-factura-cambiar');
+    await escribirYa('revision-descuento-factura-valor', '20+5');
+    await pulsarYa('revision-descuento-factura-aplicar');
+    expect(textoDeId('revision-descuento-factura-resumen')).toBe('Descuento de la factura: 20 % + 5 % (antes del IVA)');
+    await guardar();
+    const contenido = guardada(repo);
+    expect(contenido.cabecera.correcciones.descuentos).toEqual({
+      valor: [global(1, '20'), global(2, '5')],
+      motivo: 'Descuento de la factura indicado manualmente: 20 % + 5 %',
+    });
+    for (const l of contenido.lineas) expect(l.correcciones.descuentos).toBeUndefined();
+  });
+
+  it('adds nothing to the review when the discount editor is opened and closed without applying', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    await pulsarYa('revision-descuento-factura-cambiar');
+    await escribirYa('revision-descuento-factura-valor', '10');
+    await pulsarYa('revision-descuento-factura-cancelar');
+    await pulsarYa('revision-iva-factura-16');
+    await pulsarYa('revision-iva-factura-aplicar');
+    await guardar();
+    expect(guardada(repo).cabecera.correcciones).toEqual({});
+  });
+
+  it('shows an invalid typed discount and changes nothing', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    await pulsarYa('revision-descuento-factura-cambiar');
+    await escribirYa('revision-descuento-factura-valor', '120');
+    expect(textoDeId('revision-descuento-factura-error')).toBe('Debe ser menor a 100%');
+    expect(screen.getByTestId('revision-descuento-factura-aplicar').props.accessibilityState?.disabled).toBe(true);
+    await pulsarYa('revision-descuento-factura-aplicar');
+    expect(repo.guardarRevision).not.toHaveBeenCalled();
+    expect(aqui('revision-guardar')).toBe(false);
+  });
+
+  it('keeps discounts already included in the prices and asks before replacing them', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo, {}, payload({ descuentos: [global(1, '10', { incluidoEnPrecio: true })] }));
+    await aProductos();
+    expect(textoDeId('revision-descuento-factura-resumen')).toBe('Descuento de la factura: ya incluido en los precios');
+    await pulsarYa('revision-descuento-factura-cambiar');
+    await escribirYa('revision-descuento-factura-valor', '10');
+    await pulsarYa('revision-descuento-factura-aplicar');
+    expect(textoDeId('revision-descuento-factura-confirmar-aviso')).toBe('Esto reemplaza el descuento leído de la factura. Si ya está incluido en los precios, no lo apliques de nuevo.');
+    expect(textoDeId('revision-descuento-factura-resumen')).toBe('Descuento de la factura: ya incluido en los precios');
+    await pulsarYa('revision-descuento-factura-confirmar');
+    expect(textoDeId('revision-descuento-factura-resumen')).toBe('Descuento de la factura: 10 % (antes del IVA)');
+  });
+
+  it('flags a fixed-amount discount read from the invoice without applying it', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo, {}, payload({ descuentos: [global(1, null, { monto: '3.00' })] }));
+    await aProductos();
+    expect(textoDeId('revision-descuento-factura-resumen')).toBe('Descuento de la factura: revisar');
+    expect(textoDeId('revision-descuento-factura-aviso')).toBe('El descuento leído no es solo un porcentaje: escribe el porcentaje aquí o corrígelo en Detalles para soporte.');
+  });
+
+  it('cannot apply once the session no longer matches the invoice', async () => {
+    const repo = fakeRepo();
+    let uid: string | null = OWNER_A;
+    const vista = await revisarLeido(repo, { getSessionUid: () => uid });
+    await aProductos();
+    await pulsarYa('revision-descuento-factura-cambiar');
+    await escribirYa('revision-descuento-factura-valor', '10');
+    uid = OWNER_B;
+    vista.rerenderUi(<FacturaRevisionView {...props(repo, { getSessionUid: () => uid })} />);
+    await settle();
+    const aplicar = screen.queryByTestId('revision-descuento-factura-aplicar');
+    expect(aplicar === null || aplicar.props.accessibilityState?.disabled === true).toBe(true);
+  });
+});
+
+describe('compact invoice settings once answered (V1)', () => {
+  const guardada = (repo: Mocks) => (repo.guardarRevision.mock.calls[0][0] as GuardarRevisionInput).contenido;
+
+  async function responderDocumento(): Promise<void> {
+    await pulsarYa('revision-tipo-factura');
+    await pulsarYa('revision-decision-precioIncluyeIva-no');
+  }
+
+  async function responderIva(): Promise<void> {
+    await pulsarYa('revision-iva-factura-16');
+    await pulsarYa('revision-iva-factura-aplicar');
+  }
+
+  async function responderUnidades(): Promise<void> {
+    await pulsarYa('revision-lote-factor-uno');
+    await pulsarYa('revision-lote-factor-aplicar');
+  }
+
+  async function responderDescuento(texto: string): Promise<void> {
+    await pulsarYa('revision-descuento-factura-cambiar');
+    await escribirYa('revision-descuento-factura-valor', texto);
+    await pulsarYa('revision-descuento-factura-aplicar');
+  }
+
+  it('collapses answered document type, VAT and discount into one summary with a single Cambiar, saving the same edits', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    await responderDocumento();
+    await responderDescuento('20+5');
+    await responderUnidades();
+    expect(aqui('revision-ajustes-resumen-documento')).toBe(false);
+    await responderIva();
+    expect(textoDeId('revision-ajustes-resumen-documento')).toBe('Factura · precios sin IVA');
+    expect(textoDeId('revision-ajustes-resumen-valores')).toBe('IVA 16 % · Descuento 20 % + 5 %');
+    for (const id of ['revision-preguntas-resumen', 'revision-iva-factura', 'revision-descuento-factura']) expect(aqui(id)).toBe(false);
+    const ajustes = within(screen.getByTestId('revision-ajustes-factura'));
+    expect(ajustes.getAllByRole('button').map(b => b.props.testID)).toEqual(['revision-ajustes-cambiar']);
+    expect(screen.getByTestId('revision-ajustes-cambiar').props.accessibilityState).toMatchObject({ expanded: false });
+    expect(screen.getAllByTestId('revision-ajustes-factura')).toHaveLength(1);
+
+    await pulsarYa('revision-ajustes-cambiar');
+    expect(textoDeId('revision-iva-factura-resumen')).toBe('IVA de la factura: 16 %');
+    expect(textoDeId('revision-descuento-factura-resumen')).toBe('Descuento de la factura: 20 % + 5 % (antes del IVA)');
+    expect(aqui('revision-preguntas-resumen')).toBe(true);
+    await pulsarYa('revision-ajustes-listo');
+    expect(aqui('revision-iva-factura')).toBe(false);
+    expect(textoDeId('revision-ajustes-resumen-valores')).toBe('IVA 16 % · Descuento 20 % + 5 %');
+
+    await pulsarYa('revision-ir-compra');
+    await pulsarYa('revision-guardar');
+    const contenido = guardada(repo);
+    expect(contenido.cabecera).toMatchObject({ tipoDocumento: 'factura', precioIncluyeIva: false });
+    expect(contenido.cabecera.correcciones).toEqual({ descuentos: {
+      valor: [1, 2].map((orden, i) => ({ orden, porcentaje: ['20', '5'][i], monto: null, alcance: 'global', incluidoEnPrecio: false })),
+      motivo: 'Descuento de la factura indicado manualmente: 20 % + 5 %',
+    } });
+    for (const l of contenido.lineas) expect(l.correcciones.tasaIva).toEqual({ valor: '16', motivo: 'IVA indicado manualmente: 16 %' });
+  });
+
+  it('opens and closes the settings without writing anything', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    await responderDocumento();
+    await responderUnidades();
+    await responderIva();
+    await pulsarYa('revision-ajustes-cambiar');
+    await pulsarYa('revision-ajustes-listo');
+    await pulsarYa('revision-ir-compra');
+    await pulsarYa('revision-guardar');
+    expect(guardada(repo).cabecera.correcciones).toEqual({});
+  });
+
+  it('summarises a mixed invoice and an included discount without hiding them', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo, {}, payload({ descuentos: [{ orden: 1, porcentaje: '10', monto: null, alcance: 'global', incluidoEnPrecio: true }] }));
+    await aProductos();
+    await responderDocumento();
+    await pulsarYa('revision-linea-1-abrir');
+    await pulsarYa('revision-linea-1-mas');
+    await pulsarYa('revision-iva-1-0');
+    await responderUnidades();
+    await responderIva();
+    expect(textoDeId('revision-ajustes-resumen-valores')).toBe('IVA mixto (0 %, 16 %) · Descuento ya incluido en los precios');
+  });
+
+  it('keeps unresolved VAT visible and actionable: the summary never hides required work', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    await responderDocumento();
+    await responderDescuento('10');
+    expect(aqui('revision-ajustes-resumen-valores')).toBe(false);
+    expect(textoDeId('revision-iva-factura-estado')).toBe('Falta en 3 productos.');
+    expect(aqui('revision-iva-factura-16')).toBe(true);
+  });
+
+  it('keeps a discount that needs review visible with its warning', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo, {}, payload({ descuentos: [{ orden: 1, porcentaje: null, monto: '3.00', alcance: 'global', incluidoEnPrecio: false }] }));
+    await aProductos();
+    await responderDocumento();
+    await responderIva();
+    expect(aqui('revision-ajustes-resumen-valores')).toBe(false);
+    expect(textoDeId('revision-descuento-factura-aviso')).toMatch(/no es solo un porcentaje/);
+  });
+
+  it('keeps the discount Cambiar on the same row as its summary instead of wrapping it below', async () => {
+    const repo = fakeRepo();
+    await revisarLeido(repo);
+    await aProductos();
+    const fila = StyleSheet.flatten(screen.getByTestId('revision-descuento-factura-fila').props.style);
+    expect(fila.flexDirection).toBe('row');
+    expect(fila.flexWrap).not.toBe('wrap');
+    expect(StyleSheet.flatten(screen.getByTestId('revision-descuento-factura-texto').props.style).flex).toBe(1);
+  });
+});
+
+describe('existing product price and inventory search (S6/S7)', () => {
+  const guardada = (repo: Mocks) => (repo.guardarRevision.mock.calls[repo.guardarRevision.mock.calls.length - 1][0] as GuardarRevisionInput).contenido;
+  const valor = (n: number) => screen.getByTestId(`revision-linea-${n}-pvp-valor`).props.value;
+
+  async function buscarEnInventario(n: number, codigo: string): Promise<void> {
+    await pressId(`revision-linea-${n}-manual-buscar`);
+    await pressId(`producto-picker-fila-${codigo}`);
+  }
+
+  /** A saved, approved review whose three products are confirmed from the catalog but carry no saved selling price. */
+  function aprobadaSinPrecios(): RevisionRow {
+    return savedRevision({ aprobadoPor: OWNER_A, aprobadoEn: '2026-10-23T12:00:00Z' }, base => {
+      const ext = payload();
+      const ediciones: Array<Parameters<typeof aplicarEdicion>[2]> = [
+        { tipo: 'decision_cabecera', campo: 'documentoCompletoConfirmado', valor: true },
+        { tipo: 'decision_cabecera', campo: 'recepcionCompleta', valor: true },
+        { tipo: 'decision_cabecera', campo: 'precioIncluyeIva', valor: false },
+        { tipo: 'tipo_documento', valor: 'factura' },
+        ...base.lineas.flatMap((l, i): Array<Parameters<typeof aplicarEdicion>[2]> => [
+          { tipo: 'factor_conversion', lineaId: l.lineaId, valor: '1' },
+          { tipo: 'linea_escalar', lineaId: l.lineaId, campo: 'tasaIva', valor: '16', motivo: 'IVA indicado manualmente: 16 %' },
+          { tipo: 'asociacion', lineaId: l.lineaId, asociacion: { tipo: 'confirmado', codigoInterno: `SKU-${i + 1}`, evidencia: 'manual', motivo: 'Mismo articulo' } },
+        ]),
+      ];
+      return ediciones.reduce((contenido, edicion) => {
+        const r = aplicarEdicion(contenido, ext, edicion, newId);
+        if (!r.ok) throw new Error(`fixture edit: ${JSON.stringify(r.error)}`);
+        return r.contenido;
+      }, base);
+    });
+  }
+
+  it('a suggested product writes its current catalog price in the price input and saves it with the choice', async () => {
+    const repo = fakeRepo();
+    await startRevision(repo);
+    await pressId('revision-linea-1-candidato-00123');
+    expect(valor(1)).toBe('2');
+    expect(textOf('revision-linea-1-pvp-estado')).toBe('Precio actual del inventario (IVA incluido): $2.00');
+    await pressId('revision-ir-compra');
+    await pressId('revision-guardar');
+    expect(guardada(repo).lineas[0]).toMatchObject({ asociacion: { tipo: 'confirmado', codigoInterno: '00123', evidencia: 'sugerencia', motivo: null }, precioVenta: '2' });
+  });
+
+  it('keeps a typed price when the same product is chosen again', async () => {
+    const repo = fakeRepo();
+    await startRevision(repo);
+    await pressId('revision-linea-1-candidato-00123');
+    await typeId('revision-linea-1-pvp-valor', '15');
+    await pressId('revision-linea-1-cambiar-producto');
+    await pressId('revision-linea-1-candidato-00123');
+    expect(valor(1)).toBe('15');
+    expect(textOf('revision-linea-1-pvp-estado')).toBe('Se usará tu precio: $15.00. Precio actual del inventario: $2.00.');
+  });
+
+  it('another product from the inventory search adopts its own price and drops the old invalid text, only once applied', async () => {
+    const repo = fakeRepo();
+    await startRevision(repo);
+    await pressId('revision-linea-1-candidato-00123');
+    await typeId('revision-linea-1-pvp-valor', '12,5');
+    expect(textOf('revision-pvp-pendiente')).toMatch(/Corrige el precio de venta del producto 1/);
+    await buscarEnInventario(1, 'SKU-2');
+    // Picking a row applies nothing yet: the old product and its invalid text stay.
+    expect(textOf('revision-linea-1-decision')).toMatch(/Asociado a 00123/);
+    expect(textOf('revision-linea-1-manual-elegido')).toContain('Articulo 2 inventario');
+    expect(valor(1)).toBe('12,5');
+    await pressId('revision-linea-1-manual-motivo-sugerido');
+    await pressId('revision-linea-1-manual-aplicar');
+    expect(textOf('revision-linea-1-decision')).toMatch(/Asociado a SKU-2/);
+    // Outside the suggestions, the chosen summary carries the retained catalog name, not only the code (NEW-V3).
+    expect(textOf('revision-linea-1-elegido')).toContain('Articulo 2 inventario');
+    expect(valor(1)).toBe('9.5');
+    expect(maybeId('revision-pvp-pendiente')).toBeNull();
+    await pressId('revision-guardar');
+    expect(guardada(repo).lineas[0]).toMatchObject({ asociacion: { tipo: 'confirmado', codigoInterno: 'SKU-2', evidencia: 'manual', motivo: 'La sugerencia era otro producto' }, precioVenta: '9.5' });
+  });
+
+  it('closing the inventory search changes nothing', async () => {
+    const repo = fakeRepo();
+    await startRevision(repo);
+    await pressId('revision-linea-1-manual-buscar');
+    await pressId('producto-picker-cerrar');
+    expect(maybeId('producto-picker')).toBeNull();
+    expect(maybeId('revision-linea-1-manual-elegido')).toBeNull();
+    expect(textOf('revision-linea-1-decision')).toMatch(/Sin decidir/);
+    await pressId('revision-guardar');
+    expect(guardada(repo).lineas[0]).toMatchObject({ asociacion: { tipo: 'pendiente', codigoInterno: null, evidencia: null, motivo: null } });
+    expect(guardada(repo).lineas[0]).not.toHaveProperty('precioVenta');
+  });
+
+  it('refuses an inventory choice made before a session change (A/B/A) and says to search again', async () => {
+    const repo = fakeRepo();
+    let uid: string | null = OWNER_A;
+    const view = await startRevision(repo, { getSessionUid: () => uid });
+    await buscarEnInventario(1, 'SKU-2');
+    uid = OWNER_B;
+    view.rerenderUi(<FacturaRevisionView {...props(repo, { getSessionUid: () => uid })} />);
+    await settle();
+    uid = OWNER_A;
+    view.rerenderUi(<FacturaRevisionView {...props(repo, { getSessionUid: () => uid })} />);
+    await settle();
+    await pressId('revision-linea-1-manual-motivo-sugerido');
+    await pressId('revision-linea-1-manual-aplicar');
+    expect(textOf('revision-linea-1-decision')).toMatch(/Sin decidir/);
+    expect(textOf('revision-linea-1-manual-aviso')).toBe('Esta elección quedó desactualizada: busca el producto de nuevo.');
+    expect(maybeId('revision-linea-1-manual-elegido')).toBeNull();
+  });
+
+  it('a saved, approved product without a price shows the current price unapplied, mutates nothing, and blocks the draft until adopted', async () => {
+    const repo = fakeRepo();
+    repo.leerRevisiones.mockResolvedValue([aprobadaSinPrecios()]);
+    repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
+    await openView(repo);
+    await pressId('revision-linea-1-abrir');
+    // Unapplied: the current price is the muted reference, never active input text (NEW-V1).
+    expect(valor(1)).toBe('');
+    expect(screen.getByTestId('revision-linea-1-pvp-valor').props.placeholder).toBe('$12.00');
+    expect(textOf('revision-linea-1-pvp-estado')).toBe('Precio actual del inventario sin aplicar: $12.00. Úsalo o escribe otro precio antes de confirmar.');
+    // Reachable by scrolling the body: the adopt action is never inside the sticky footer.
+    expect(within(screen.getByTestId('revision-cuerpo')).getByTestId('revision-linea-1-pvp-usar-actual')).toBeTruthy();
+    expect(textOf('revision-linea-1-estado')).toBe('Falta el precio de venta');
+    expect(repo.leerProductos).toHaveBeenCalledWith(['SKU-1', 'SKU-2', 'SKU-3']);
+    // A reloaded manual choice is named from that same single bounded read: no extra read, no write.
+    expect(textOf('revision-linea-1-elegido')).toContain('Articulo 1 inventario');
+    expect(repo.leerProductos).toHaveBeenCalledTimes(1);
+    expect(repo.guardarRevision).not.toHaveBeenCalled();
+    await pressId('revision-ir-compra');
+    expect(textOf('revision-accion-razon')).toBe('Falta el precio de venta de 3 productos existentes: usa el precio actual o escribe uno.');
+    // The checklist agrees with the footer: no "Sin bloqueos" while prices are pending (NEW-V3).
+    expect(textOf('revision-bloqueos')).not.toContain('Sin bloqueos');
+    expect(textOf('revision-precios-pendientes')).toBe('Precio de venta · Falta en los productos 1, 2, 3Usa el precio actual del inventario o escribe uno.Ir al producto 1Ir al producto 2Ir al producto 3');
+    expect(noSePuede('revision-materializar')).toBe(true);
+    await pressId('revision-volver');
+    await pressId('revision-linea-1-abrir');
+    await pressId('revision-linea-1-pvp-usar-actual');
+    expect(textOf('revision-linea-1-pvp-estado')).toBe('Precio actual del inventario (IVA incluido): $12.00');
+    expect(textOf('revision-estado')).toBe('Cambiaste algo: confirma de nuevo');
+  });
+
+  it('never invents a price when the current product cannot be read', async () => {
+    const repo = fakeRepo({ leerProductos: jest.fn(async () => { throw new Error('PRIVATE'); }) });
+    repo.leerRevisiones.mockResolvedValue([aprobadaSinPrecios()]);
+    repo.leerExtracciones.mockResolvedValue([extraccionRow()]);
+    await openView(repo);
+    await pressId('revision-linea-1-abrir');
+    expect(valor(1)).toBe('');
+    expect(textOf('revision-linea-1-pvp-estado')).toBe('No se pudo leer el precio actual del inventario: escribe el precio de venta.');
+    expect(maybeId('revision-linea-1-pvp-usar-actual')).toBeNull();
+    expect(JSON.stringify(screen.toJSON())).not.toContain('PRIVATE');
   });
 });
 
@@ -2375,13 +2811,13 @@ describe('post-E2E: read header and document access', () => {
     const repo = fakeRepo({ buscarCandidatos: jest.fn(async () => ({ productos: [], parcial: true })) });
     await startRevision(repo);
     expect(textOf('revision-catalogo-parcial')).toBe('No se pudo revisar todo el inventario. Si no ves el producto, búscalo por su código; márcalo como nuevo solo si confirmas que no existe.');
-    expect(screen.queryByTestId('revision-lote')).toBeNull();
-    await pressId('revision-lote-toggle');
+    expect(screen.queryByTestId('revision-lote-toggle')).toBeNull();
+    expect(screen.getByTestId('revision-lote')).toBeTruthy();
     expect(textOf('revision-lote-factor-uno')).toBe('1 unidad');
     await pressId('revision-lote-factor-uno');
     expect(textOf('revision-lote-factor-aplicar')).toBe('Usar 1 unidad en 3 productos pendientes');
-    await pressId('revision-lote-iva-otro');
-    expect(byId('revision-lote-iva-valor').props.accessibilityLabel).toBe('IVA % para estos productos');
+    await pressId('revision-iva-factura-otro');
+    expect(byId('revision-iva-factura-valor').props.accessibilityLabel).toBe('IVA % de la factura');
     expect(byId('revision-agregar-descripcion').props.accessibilityLabel).toBe('Descripción del producto que falta');
     expect(byId('revision-agregar-motivo').props.accessibilityLabel).toBe('Motivo para agregar este producto');
     expect(textOf('revision-agregar-manual')).toBe('Agregar producto que falta');
@@ -2490,10 +2926,10 @@ describe('visual correction layout, legibility and neutral hierarchy', () => {
     expect(screen.getByTestId('revision-ver-documento')).toBeTruthy();
     expect(screen.getByTestId('revision-ir-compra')).toBeTruthy();
     expect(StyleSheet.flatten(screen.getByTestId('revision-preguntas-resumen').props.style).flexDirection).toBe('row');
-    expect(screen.queryByTestId('revision-lote')).toBeNull();
-    const toggle = screen.getByTestId('revision-lote-toggle');
-    expect(toggle.props.accessibilityState).toMatchObject({ expanded: false });
-    expect(StyleSheet.flatten(toggle.props.style).minHeight).toBeGreaterThanOrEqual(44);
+    expect(screen.queryByTestId('revision-lote-toggle')).toBeNull();
+    const unidad = screen.getByTestId('revision-lote-factor-uno');
+    expect(unidad.props.accessibilityState).toMatchObject({ selected: false });
+    expect(StyleSheet.flatten(unidad.props.style).minHeight).toBeGreaterThanOrEqual(44);
   });
 
   it('keeps disabled Confirmar revisión legible without opacity dimming while preserving disabled behavior', async () => {

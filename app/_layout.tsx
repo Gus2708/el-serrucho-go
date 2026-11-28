@@ -91,7 +91,7 @@ const queryPersister = createAsyncStoragePersister({
 const persistOptions = {
   persister: queryPersister,
   maxAge: 24 * 60 * 60_000,
-  buster: 'v1.2.10',
+  buster: 'v1.2.11',
   dehydrateOptions: {
     shouldDehydrateQuery: (query: { state: { status: string }; queryKey: readonly unknown[] }) =>
       query.state.status === 'success' && PERSISTED_QUERY_KEYS.has(String(query.queryKey[0])),

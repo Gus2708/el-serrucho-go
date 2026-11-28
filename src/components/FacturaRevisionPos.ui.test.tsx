@@ -1,4 +1,10 @@
 import * as React from 'react';
+// The manual choice comes from the shared inventory search (S7): its rows are synthetic, with their current selling price.
+const mockInventario = [1, 2, 3].map(n => ({ codigo_interno: `SKU-${n}`, descripcion: `Articulo ${n} inventario`, unidad: 'UND', codigo_barras: '', costo: 1, precio_venta: [12, 9.5, 4][n - 1], existencia: n - 2, actualizado_en: '2026-01-01T00:00:00Z' }));
+jest.mock('../hooks/useProductos', () => ({
+  ...jest.requireActual('../hooks/useProductos'),
+  useProductos: () => ({ productos: mockInventario, isLoading: false, isFetchingMore: false, hasMore: false, fetchMore: jest.fn(), error: null }),
+}));
 jest.mock('./BarcodeScannerModal', () => ({ BarcodeScannerModal: () => null }));
 import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -50,6 +56,7 @@ function fakeRepo(): Mocks {
     extraer: jest.fn(async () => ({ tipo: 'completado', extraccionId: EXT, replay: false })),
     buscarCandidatos: jest.fn(async () => ({ productos: [], parcial: false })),
     leerColisionesBarras: jest.fn(async (codes: string[]) => Object.fromEntries(codes.map(code => [code, { productos: [], completo: true }]))),
+    leerProductos: jest.fn(async (codes: string[]) => ({ productos: Object.fromEntries(mockInventario.filter(p => codes.includes(p.codigo_interno)).map(p => [p.codigo_interno, p])), completo: true })),
   } as Mocks;
 }
 
@@ -99,12 +106,16 @@ function rutaDe(id: string): Ruta {
     const base = `revision-linea-${n}`;
     if (tipo === 'linea' && EN_FILA_O_DETALLE_ABIERTO.test(resto)) return { etapa: 'productos', despliegues: [] };
     const despliegues: string[] = [];
+    // Per-product VAT is a secondary exception (Más opciones); other choices reopen only through Cambiar producto.
+    if (tipo === 'iva') despliegues.push(`${base}-mas`);
     if (tipo === 'linea') {
       if (CAMPOS_LINEA_CORREGIBLES.test(resto)) despliegues.push(`${base}-corregir`);
-      else if (resto.startsWith('tasaIva-')) despliegues.push(`revision-iva-${n}-otro`);
+      else if (resto.startsWith('tasaIva-')) despliegues.push(`${base}-mas`, `revision-iva-${n}-otro`);
       else if (resto.startsWith('factor-')) despliegues.push(`revision-factor-${n}-otro`);
-      else if (resto.startsWith('manual-')) despliegues.push(`${base}-manual-abrir`);
-      else if (resto.startsWith('nuevo-')) despliegues.push(`${base}-nuevo-abrir`);
+      else if (resto.startsWith('manual-')) despliegues.push(`${base}-cambiar-producto`, `${base}-manual-abrir`);
+      else if (resto.startsWith('nuevo-')) despliegues.push(`${base}-cambiar-producto`, `${base}-nuevo-abrir`);
+      else if (/^(candidato|tarjeta)-/.test(resto)) despliegues.push(`${base}-cambiar-producto`, `${base}-ver-otras`);
+      else if (resto === 'pendiente') despliegues.push(`${base}-cambiar-producto`);
       else if (EN_MAS_OPCIONES.test(resto)) despliegues.push(`${base}-mas`);
     }
     return { etapa: 'productos', linea: n, despliegues };
@@ -116,7 +127,9 @@ function rutaDe(id: string): Ruta {
   }
   if (/^revision-agregar-/.test(id)) return { etapa: 'productos', despliegues: ['revision-agregar-abrir'] };
   if (/^revision-(extraer|iniciar-.*|aplicar-.*|reemplazo-motivo|cabecera-.*)$/.test(id)) return { etapa: 'leer', despliegues: ['revision-detalles-tecnicos'] };
-  if (/^revision-(tipo-.*|decision-precioIncluyeIva-.*)$/.test(id)) return { etapa: 'productos', despliegues: ['revision-preguntas-cambiar'] };
+  // Answered invoice settings collapse into one summary: its Cambiar reopens the existing controls.
+  if (/^revision-(tipo-.*|decision-precioIncluyeIva-.*)$/.test(id)) return { etapa: 'productos', despliegues: ['revision-ajustes-cambiar', 'revision-preguntas-cambiar'] };
+  if (/^revision-(iva|descuento)-factura-.*$/.test(id)) return { etapa: 'productos', despliegues: ['revision-ajustes-cambiar'] };
   if (/^revision-(diferencias|pos|impacto-.*)$/.test(id)) return { etapa: 'compra', despliegues: ['revision-detalles-tecnicos'] };
   if (/^revision-(totales|por-tasa|bloqueos|guardar|aprobar|materializar|motivo-guardado|pvp-pendiente|decision-.*)$/.test(id)) return { etapa: 'compra', despliegues: [] };
   return { etapa: null, despliegues: [] };
@@ -195,7 +208,8 @@ async function confirmEverything(): Promise<void> {
   await pressId('revision-linea-1-tasaIva-aplicar');
   await typeId('revision-linea-1-factor-valor', '1');
   await pressId('revision-linea-1-factor-aplicar');
-  await typeId('revision-linea-1-manual-codigo', 'SKU-1');
+  await pressId('revision-linea-1-manual-buscar');
+  await pressId('producto-picker-fila-SKU-1');
   await typeId('revision-linea-1-manual-motivo', 'Mismo articulo');
   await pressId('revision-linea-1-manual-aplicar');
 }

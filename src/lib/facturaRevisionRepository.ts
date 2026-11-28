@@ -143,6 +143,12 @@ export interface ContextoBusquedaHibrida {
 
 export type RevisionClient = Pick<SupabaseClient, 'rpc' | 'from' | 'functions'>;
 
+export interface LecturaProductos {
+  readonly productos: Readonly<Record<string, Producto>>;
+  /** false when a code was skipped or the read failed or hit its cap: a missing row then proves nothing. */
+  readonly completo: boolean;
+}
+
 export interface FacturaRevisionRepository {
   leerRevisiones(facturaId: string): Promise<RevisionRow[]>;
   leerExtracciones(facturaId: string): Promise<ExtraccionRow[]>;
@@ -152,7 +158,10 @@ export interface FacturaRevisionRepository {
   /** Without `contexto` this is the plain bounded exact/description read; with it, one hybrid retrieval invoke is added. */
   buscarCandidatos(lineas: readonly ExtraidaLinea[], contexto?: ContextoBusquedaHibrida): Promise<CatalogoAcotado>;
   leerColisionesBarras(codigos: readonly string[]): Promise<Record<string, CatalogoCodigosBarras>>;
+  /** Current rows of chosen internal codes (one bounded read). Incomplete after any failure, cap or unsafe code. */
+  leerProductos(codigos: readonly string[]): Promise<LecturaProductos>;
 }
+
 
 const SQLSTATES: Record<string, RevisionErrorCode> = {
   '42501': 'no_autorizado',
@@ -714,6 +723,20 @@ export function createFacturaRevisionRepository(client: RevisionClient): Factura
         out[code] = { productos: found.get(code) ?? [], completo: readsOk && SAFE_FILTER_VALUE.test(code) };
       }
       return out;
+    },
+
+    async leerProductos(codigos) {
+      const unique = [...new Set(codigos)];
+      const safe = unique.filter(code => SAFE_FILTER_VALUE.test(code)).slice(0, MAX_CODES_PER_QUERY);
+      const completo = safe.length === unique.length;
+      const productos: Record<string, Producto> = {};
+      if (safe.length === 0) return { productos, completo };
+      const read = await readCatalog(client.from('productos_view').select('*').in('codigo_interno', safe).limit(CATALOG_QUERY_CAP), CATALOG_QUERY_CAP);
+      if (!read.ok) return { productos: {}, completo: false };
+      for (const row of read.rows) {
+        if (isText(row.codigo_interno) && safe.includes(row.codigo_interno)) productos[row.codigo_interno] = row as unknown as Producto;
+      }
+      return { productos, completo };
     },
   };
 }
